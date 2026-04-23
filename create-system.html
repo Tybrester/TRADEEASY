@@ -613,7 +613,7 @@
 
   <div id="app">
     <nav>
-      <a href="index.html" class="logo">Eazy<span>Trade</span></a>
+      <a href="index.html" class="logo">Easy<span>Trade</span></a>
       <div class="nav-right">
         <a href="dashboard.html" class="nav-back">← Dashboard</a>
       </div>
@@ -637,7 +637,7 @@
           <span></span> Create System
           <span class="sidebar-arrow">›</span>
         </a>
-        <a href="#" class="sidebar-item">
+        <a href="trades.html" class="sidebar-item">
           <span></span> Trades
         </a>
         <a href="brokers.html" class="sidebar-item">
@@ -874,7 +874,46 @@
               </select>
               <input class="modal-input" type="number" id="alert-value" placeholder="Loading..." />
             </div>
-            <button class="add-condition">+ Add condition</button>
+          </div>
+        </div>
+        <div class="modal-row">
+          <div class="modal-row-label">Timeframe</div>
+          <div class="modal-row-content">
+            <select class="modal-select" id="alert-timeframe">
+              <optgroup label="Minutes">
+                <option value="1">1 minute</option>
+                <option value="2">2 minutes</option>
+                <option value="3">3 minutes</option>
+                <option value="5">5 minutes</option>
+                <option value="10">10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="20">20 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="45">45 minutes</option>
+              </optgroup>
+              <optgroup label="Hours">
+                <option value="60">1 hour</option>
+                <option value="120">2 hours</option>
+                <option value="180">3 hours</option>
+                <option value="240" selected>4 hours</option>
+              </optgroup>
+              <optgroup label="Days">
+                <option value="1D">1 day</option>
+                <option value="2D">2 days</option>
+                <option value="3D">3 days</option>
+              </optgroup>
+              <optgroup label="Weeks">
+                <option value="1W">1 week</option>
+                <option value="2W">2 weeks</option>
+                <option value="3W">3 weeks</option>
+              </optgroup>
+              <optgroup label="Months">
+                <option value="1M">1 month</option>
+                <option value="2M">2 months</option>
+                <option value="3M">3 months</option>
+                <option value="6M">6 months</option>
+              </optgroup>
+            </select>
           </div>
         </div>
 
@@ -910,6 +949,39 @@
             </div>
           </div>
         </div>
+
+        <!-- Futures-specific fields (shown only when Type = Futures) -->
+        <div id="futures-fields" style="display:none;">
+          <div class="modal-row">
+            <div class="modal-row-label">Direction</div>
+            <div class="modal-row-content">
+              <div style="display:flex;gap:8px;">
+                <button class="type-btn active" data-direction="Long" id="direction-long">Long</button>
+                <button class="type-btn" data-direction="Short" id="direction-short">Short</button>
+              </div>
+              <input type="hidden" id="futures-direction" value="Long" />
+            </div>
+          </div>
+          <div class="modal-row">
+            <div class="modal-row-label">Quantity</div>
+            <div class="modal-row-content">
+              <input class="modal-input" type="number" id="futures-quantity" placeholder="e.g. 1" min="1" style="width:100%;" />
+            </div>
+          </div>
+          <div class="modal-row">
+            <div class="modal-row-label">Entry Price</div>
+            <div class="modal-row-content">
+              <div style="display:flex;gap:8px;align-items:center;">
+                <select class="modal-select" id="futures-order-type" style="width:110px;flex-shrink:0;">
+                  <option value="market">Market</option>
+                  <option value="limit">Limit</option>
+                </select>
+                <input class="modal-input" type="number" id="futures-entry" placeholder="Limit price..." style="flex:1;display:none;" />
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="modal-row">
           <div class="modal-row-label">Broker</div>
           <div class="modal-row-content">
@@ -917,6 +989,16 @@
               <option value="">— No broker —</option>
             </select>
             <div id="broker-none-hint" style="font-size:0.75rem;color:#555;margin-top:5px;">No brokers connected. <a href="brokers.html" style="color:var(--accent);text-decoration:none;">Connect one →</a></div>
+          </div>
+        </div>
+        <div class="modal-row" id="webhook-url-row" style="display:none;">
+          <div class="modal-row-label">Webhook URL</div>
+          <div class="modal-row-content">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input class="modal-input" type="text" id="webhook-url-display" readonly style="flex:1;font-size:0.72rem;color:var(--muted);cursor:pointer;" onclick="this.select()" />
+              <button onclick="navigator.clipboard.writeText(document.getElementById('webhook-url-display').value)" style="background:transparent;border:1px solid #2a2a2a;color:var(--accent);font-size:0.75rem;padding:6px 12px;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap;">Copy</button>
+            </div>
+            <div style="font-size:0.72rem;color:#555;margin-top:5px;">Paste this URL into your TradingView alert webhook field to auto-execute trades.</div>
           </div>
         </div>
         <div class="modal-row">
@@ -968,20 +1050,54 @@
     const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentSymbol = 'NASDAQ:AAPL';
+    const _urlParams = new URLSearchParams(window.location.search);
+    const _urlSymbol = _urlParams.get('symbol');
+    const _urlIndicator = _urlParams.get('indicator');
+    if (_urlSymbol) currentSymbol = _urlSymbol;
 
     function updateAlertSymbol(symbol) {
       const el = document.getElementById('alert-symbol');
       if (el) el.value = symbol;
     }
 
-    function loadChart(symbol) {
+    const INDICATOR_STUDY_MAP = {
+      'MA Cross': 'MASimple@tv-basicstudies',
+      'EMA (Exponential Moving Average)': 'MAExp@tv-basicstudies',
+      'SMA (Simple Moving Average)': 'MASimple@tv-basicstudies',
+      'WMA (Weighted Moving Average)': 'MAWeighted@tv-basicstudies',
+      'VWAP': 'VWAP@tv-basicstudies',
+      'Bollinger Bands Upper': 'BollingerBandsR@tv-basicstudies',
+      'Bollinger Bands Middle': 'BollingerBandsR@tv-basicstudies',
+      'Bollinger Bands Lower': 'BollingerBandsR@tv-basicstudies',
+      'RSI (Relative Strength Index)': 'RSI@tv-basicstudies',
+      'MACD Line': 'MACD@tv-basicstudies',
+      'MACD Signal': 'MACD@tv-basicstudies',
+      'MACD Histogram': 'MACD@tv-basicstudies',
+      'Stochastic %K': 'Stochastic@tv-basicstudies',
+      'Stochastic %D': 'Stochastic@tv-basicstudies',
+      'ATR (Average True Range)': 'ATR@tv-basicstudies',
+      'ADX (Average Directional Index)': 'ADX@tv-basicstudies',
+      'CCI (Commodity Channel Index)': 'CCI@tv-basicstudies',
+      'Ichimoku Tenkan-sen': 'IchimokuCloud@tv-basicstudies',
+      'Volume': 'Volume@tv-basicstudies',
+      'OBV (On Balance Volume)': 'OBV@tv-basicstudies',
+      'Supertrend': 'Supertrend@tv-basicstudies',
+      'Parabolic SAR': 'PSAR@tv-basicstudies',
+      'Williams %R': 'WilliamR@tv-basicstudies',
+      'MFI (Money Flow Index)': 'MFI@tv-basicstudies',
+    };
+
+    function loadChart(symbol, indicator) {
       if (symbol) { currentSymbol = symbol; updateAlertSymbol(symbol); }
       const container = document.getElementById('tradingview-widget');
       container.innerHTML = '';
+
+      const study = indicator ? INDICATOR_STUDY_MAP[indicator] : null;
+
       const script = document.createElement('script');
       script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
       script.async = true;
-      script.innerHTML = JSON.stringify({
+      const config = {
         autosize: true,
         symbol: currentSymbol,
         interval: 'D',
@@ -994,7 +1110,9 @@
         hide_volume: false,
         calendar: false,
         support_host: 'https://www.tradingview.com'
-      });
+      };
+      if (study) config.studies = [{ id: study }];
+      script.innerHTML = JSON.stringify(config);
       container.appendChild(script);
     }
 
@@ -1008,8 +1126,7 @@
       document.getElementById('loading-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
 
-      loadChart();
-
+      loadChart(_urlSymbol || null, _urlIndicator || null);
 
       const SYMBOLS = [
         { s: 'NASDAQ:AAPL',   d: 'Apple Inc.',          e: 'NASDAQ' },
@@ -1105,6 +1222,7 @@
           action: crossing.toLowerCase().includes('up') ? 'buy' : crossing.toLowerCase().includes('down') ? 'sell' : 'alert',
           symbol: sym,
           asset_type: assetType,
+          timeframe: document.getElementById('alert-timeframe')?.value || '1h',
           indicator: indicator,
           condition: crossing,
         };
@@ -1116,6 +1234,13 @@
           if (strike) payload.strike = parseFloat(strike);
           if (contract) payload.contract = contract;
           if (expiry) payload.expiry = expiry;
+        } else if (assetType === 'Futures') {
+          payload.direction = document.getElementById('futures-direction')?.value || 'Long';
+          payload.order_type = document.getElementById('futures-order-type')?.value || 'market';
+          const qty = document.getElementById('futures-quantity')?.value;
+          const entry = document.getElementById('futures-entry')?.value;
+          if (qty) payload.quantity = parseFloat(qty);
+          if (entry) payload.entry_price = parseFloat(entry);
         } else {
           payload.price = parseFloat(price) || 0;
         }
@@ -1201,10 +1326,20 @@
         buildJSON();
       }
 
-      const savedIndicator = localStorage.getItem('lastIndicator');
-      if (savedIndicator) {
-        const opt = Array.from(indicatorSelect.options).find(o => o.value === savedIndicator);
-        if (opt) indicatorSelect.value = savedIndicator;
+      if (_urlIndicator) {
+        const sel = indicatorSelect;
+        for (let i = 0; i < sel.options.length; i++) {
+          if (sel.options[i].text === _urlIndicator || sel.options[i].value === _urlIndicator) {
+            sel.selectedIndex = i;
+            break;
+          }
+        }
+      } else {
+        const savedIndicator = localStorage.getItem('lastIndicator');
+        if (savedIndicator) {
+          const opt = Array.from(indicatorSelect.options).find(o => o.value === savedIndicator);
+          if (opt) indicatorSelect.value = savedIndicator;
+        }
       }
 
       updateCrossingOptions();
@@ -1223,24 +1358,42 @@
       }
 
       function populateBrokerDropdown() {
-        const BROKER_LABELS = {
-          tastytrade: 'tastytrade',
-        };
+        const WEBHOOK_BROKERS = { tastytrade: 'tastytrade' };
         const brokerSelect = document.getElementById('alert-broker');
         const hint = document.getElementById('broker-none-hint');
         brokerSelect.innerHTML = '<option value="">— No broker —</option>';
         let count = 0;
-        Object.keys(BROKER_LABELS).forEach(key => {
-          const url = localStorage.getItem(`webhook_${key}`);
-          if (url) {
+
+        if (localStorage.getItem('paper_trading_enabled') === 'true') {
+          const opt = document.createElement('option');
+          opt.value = 'paper'; opt.textContent = 'EasyTrade Paper';
+          brokerSelect.appendChild(opt);
+          count++;
+        }
+        Object.keys(WEBHOOK_BROKERS).forEach(key => {
+          if (localStorage.getItem(`webhook_${key}`)) {
             const opt = document.createElement('option');
             opt.value = key;
-            opt.textContent = BROKER_LABELS[key];
+            opt.textContent = WEBHOOK_BROKERS[key].charAt(0).toUpperCase() + WEBHOOK_BROKERS[key].slice(1);
             brokerSelect.appendChild(opt);
             count++;
           }
         });
         hint.style.display = count === 0 ? 'block' : 'none';
+        if (count === 1) brokerSelect.selectedIndex = 1;
+      }
+
+      async function loadWebhookURL() {
+        try {
+          const { data: { session } } = await sbClient.auth.getSession();
+          if (!session) return;
+          const { data } = await sbClient.rpc('get_or_create_webhook_secret', { p_user_id: session.user.id });
+          if (data) {
+            const webhookUrl = `https://isanhutzyctcjygjhzbn.supabase.co/functions/v1/trade-webhook?user_id=${session.user.id}&secret=${data}`;
+            document.getElementById('webhook-url-display').value = webhookUrl;
+            document.getElementById('webhook-url-row').style.display = '';
+          }
+        } catch(e) {}
       }
 
       document.querySelector('.btn-create-alert').addEventListener('click', () => {
@@ -1250,6 +1403,7 @@
         document.getElementById('alert-value').placeholder = 'Loading...';
         updateOptionsChainLink(sym);
         populateBrokerDropdown();
+        loadWebhookURL();
         modal.classList.add('open');
         fetchPrice(sym);
         setTimeout(buildJSON, 1200);
@@ -1272,7 +1426,12 @@
           options_strike: assetType === 'Options' ? (parseFloat(document.getElementById('options-strike').value) || null) : null,
           options_contract: assetType === 'Options' ? (document.getElementById('options-contract').value || null) : null,
           options_expiry: assetType === 'Options' ? (document.getElementById('options-expiry').value || null) : null,
+          futures_direction: assetType === 'Futures' ? (document.getElementById('futures-direction').value || null) : null,
+          futures_order_type: assetType === 'Futures' ? (document.getElementById('futures-order-type').value || 'market') : null,
+          futures_quantity: assetType === 'Futures' ? (parseFloat(document.getElementById('futures-quantity').value) || null) : null,
+          futures_entry: assetType === 'Futures' ? (parseFloat(document.getElementById('futures-entry').value) || null) : null,
           symbol: document.getElementById('modal-symbol-input').value || currentSymbol,
+          timeframe: document.getElementById('alert-timeframe')?.value || '1h',
           indicator: document.getElementById('condition-indicator').value,
           crossing: document.getElementById('condition-crossing')?.value || null,
           price: parseFloat(document.getElementById('alert-value').value) || null,
@@ -1290,8 +1449,37 @@
           console.error('Alert save error:', error.message);
           window.alert('Failed to save alert: ' + error.message);
         } else {
+          if (assetType === 'Futures' && alertData.futures_direction) {
+            const broker = alertData.broker || 'paper';
+            const isPaper = broker === 'paper';
+            const orderType = alertData.futures_order_type || 'market';
+            let entryPrice = alertData.futures_entry;
+
+            if (isPaper && orderType === 'market') {
+              const sym = (alertData.symbol || '').split(':')[1] || alertData.symbol;
+              try {
+                const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1m&range=1d`);
+                const json = await res.json();
+                entryPrice = json.chart.result[0].meta.regularMarketPrice;
+              } catch(e) { entryPrice = null; }
+            }
+
+            if (entryPrice) {
+              await sbClient.from('trades').insert({
+                user_id: session.user.id,
+                name: alertData.name,
+                symbol: alertData.symbol,
+                direction: alertData.futures_direction,
+                quantity: alertData.futures_quantity || 1,
+                entry_price: entryPrice,
+                broker: isPaper ? 'EasyTrade Paper' : broker,
+                status: 'open',
+                created_at: new Date().toISOString(),
+              });
+            }
+          }
           modal.classList.remove('open');
-          window.location.href = 'alerts.html';
+          window.location.href = assetType === 'Futures' ? 'trades.html' : 'alerts.html';
         }
       });
 
@@ -1301,8 +1489,10 @@
 
       function applyTypeUI(type) {
         const isOptions = type === 'Options';
+        const isFutures = type === 'Futures';
         document.getElementById('options-fields').style.display = isOptions ? 'block' : 'none';
-        document.getElementById('expiration-row').style.display = isOptions ? 'none' : '';
+        document.getElementById('futures-fields').style.display = isFutures ? 'block' : 'none';
+        document.getElementById('expiration-row').style.display = (isOptions || isFutures) ? 'none' : '';
       }
 
       document.querySelectorAll('.type-btn').forEach(btn => {
@@ -1322,13 +1512,29 @@
             buildJSON();
           });
         }
+        if (btn.dataset.direction) {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('[data-direction]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('futures-direction').value = btn.dataset.direction;
+            buildJSON();
+          });
+        }
       });
 
       document.getElementById('condition-indicator').addEventListener('change', buildJSON);
+      document.getElementById('alert-timeframe').addEventListener('change', buildJSON);
       document.querySelectorAll('#alert-modal .modal-select')[1]?.addEventListener('change', buildJSON);
       document.getElementById('alert-value').addEventListener('input', buildJSON);
       document.getElementById('options-strike').addEventListener('input', buildJSON);
       document.getElementById('options-expiry').addEventListener('change', buildJSON);
+
+      document.getElementById('futures-order-type').addEventListener('change', function() {
+        const entryInput = document.getElementById('futures-entry');
+        entryInput.style.display = this.value === 'limit' ? 'block' : 'none';
+        if (this.value === 'market') entryInput.value = '';
+        buildJSON();
+      });
 
       const modalSymInput = document.getElementById('modal-symbol-input');
       const modalSymDrop = document.getElementById('modal-symbol-dropdown');
@@ -1386,6 +1592,7 @@
     }
 
     init();
+
   </script>
 
 </body>

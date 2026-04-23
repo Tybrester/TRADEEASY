@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EazyTrade — Dashboard</title>
+  <title>EasyTrade — Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -332,7 +332,7 @@
 
   <div id="app">
     <nav>
-      <a href="index.html" class="logo">Eazy<span>Trade</span></a>
+      <a href="index.html" class="logo">Easy<span>Trade</span></a>
       <div class="nav-right">
         <span class="user-name" id="user-email"></span>
       </div>
@@ -352,11 +352,7 @@
       </a>
 
       <div class="sidebar-section">Trading</div>
-      <a href="#" class="sidebar-item">
-        <span class="sidebar-icon"></span> Systems
-        <span class="sidebar-arrow">›</span>
-      </a>
-      <a href="#" class="sidebar-item">
+      <a href="trades.html" class="sidebar-item">
         <span class="sidebar-icon"></span> Trades
       </a>
       <a href="brokers.html" class="sidebar-item">
@@ -393,9 +389,9 @@
           <div class="sub" id="stat-balance-sub">No account connected</div>
         </div>
         <div class="stat-card">
-          <div class="label">Active Systems</div>
+          <div class="label">Active Trades</div>
           <div class="value" id="stat-systems">0</div>
-          <div class="sub">No systems running</div>
+          <div class="sub">No trades running</div>
         </div>
         <div class="stat-card">
           <div class="label">Win Rate</div>
@@ -445,6 +441,13 @@
       document.getElementById('loading-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
 
+      if (user.user_metadata?.paper_trading_enabled) {
+        localStorage.setItem('paper_trading_enabled', 'true');
+        if (user.user_metadata?.paper_balance) {
+          localStorage.setItem('paper_balance', String(user.user_metadata.paper_balance));
+        }
+      }
+
       const paperEnabled = localStorage.getItem('paper_trading_enabled') === 'true';
       const BROKER_KEYS = ['tastytrade'];
       const connectedBrokers = BROKER_KEYS.filter(k => localStorage.getItem(`webhook_${k}`));
@@ -458,7 +461,7 @@
         if (key === 'paper') {
           const bal = parseFloat(localStorage.getItem('paper_balance') || '100000');
           balEl.textContent = '$' + bal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          balSub.textContent = 'EazyTrade Paper · Simulated';
+          balSub.textContent = 'EasyTrade Paper · Simulated';
         } else {
           balEl.textContent = '—';
           balSub.textContent = key.charAt(0).toUpperCase() + key.slice(1) + ' · Webhook Active';
@@ -467,7 +470,7 @@
 
       if (paperEnabled) {
         const opt = document.createElement('option');
-        opt.value = 'paper'; opt.textContent = 'EazyTrade Paper';
+        opt.value = 'paper'; opt.textContent = 'EasyTrade Paper';
         brokerSel.appendChild(opt);
       }
       connectedBrokers.forEach(k => {
@@ -482,9 +485,30 @@
 
       brokerSel.addEventListener('change', () => showBalance(brokerSel.value));
 
-      const { data: alerts } = await sbClient.from('alerts').select('id').eq('user_id', user.id);
+      const { data: allTrades } = await sbClient.from('trades').select('id,status,pnl').eq('user_id', user.id);
+
+      // Active trades count
+      const activeCount = (allTrades || []).filter(t => t.status === 'open' || t.status === 'filled').length;
       const sysEl = document.getElementById('stat-systems');
-      if (sysEl) sysEl.textContent = alerts?.length || 0;
+      if (sysEl) sysEl.textContent = activeCount;
+      const subEl = sysEl?.closest('.stat-card')?.querySelector('.sub');
+      if (subEl) subEl.textContent = activeCount === 0 ? 'No trades running' : `${activeCount} trade${activeCount !== 1 ? 's' : ''} running`;
+
+      // P&L all time — sum of all closed trade pnl values
+      const totalPnl = (allTrades || [])
+        .filter(t => t.status === 'closed' && t.pnl != null)
+        .reduce((sum, t) => sum + parseFloat(t.pnl), 0);
+      const pnlEl = document.querySelector('.stat-card .value:not(.green):not(#stat-systems)');
+      const pnlCard = document.querySelector('.stat-card:last-child');
+      if (pnlCard) {
+        const pnlVal = pnlCard.querySelector('.value');
+        const pnlSub = pnlCard.querySelector('.sub');
+        if (pnlVal) {
+          pnlVal.textContent = (totalPnl >= 0 ? '+$' : '-$') + Math.abs(totalPnl).toFixed(2);
+          pnlVal.style.color = totalPnl >= 0 ? 'var(--accent)' : 'var(--red)';
+        }
+        if (pnlSub) pnlSub.textContent = (allTrades || []).filter(t => t.status === 'closed').length + ' closed trades';
+      }
 
       document.getElementById('signout-btn').addEventListener('click', async () => {
         await sbClient.auth.signOut();
@@ -493,6 +517,7 @@
     }
 
     init();
+
   </script>
 
 </body>

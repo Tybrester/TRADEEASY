@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EazyTrade — Trades</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0a; --surface: #111111; --border: #1f1f1f;
+      --accent: #00e676; --accent-dim: #00c853; --red: #ff1744;
+      --text: #f5f5f5; --muted: #888; --card-bg: #141414;
+    }
+    body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
+
+    #loading-screen { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 999; }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #app { display: none; flex-direction: column; min-height: 100vh; }
+
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 0 5%; height: 64px; background: rgba(10,10,10,0.95); border-bottom: 1px solid var(--border); flex-shrink: 0; position: sticky; top: 0; z-index: 100; }
+    .logo { font-size: 1.4rem; font-weight: 900; letter-spacing: -0.02em; color: var(--text); text-decoration: none; }
+    .logo span { color: var(--accent); }
+
+    .layout { display: flex; flex: 1; overflow: hidden; }
+    .sidebar { width: 230px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 16px 0; height: calc(100vh - 64px); position: sticky; top: 64px; overflow-y: auto; }
+    .sidebar-section { padding: 6px 12px; font-size: 0.7rem; font-weight: 700; color: #444; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 12px; }
+    .sidebar-item { display: flex; align-items: center; gap: 12px; padding: 10px 16px; font-size: 0.9rem; font-weight: 500; color: var(--muted); text-decoration: none; transition: background 0.15s, color 0.15s; position: relative; border: none; background: none; font-family: inherit; width: 100%; text-align: left; cursor: pointer; }
+    .sidebar-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+    .sidebar-item.active { background: rgba(0,230,118,0.08); color: var(--accent); font-weight: 600; }
+    .sidebar-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); border-radius: 0 2px 2px 0; }
+    .sidebar-arrow { margin-left: auto; font-size: 0.75rem; color: #444; }
+    .sidebar-bottom { margin-top: auto; padding: 16px 12px; border-top: 1px solid var(--border); }
+
+    main { flex: 1; padding: 28px 36px; overflow-y: auto; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+    .page-header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
+
+    .section-title { font-size: 0.72rem; font-weight: 700; color: #444; text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 12px; }
+
+    .trades-table { width: 100%; border-collapse: collapse; }
+    .trades-table th { font-size: 0.72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+    .trades-table td { padding: 14px 16px; font-size: 0.88rem; border-bottom: 1px solid #161616; vertical-align: middle; }
+    .trades-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+    .badge-long { background: rgba(0,230,118,0.12); color: var(--accent); }
+    .badge-short { background: rgba(255,23,68,0.1); color: var(--red); }
+    .pnl-pos { color: var(--accent); font-weight: 700; }
+    .pnl-neg { color: var(--red); font-weight: 700; }
+
+    .empty-state { text-align: center; padding: 60px 24px; color: var(--muted); font-size: 0.9rem; border: 1px dashed var(--border); border-radius: 12px; }
+
+    .btn-close-trade { background: none; border: 1px solid #2a2a2a; color: var(--muted); font-size: 0.78rem; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-family: inherit; transition: border-color 0.15s, color 0.15s; }
+    .btn-close-trade:hover { border-color: var(--red); color: var(--red); }
+
+    @media (max-width: 900px) { .sidebar { display: none; } }
+  </style>
+</head>
+<body>
+  <div id="loading-screen"><div class="spinner"></div></div>
+
+  <div id="app">
+    <nav>
+      <a href="index.html" class="logo">Easy<span>Trade</span></a>
+    </nav>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-section">Menu</div>
+        <a href="dashboard.html" class="sidebar-item">Dashboard</a>
+        <a href="alerts.html" class="sidebar-item">Systems</a>
+        <a href="accounts.html" class="sidebar-item">Accounts</a>
+        <div class="sidebar-section">Trading</div>
+        <a href="trades.html" class="sidebar-item active">Trades</a>
+        <a href="brokers.html" class="sidebar-item">Brokers</a>
+        <div class="sidebar-bottom">
+          <button class="sidebar-item" id="signout-btn" style="color:#ff1744;padding:8px 4px;width:100%;">Sign Out</button>
+        </div>
+      </aside>
+
+      <main>
+        <div class="page-header" style="display:flex;align-items:center;gap:0;border-bottom:1px solid #1f1f1f;padding-bottom:0;margin-bottom:0;">
+          <button class="tab-btn active" id="tab-trades" onclick="switchTab('trades')" style="background:none;border:none;border-bottom:2px solid var(--accent);color:var(--text);font-size:1rem;font-weight:700;padding:14px 24px 12px;cursor:pointer;font-family:inherit;">Trades</button>
+        </div>
+
+        <!-- TRADES TAB -->
+        <div id="tab-content-trades" style="margin-top:24px;">
+          <div style="margin-bottom:20px;max-width:320px;">
+            <select id="trades-system-filter" onchange="loadTrades()" style="width:100%;background:#111;border:1px solid #2a2a2a;color:var(--text);padding:9px 12px;border-radius:8px;font-family:inherit;font-size:0.85rem;outline:none;">
+              <option value="">All Systems</option>
+            </select>
+          </div>
+          <div class="section-title" style="color:#ffc107;">Pending Positions</div>
+          <div id="pending-positions-container">
+            <div class="empty-state" style="padding:20px 24px;">No pending positions.</div>
+          </div>
+
+          <div class="section-title" style="margin-top:28px;">Open Positions</div>
+          <div id="open-positions-container">
+            <div class="empty-state">No open positions yet.</div>
+          </div>
+
+          <div class="section-title" style="margin-top:32px;">Closed Trades</div>
+          <div id="closed-trades-container">
+            <div class="empty-state">No closed trades yet.</div>
+          </div>
+        </div>
+
+
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://isanhutzyctcjygjhzbn.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzYW5odXR6eWN0Y2p5Z2poemJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMTYzNDYsImV4cCI6MjA5MTY5MjM0Nn0.L0ATp-IriR708C2n3as_YXDgjHvtn_CWubbzPeSxRi0';
+    const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function fetchPrice(symbol) {
+      try {
+        const ticker = symbol.includes(':') ? symbol.split(':')[1] : symbol;
+        const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`);
+        const json = await res.json();
+        return json.chart.result[0].meta.regularMarketPrice;
+      } catch { return null; }
+    }
+
+    async function closeTrade(id, symbol, direction, entryPrice, quantity, broker) {
+      let exitPrice = null;
+      try {
+        const sym = (symbol || '').split(':')[1] || symbol;
+        const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1m&range=1d`);
+        const json = await res.json();
+        exitPrice = json.chart.result[0].meta.regularMarketPrice;
+      } catch(e) {}
+
+      const pnl = exitPrice
+        ? (direction === 'Long' ? (exitPrice - entryPrice) * quantity : (entryPrice - exitPrice) * quantity)
+        : 0;
+
+      await sbClient.from('trades').update({
+        status: 'closed',
+        closed_at: new Date().toISOString(),
+        pnl: pnl,
+      }).eq('id', id);
+
+      if (broker === 'EasyTrade Paper') {
+        const currentBalance = parseFloat(localStorage.getItem('paper_balance') || '100000');
+        const newBalance = Math.max(0, currentBalance + pnl);
+        localStorage.setItem('paper_balance', String(newBalance));
+        const { data: { session } } = await sbClient.auth.getSession();
+        if (session) {
+          await sbClient.auth.updateUser({ data: { paper_balance: newBalance } });
+        }
+      }
+
+      loadTrades();
+    }
+
+    async function rejectTrade(id) {
+      await sbClient.from('trades').delete().eq('id', id);
+      loadTrades();
+    }
+
+    async function fillTrade(id, action, price, quantity) {
+      const cost = price * quantity;
+      const { data: { session } } = await sbClient.auth.getSession();
+      if (!session) return;
+
+      // Update paper balance
+      const { data: acct } = await sbClient.from('paper_accounts').select('*').eq('user_id', session.user.id).maybeSingle();
+      if (acct) {
+        const newBalance = action === 'buy' ? acct.balance - cost : acct.balance + cost;
+        await sbClient.from('paper_accounts').update({ balance: newBalance, updated_at: new Date().toISOString() }).eq('user_id', session.user.id);
+      } else {
+        await sbClient.from('paper_accounts').insert({ user_id: session.user.id, balance: action === 'buy' ? 100000 - cost : 100000 + cost });
+      }
+
+      await sbClient.from('trades').update({ status: 'filled', price }).eq('id', id);
+      loadTrades();
+    }
+
+    async function loadSystemsFilter() {
+      const { data: { session } } = await sbClient.auth.getSession();
+      if (!session) return;
+      const sel = document.getElementById('trades-system-filter');
+      if (sel.options.length > 1) return;
+      const { data } = await sbClient.from('systems').select('id,name').eq('user_id', session.user.id);
+      (data || []).forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id; opt.textContent = s.name;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function loadTrades() {
+      const { data: { session } } = await sbClient.auth.getSession();
+      if (!session) return;
+
+      const systemId = document.getElementById('trades-system-filter')?.value || '';
+      let query = sbClient.from('trades').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false });
+      if (systemId) query = query.eq('system_id', systemId);
+      const { data: trades } = await query;
+
+      const pending = (trades || []).filter(t => t.status === 'open');
+      const open    = (trades || []).filter(t => t.status === 'filled');
+      const closed  = (trades || []).filter(t => t.status === 'closed');
+
+      const pendingEl = document.getElementById('pending-positions-container');
+      const openEl    = document.getElementById('open-positions-container');
+      const closedEl  = document.getElementById('closed-trades-container');
+
+      // PENDING
+      if (pending.length === 0) {
+        pendingEl.innerHTML = '<div class="empty-state" style="padding:20px 24px;">No pending positions.</div>';
+      } else {
+        const rows = await Promise.all(pending.map(async t => {
+          const entryPrice = t.entry_price ?? t.price;
+          const direction  = t.direction || (t.action === 'buy' ? 'Long' : 'Short');
+          const currentPrice = await fetchPrice(t.symbol);
+          return `<tr>
+            <td style="font-weight:600;">${t.name || t.symbol || '—'} <span class="badge" style="font-size:0.68rem;background:rgba(255,193,7,0.12);color:#ffc107;">Pending</span></td>
+            <td style="color:var(--accent);font-weight:600;">${t.symbol || '—'}</td>
+            <td><span class="badge ${direction === 'Long' ? 'badge-long' : 'badge-short'}">${direction}</span></td>
+            <td>${t.quantity || '—'}</td>
+            <td>${entryPrice ? '$'+Number(entryPrice).toFixed(2) : '—'}</td>
+            <td>${currentPrice ? '$'+currentPrice.toFixed(2) : '—'}</td>
+            <td style="color:var(--muted);font-size:0.8rem;">${t.broker || 'paper'}</td>
+            <td style="display:flex;gap:6px;">
+              <button class="btn-close-trade" style="border-color:var(--accent);color:var(--accent);" onclick="fillTrade('${t.id}','${t.action||'buy'}',${currentPrice||entryPrice||0},${t.quantity||1})">Fill</button>
+              <button class="btn-close-trade" onclick="rejectTrade('${t.id}')">Reject</button>
+            </td>
+          </tr>`;
+        }));
+        pendingEl.innerHTML = `<table class="trades-table">
+          <thead><tr>
+            <th>System</th><th>Symbol</th><th>Side</th><th>Qty</th>
+            <th>Signal Price</th><th>Current</th><th>Broker</th><th></th>
+          </tr></thead>
+          <tbody>${rows.join('')}</tbody>
+        </table>`;
+      }
+
+      if (open.length === 0) {
+        openEl.innerHTML = '<div class="empty-state">No open positions yet.</div>';
+      } else {
+        const rows = await Promise.all(open.map(async t => {
+          // support both old schema (entry_price/direction) and new (price/action)
+          const entryPrice = t.entry_price ?? t.price;
+          const direction  = t.direction || (t.action === 'buy' ? 'Long' : 'Short');
+          const currentPrice = await fetchPrice(t.symbol);
+          let pnlHtml = '—';
+          if (currentPrice && entryPrice && t.quantity) {
+            const diff = direction === 'Long'
+              ? (currentPrice - entryPrice) * t.quantity
+              : (entryPrice - currentPrice) * t.quantity;
+            pnlHtml = `<span class="${diff >= 0 ? 'pnl-pos' : 'pnl-neg'}">${diff >= 0 ? '+' : ''}$${diff.toFixed(2)}</span>`;
+          }
+          const isFilled = t.status === 'filled';
+          const statusBadge = isFilled
+            ? `<span class="badge badge-long" style="margin-left:6px;font-size:0.68rem;">Filled</span>`
+            : `<span class="badge" style="margin-left:6px;font-size:0.68rem;background:rgba(255,193,7,0.12);color:#ffc107;">Pending</span>`;
+          return `<tr>
+            <td style="font-weight:600;">${t.name || t.symbol || '—'}${statusBadge}</td>
+            <td style="color:var(--accent);font-weight:600;">${t.symbol || '—'}</td>
+            <td><span class="badge ${direction === 'Long' ? 'badge-long' : 'badge-short'}">${direction}</span></td>
+            <td>${t.quantity || '—'}</td>
+            <td>${entryPrice ? '$'+Number(entryPrice).toFixed(2) : '—'}</td>
+            <td>${currentPrice ? '$'+currentPrice.toFixed(2) : '—'}</td>
+            <td>${pnlHtml}</td>
+            <td style="color:var(--muted);font-size:0.8rem;">${t.broker || 'paper'}</td>
+            <td style="display:flex;gap:6px;">
+              ${!isFilled ? `<button class="btn-close-trade" style="border-color:var(--accent);color:var(--accent);" onclick="fillTrade('${t.id}','${t.action||'buy'}',${currentPrice||entryPrice||0},${t.quantity||1})">Fill</button>` : ''}
+              <button class="btn-close-trade" onclick="closeTrade('${t.id}','${t.symbol}','${direction}',${entryPrice||0},${t.quantity||1},'${t.broker||'paper'}')">Close</button>
+            </td>
+          </tr>`;
+        }));
+        openEl.innerHTML = `<table class="trades-table">
+          <thead><tr>
+            <th>System</th><th>Symbol</th><th>Side</th><th>Qty</th>
+            <th>Entry</th><th>Current</th><th>P&L</th><th>Broker</th><th></th>
+          </tr></thead>
+          <tbody>${rows.join('')}</tbody>
+        </table>`;
+      }
+
+      if (closed.length === 0) {
+        closedEl.innerHTML = '<div class="empty-state">No closed trades yet.</div>';
+      } else {
+        const rows = closed.map(t => {
+          const entryPrice = t.entry_price ?? t.price;
+          const direction  = t.direction || (t.action === 'buy' ? 'Long' : 'Short');
+          const pnl = t.pnl;
+          const pnlHtml = pnl != null
+            ? `<span class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}$${Number(pnl).toFixed(2)}</span>`
+            : '—';
+          return `<tr>
+            <td style="font-weight:600;">${t.name || t.symbol || '—'}</td>
+            <td style="color:var(--accent);font-weight:600;">${t.symbol || '—'}</td>
+            <td><span class="badge ${direction === 'Long' ? 'badge-long' : 'badge-short'}">${direction}</span></td>
+            <td>${t.quantity || '—'}</td>
+            <td>${entryPrice ? '$'+Number(entryPrice).toFixed(2) : '—'}</td>
+            <td>${pnlHtml}</td>
+            <td style="color:var(--muted);font-size:0.8rem;">${t.broker || 'paper'}</td>
+            <td style="color:var(--muted);font-size:0.78rem;">${t.closed_at ? new Date(t.closed_at).toLocaleDateString() : '—'}</td>
+          </tr>`;
+        });
+        closedEl.innerHTML = `<table class="trades-table">
+          <thead><tr>
+            <th>System</th><th>Symbol</th><th>Side</th><th>Qty</th>
+            <th>Entry</th><th>P&L</th><th>Broker</th><th>Closed</th>
+          </tr></thead>
+          <tbody>${rows.join('')}</tbody>
+        </table>`;
+      }
+    }
+
+    function switchTab(tab) {
+      document.getElementById('tab-content-trades').style.display = tab === 'trades' ? 'block' : 'none';
+      document.getElementById('tab-content-json').style.display   = tab === 'json'   ? 'block' : 'none';
+      document.getElementById('tab-trades').style.borderBottomColor = tab === 'trades' ? 'var(--accent)' : 'transparent';
+      document.getElementById('tab-trades').style.color = tab === 'trades' ? 'var(--text)' : 'var(--muted)';
+      document.getElementById('tab-json').style.borderBottomColor = tab === 'json' ? 'var(--accent)' : 'transparent';
+      document.getElementById('tab-json').style.color = tab === 'json' ? 'var(--text)' : 'var(--muted)';
+      if (tab === 'json') buildJSONPreview();
+    }
+
+    let currentAssetType = 'stock';
+
+    function switchAssetType(type) {
+      currentAssetType = type;
+      ['stock','options','crypto','futures'].forEach(t => {
+        const btn = document.getElementById('jat-' + t);
+        if (btn) {
+          btn.style.background = t === type ? 'var(--accent)' : 'transparent';
+          btn.style.color = t === type ? '#000' : 'var(--muted)';
+          btn.style.borderColor = t === type ? 'var(--accent)' : '#2a2a2a';
+        }
+      });
+      document.getElementById('json-options-fields').style.display = type === 'options' ? 'grid' : 'none';
+      document.getElementById('json-futures-fields').style.display = type === 'futures' ? 'grid' : 'none';
+      buildJSONPreview();
+    }
+
+    function buildJSONPreview() {
+      const action    = document.getElementById('json-action')?.value || 'buy';
+      const symbolRaw = document.getElementById('json-symbol')?.value.trim();
+      const symbol    = symbolRaw || '{{ticker}}';
+      const qty       = parseFloat(document.getElementById('json-qty')?.value) || 1;
+      const orderType = document.getElementById('json-order-type')?.value || 'market';
+      const broker    = document.getElementById('json-broker')?.value || 'paper';
+      const priceRaw  = document.getElementById('json-price')?.value.trim();
+      const price     = priceRaw || '{{close}}';
+
+      // Update webhook URL display
+      const systemSel = document.getElementById('json-system');
+      const webhookEl = document.getElementById('json-webhook-url');
+      const selectedOpt = systemSel?.options[systemSel.selectedIndex];
+      const webhookUrl = selectedOpt?.dataset?.url || '';
+      if (webhookUrl) {
+        webhookEl.textContent = '🔗 ' + webhookUrl;
+        webhookEl.style.display = 'block';
+      } else {
+        webhookEl.style.display = 'none';
+      }
+
+      const payload = {
+        action,
+        symbol,
+        quantity: qty,
+        order_type: orderType,
+        broker,
+        price,
+        time: '{{time}}'
+      };
+
+      if (currentAssetType === 'options') {
+        payload.contract = document.getElementById('json-contract')?.value || 'call';
+        const strike = document.getElementById('json-strike')?.value;
+        const expiry = document.getElementById('json-expiry')?.value;
+        if (strike) payload.strike = parseFloat(strike);
+        if (expiry) payload.expiry = expiry;
+      } else if (currentAssetType === 'futures') {
+        payload.direction = document.getElementById('json-direction')?.value || 'Long';
+      } else if (currentAssetType === 'crypto') {
+        payload.exchange = '{{exchange}}';
+      }
+
+      document.getElementById('json-preview').textContent = JSON.stringify(payload, null, 2);
+
+      // Update options chain link
+      const chainLink = document.getElementById('options-chain-link');
+      if (chainLink) {
+        const sym = symbolRaw && !symbolRaw.includes('{{') ? symbolRaw.toUpperCase() : 'AAPL';
+        chainLink.href = `https://finance.yahoo.com/quote/${sym}/options/`;
+        chainLink.textContent = `View ${sym} Chain ↗`;
+      }
+    }
+
+    async function loadSystemsDropdown() {
+      const { data: { session } } = await sbClient.auth.getSession();
+      if (!session) return;
+      const sel = document.getElementById('json-system');
+      // Load from Supabase
+      const { data } = await sbClient.from('systems').select('id,name').eq('user_id', session.user.id);
+      const systems = data && data.length > 0 ? data : JSON.parse(localStorage.getItem('easytrade_systems') || '[]');
+      systems.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name;
+        opt.dataset.url = `${SUPABASE_URL}/functions/v1/trade-webhook?user_id=${session.user.id}&system_id=${s.id}`;
+        sel.appendChild(opt);
+      });
+    }
+
+    function copyJSON() {
+      const text = document.getElementById('json-preview').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('[onclick="copyJSON()"]');
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = orig, 1500);
+      });
+    }
+
+    async function init() {
+      const { data: { session } } = await sbClient.auth.getSession();
+      if (!session) { window.location.href = 'signin.html'; return; }
+      document.getElementById('loading-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'flex';
+      document.getElementById('signout-btn').addEventListener('click', async () => {
+        await sbClient.auth.signOut(); window.location.href = 'index.html';
+      });
+      await loadSystemsFilter();
+      await loadTrades();
+      await loadSystemsDropdown();
+      buildJSONPreview();
+      // Poll every 10s to pick up new webhook trades automatically
+      setInterval(loadTrades, 10000);
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -92,7 +92,7 @@
 
   <div id="app">
     <nav>
-      <a href="index.html" class="logo">Eazy<span>Trade</span></a>
+      <a href="index.html" class="logo">Easy<span>Trade</span></a>
     </nav>
 
     <div class="layout">
@@ -102,8 +102,7 @@
         <a href="alerts.html" class="sidebar-item">Systems</a>
         <a href="accounts.html" class="sidebar-item">Accounts</a>
         <div class="sidebar-section">Trading</div>
-        <a href="create-system.html" class="sidebar-item">Create System <span class="sidebar-arrow">›</span></a>
-        <a href="#" class="sidebar-item">Trades</a>
+        <a href="trades.html" class="sidebar-item">Trades</a>
         <a href="brokers.html" class="sidebar-item active">Brokers</a>
         <div class="sidebar-bottom">
           <a href="#" class="sidebar-item" style="padding:8px 4px;">Account <span class="sidebar-arrow">›</span></a>
@@ -208,16 +207,19 @@
 
           <div class="broker-card" id="tastytrade-card">
             <div class="broker-logo">tastytrade</div>
-            <div class="broker-desc">Connect via TradersPost webhook to automate trades on your tastytrade account.</div>
+            <div class="broker-desc">Connect your tastytrade account to automate real trades directly via the tastytrade API.</div>
             <div class="broker-tags">
               <span class="broker-tag">Stocks</span>
               <span class="broker-tag">Options</span>
               <span class="broker-tag">Futures</span>
-              <span class="broker-tag">Webhook</span>
+              <span class="broker-tag">Direct API</span>
             </div>
-            <div id="tastytrade-status" style="display:none;" class="broker-status">Connected via TradersPost</div>
-            <div id="tastytrade-url-display" class="webhook-url-display" style="display:none;"></div>
-            <button class="broker-connect" id="tastytrade-connect-btn" onclick="openWebhookModal('tastytrade')">Connect Webhook</button>
+            <div id="tastytrade-status" style="display:none;" class="broker-status">✓ Connected</div>
+            <div id="tastytrade-account-display" style="display:none;font-size:0.78rem;color:#555;margin-top:2px;"></div>
+            <div style="display:flex;gap:8px;">
+              <button class="broker-connect" id="tastytrade-connect-btn" onclick="openTastyModal()">Connect Account</button>
+              <button id="tastytrade-disconnect-btn" onclick="disconnectTastytrade()" style="display:none;background:transparent;border:1px solid var(--red);color:var(--red);font-size:0.82rem;font-weight:700;padding:8px 16px;border-radius:7px;cursor:pointer;font-family:inherit;">Disconnect</button>
+            </div>
           </div>
 
 
@@ -226,27 +228,39 @@
     </div>
   </div>
 
-  <!-- WEBHOOK MODAL -->
-  <div class="modal-overlay" id="webhook-modal">
+  <!-- TASTYTRADE MODAL -->
+  <div class="modal-overlay" id="tastytrade-modal">
     <div class="modal">
       <div class="modal-header">
-        <div class="modal-title" id="webhook-modal-title">Connect Webhook</div>
-        <button class="modal-close" id="webhook-modal-close">&times;</button>
+        <div class="modal-title">Connect tastytrade</div>
+        <button class="modal-close" onclick="closeTastyModal()">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="field-group">
-          <label>TradersPost Webhook URL</label>
-          <input type="url" id="webhook-url-input" placeholder="https://app.traderspost.io/trading/webhook/..." />
+        <!-- Step 1: credentials -->
+        <div id="tasty-step-1">
+          <div class="field-group">
+            <label>Username</label>
+            <input type="text" id="tasty-username" placeholder="Your tastytrade username" autocomplete="off" />
+          </div>
+          <div class="field-group">
+            <label>Password</label>
+            <input type="password" id="tasty-password" placeholder="Your tastytrade password" autocomplete="off" />
+          </div>
+          <div class="field-hint" style="color:#555;">Your credentials are stored encrypted and only used to authenticate with the tastytrade API.</div>
         </div>
-        <div class="field-hint">
-          1. Log into <a href="https://traderspost.io" target="_blank" style="color:var(--accent);">TradersPost</a> and connect your Webull account.<br>
-          2. Create a new Strategy and copy the Webhook URL.<br>
-          3. Paste it above — your alerts will send signals directly to Webull.
+        <!-- Step 2: MFA code -->
+        <div id="tasty-step-2" style="display:none;">
+          <div style="font-size:0.85rem;color:var(--muted);margin-bottom:14px;">tastytrade sent a verification code to your email or phone. Enter it below.</div>
+          <div class="field-group">
+            <label>Verification Code</label>
+            <input type="text" id="tasty-mfa-code" placeholder="e.g. 123456" autocomplete="off" style="letter-spacing:0.15em;font-size:1.1rem;" />
+          </div>
         </div>
+        <div id="tasty-error" style="display:none;color:var(--red);font-size:0.82rem;margin-top:4px;"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn-cancel" id="webhook-modal-cancel">Cancel</button>
-        <button class="btn-save" id="webhook-modal-save">Save</button>
+        <button class="btn-cancel" onclick="closeTastyModal()">Cancel</button>
+        <button class="btn-save" id="tasty-save-btn" onclick="saveTastyCredentials()">Connect</button>
       </div>
     </div>
   </div>
@@ -256,69 +270,141 @@
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzYW5odXR6eWN0Y2p5Z2poemJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMTYzNDYsImV4cCI6MjA5MTY5MjM0Nn0.L0ATp-IriR708C2n3as_YXDgjHvtn_CWubbzPeSxRi0';
     const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    let currentWebhookBroker = null;
+    let currentUser = null;
+    let tastyMfaPending = false;
 
-    function enablePaperTrading() {
+    async function enablePaperTrading() {
       localStorage.setItem('paper_trading_enabled', 'true');
+      localStorage.setItem('paper_balance', localStorage.getItem('paper_balance') || '100000');
+      const { data: { session } } = await sbClient.auth.getSession();
+      if (session) {
+        await sbClient.auth.updateUser({ data: { paper_trading_enabled: true, paper_balance: parseFloat(localStorage.getItem('paper_balance')) } });
+      }
       window.location.href = 'accounts.html';
     }
 
-    function openWebhookModal(broker) {
-      currentWebhookBroker = broker;
-      const saved = localStorage.getItem(`webhook_${broker}`) || '';
-      document.getElementById('webhook-url-input').value = saved;
-      document.getElementById('webhook-modal-title').textContent = `Connect ${broker.charAt(0).toUpperCase() + broker.slice(1)} Webhook`;
-      document.getElementById('webhook-modal').classList.add('open');
+    function openTastyModal() {
+      document.getElementById('tasty-username').value = '';
+      document.getElementById('tasty-password').value = '';
+      document.getElementById('tasty-error').style.display = 'none';
+      document.getElementById('tastytrade-modal').classList.add('open');
     }
 
-    function closeWebhookModal() {
-      document.getElementById('webhook-modal').classList.remove('open');
-      currentWebhookBroker = null;
+    function closeTastyModal() {
+      document.getElementById('tastytrade-modal').classList.remove('open');
+      tastyMfaPending = false;
+      document.getElementById('tasty-step-1').style.display = 'block';
+      document.getElementById('tasty-step-2').style.display = 'none';
+      document.getElementById('tasty-save-btn').textContent = 'Connect';
     }
 
-    function applyWebhookUI(broker, url) {
-      const card = document.getElementById(`${broker}-card`);
-      const status = document.getElementById(`${broker}-status`);
-      const display = document.getElementById(`${broker}-url-display`);
-      const btn = document.getElementById(`${broker}-connect-btn`);
-      if (!card) return;
-      if (url) {
+    async function saveTastyCredentials() {
+      const errEl = document.getElementById('tasty-error');
+      const btn   = document.getElementById('tasty-save-btn');
+      errEl.style.display = 'none';
+
+      // Step 2 — submit MFA code
+      if (tastyMfaPending) {
+        const code = document.getElementById('tasty-mfa-code').value.trim();
+        if (!code) { errEl.textContent = 'Enter the verification code.'; errEl.style.display = 'block'; return; }
+
+        const username = document.getElementById('tasty-username').value.trim();
+        const password = document.getElementById('tasty-password').value.trim();
+        btn.textContent = 'Verifying...'; btn.disabled = true;
+
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/tasty-auth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+            body: JSON.stringify({ username, password, mfa_code: code, user_id: currentUser.id })
+          });
+          const json = await res.json();
+          if (json.error) throw new Error(json.error);
+
+          applyTastyUI(true, username);
+          closeTastyModal();
+        } catch(e) {
+          errEl.textContent = e.message || 'Invalid code. Try again.';
+          errEl.style.display = 'block';
+        } finally {
+          btn.textContent = 'Verify'; btn.disabled = false;
+        }
+        return;
+      }
+
+      // Step 1 — submit username/password
+      const username = document.getElementById('tasty-username').value.trim();
+      const password = document.getElementById('tasty-password').value.trim();
+      if (!username || !password) { errEl.textContent = 'Username and password are required.'; errEl.style.display = 'block'; return; }
+
+      btn.textContent = 'Connecting...'; btn.disabled = true;
+
+      try {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/tasty-auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+          body: JSON.stringify({ username, password, user_id: currentUser.id })
+        });
+        const json = await res.json();
+
+        if (json.mfa_required) {
+          tastyMfaPending = true;
+          document.getElementById('tasty-step-1').style.display = 'none';
+          document.getElementById('tasty-step-2').style.display = 'block';
+          btn.textContent = 'Verify';
+          btn.disabled = false;
+          return;
+        }
+
+        if (json.error) throw new Error(json.error);
+
+        applyTastyUI(true, username);
+        closeTastyModal();
+      } catch(e) {
+        errEl.textContent = e.message || 'Could not connect. Check your credentials.';
+        errEl.style.display = 'block';
+      } finally {
+        btn.textContent = 'Connect'; btn.disabled = false;
+      }
+    }
+
+    async function disconnectTastytrade() {
+      await sbClient.from('broker_credentials').delete().eq('user_id', currentUser.id).eq('broker', 'tastytrade');
+      applyTastyUI(false);
+    }
+
+    function applyTastyUI(connected, username = '') {
+      const card    = document.getElementById('tastytrade-card');
+      const status  = document.getElementById('tastytrade-status');
+      const acctEl  = document.getElementById('tastytrade-account-display');
+      const connBtn = document.getElementById('tastytrade-connect-btn');
+      const discBtn = document.getElementById('tastytrade-disconnect-btn');
+      if (connected) {
         card.classList.add('broker-connected');
         status.style.display = 'block';
-        display.style.display = 'block';
-        display.textContent = url;
-        btn.textContent = 'Edit Webhook';
+        acctEl.style.display = 'block';
+        acctEl.textContent = username;
+        connBtn.textContent = 'Edit Credentials';
+        discBtn.style.display = 'block';
       } else {
         card.classList.remove('broker-connected');
         status.style.display = 'none';
-        display.style.display = 'none';
-        btn.textContent = 'Connect Webhook';
+        acctEl.style.display = 'none';
+        connBtn.textContent = 'Connect Account';
+        discBtn.style.display = 'none';
       }
     }
-
-    document.getElementById('webhook-modal-close').addEventListener('click', closeWebhookModal);
-    document.getElementById('webhook-modal-cancel').addEventListener('click', closeWebhookModal);
-
-    document.getElementById('webhook-modal-save').addEventListener('click', () => {
-      const url = document.getElementById('webhook-url-input').value.trim();
-      if (!currentWebhookBroker) return;
-      if (url) {
-        localStorage.setItem(`webhook_${currentWebhookBroker}`, url);
-      } else {
-        localStorage.removeItem(`webhook_${currentWebhookBroker}`);
-      }
-      applyWebhookUI(currentWebhookBroker, url);
-      closeWebhookModal();
-      if (url) window.location.href = 'accounts.html';
-    });
 
     async function init() {
       const { data: { session } } = await sbClient.auth.getSession();
       if (!session) { window.location.href = 'signin.html'; return; }
+      currentUser = session.user;
       document.getElementById('loading-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
 
-      applyWebhookUI('tastytrade', localStorage.getItem('webhook_tastytrade') || '');
+      // Check if tastytrade already connected
+      const { data: creds } = await sbClient.from('broker_credentials').select('credentials').eq('user_id', currentUser.id).eq('broker', 'tastytrade').maybeSingle();
+      if (creds) applyTastyUI(true, creds.credentials.username);
 
       document.getElementById('signout-btn').addEventListener('click', async () => {
         await sbClient.auth.signOut();

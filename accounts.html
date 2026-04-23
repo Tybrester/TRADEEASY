@@ -81,7 +81,7 @@
 
   <div id="app">
     <nav>
-      <a href="index.html" class="logo">Eazy<span>Trade</span></a>
+      <a href="index.html" class="logo">Easy<span>Trade</span></a>
     </nav>
 
     <div class="layout">
@@ -91,8 +91,7 @@
         <a href="alerts.html" class="sidebar-item">Systems</a>
         <a href="accounts.html" class="sidebar-item active">Accounts</a>
         <div class="sidebar-section">Trading</div>
-        <a href="create-system.html" class="sidebar-item">Create System <span class="sidebar-arrow">›</span></a>
-        <a href="#" class="sidebar-item">Trades</a>
+        <a href="trades.html" class="sidebar-item">Trades</a>
         <a href="brokers.html" class="sidebar-item">Brokers</a>
         <div class="sidebar-bottom">
           <button class="sidebar-item" id="signout-btn" style="color:#ff1744;padding:8px 4px;width:100%;">Sign Out</button>
@@ -127,6 +126,13 @@
 
       const user = session.user;
 
+      if (user.user_metadata?.paper_trading_enabled) {
+        localStorage.setItem('paper_trading_enabled', 'true');
+        if (user.user_metadata?.paper_balance) {
+          localStorage.setItem('paper_balance', String(user.user_metadata.paper_balance));
+        }
+      }
+
       const paperEnabled = localStorage.getItem('paper_trading_enabled') === 'true';
       const connectedBrokers = BROKER_KEYS.filter(k => localStorage.getItem(`webhook_${k}`));
       const section = document.getElementById('connected-accounts-section');
@@ -141,7 +147,7 @@
           html += `
             <div class="broker-account-card paper">
               <div>
-                <div class="bac-name">EazyTrade Paper</div>
+                <div class="bac-name">EasyTrade Paper</div>
                 <div class="bac-type">Paper Trading · Simulated</div>
               </div>
               <div class="bac-balance">
