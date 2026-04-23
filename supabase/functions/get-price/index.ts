@@ -3,6 +3,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const cache: Record<string, { price: number; ts: number }> = {};
+
 const futuresMap: Record<string, string> = {
   'CL1!': 'CL=F', 'ES1!': 'ES=F', 'NQ1!': 'NQ=F', 'GC1!': 'GC=F',
   'SI1!': 'SI=F', 'NG1!': 'NG=F', 'ZB1!': 'ZB=F', 'ZN1!': 'ZN=F',
@@ -28,9 +30,21 @@ Deno.serve(async (req) => {
     });
 
     const ticker = normalizeSymbol(symbol);
-    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`);
+
+    // Return cached price if within 2 minutes
+    const cached = cache[ticker];
+    if (cached && Date.now() - cached.ts < 120000) {
+      return new Response(JSON.stringify({ price: cached.price, ticker, cached: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
     const json = await res.json();
     const price = json?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
+    if (price) cache[ticker] = { price, ts: Date.now() };
 
     return new Response(JSON.stringify({ price, ticker }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

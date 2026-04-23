@@ -150,15 +150,21 @@
       return s;
     }
 
+    const priceCache = {};
     async function fetchPrice(symbol) {
       if (!symbol) return null;
+      const cached = priceCache[symbol];
+      if (cached && Date.now() - cached.ts < 60000 && cached.price !== null) return cached.price;
       try {
         const res = await fetch(`${SUPABASE_URL}/functions/v1/get-price?symbol=${encodeURIComponent(symbol)}`, {
           headers: { 'apikey': SUPABASE_ANON_KEY }
         });
         const json = await res.json();
-        return json.price || null;
-      } catch { return null; }
+        console.log('[fetchPrice]', symbol, json);
+        const price = json.price || null;
+        if (price) priceCache[symbol] = { price, ts: Date.now() };
+        return price;
+      } catch(e) { console.error('[fetchPrice error]', e); return null; }
     }
 
     async function closeTrade(id, symbol, direction, entryPrice, quantity, broker) {
@@ -436,6 +442,7 @@
       const { data: { session } } = await sbClient.auth.getSession();
       if (!session) return;
       const sel = document.getElementById('json-system');
+      if (!sel) return;
       // Load from Supabase
       const { data } = await sbClient.from('systems').select('id,name').eq('user_id', session.user.id);
       const systems = data && data.length > 0 ? data : JSON.parse(localStorage.getItem('easytrade_systems') || '[]');
@@ -471,7 +478,7 @@
       await loadSystemsDropdown();
       buildJSONPreview();
       // Poll every 10s to pick up new webhook trades automatically
-      setInterval(loadTrades, 10000);
+      setInterval(loadTrades, 60000);
     }
 
     init();
