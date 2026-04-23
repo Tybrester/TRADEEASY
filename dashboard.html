@@ -533,6 +533,21 @@
           const closedCount = (allTrades || []).filter(t => t.status === 'closed').length;
           if (pnlSub) pnlSub.textContent = `${closedCount} closed · ${openTrades.length} open`;
         }
+
+        // Win rate
+        const closedTrades = (allTrades || []).filter(t => t.status === 'closed' && t.pnl != null);
+        const wins = closedTrades.filter(t => parseFloat(t.pnl) > 0).length;
+        const winRate = closedTrades.length > 0 ? Math.round((wins / closedTrades.length) * 100) : null;
+        const winRateCard = document.querySelectorAll('.stat-card')[2];
+        if (winRateCard) {
+          const wrVal = winRateCard.querySelector('.value');
+          const wrSub = winRateCard.querySelector('.sub');
+          if (wrVal) {
+            wrVal.textContent = winRate !== null ? `${winRate}%` : '—';
+            wrVal.style.color = winRate === null ? '' : winRate >= 50 ? 'var(--accent)' : 'var(--red)';
+          }
+          if (wrSub) wrSub.textContent = closedTrades.length > 0 ? `${wins} wins / ${closedTrades.length} trades` : 'Start trading to track';
+        }
       }
 
       await refreshStats();
