@@ -216,17 +216,28 @@
     }
 
     function showTradeError(message) {
-      let errDiv = document.getElementById('trade-error-banner');
-      if (!errDiv) {
-        errDiv = document.createElement('div');
-        errDiv.id = 'trade-error-banner';
-        errDiv.style.cssText = 'background:rgba(255,23,68,0.1);border:1px solid var(--red);color:var(--red);padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:0.85rem;display:flex;align-items:center;gap:8px;';
-        const main = document.querySelector('main');
-        main.insertBefore(errDiv, main.firstChild);
-      }
-      errDiv.innerHTML = `<span>⚠️</span> ${message}`;
-      errDiv.style.display = 'flex';
-      setTimeout(() => { errDiv.style.display = 'none'; }, 5000);
+      // Create modal overlay
+      const overlay = document.createElement('div');
+      overlay.id = 'trade-error-modal';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      
+      const modal = document.createElement('div');
+      modal.style.cssText = 'background:var(--surface);border:1px solid var(--red);border-radius:12px;padding:28px 32px;max-width:380px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.5);';
+      
+      modal.innerHTML = `
+        <div style="font-size:2.5rem;margin-bottom:12px;">⚠️</div>
+        <div style="font-size:1.1rem;font-weight:700;color:var(--red);margin-bottom:12px;">Insufficient Funds</div>
+        <div style="font-size:0.9rem;color:var(--text);line-height:1.5;margin-bottom:20px;">${message}</div>
+        <button onclick="this.closest('#trade-error-modal').remove()" style="background:var(--red);color:#fff;font-weight:700;padding:10px 28px;border-radius:8px;border:none;cursor:pointer;font-family:inherit;font-size:0.9rem;">OK</button>
+      `;
+      
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      
+      // Close on overlay click
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+      });
     }
 
     async function fillTrade(id, action, price, quantity) {
