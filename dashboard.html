@@ -684,6 +684,12 @@
         window.location.href = 'index.html';
       });
 
+      // Contact footer
+      const footer = document.createElement('div');
+      footer.style.cssText = 'text-align:center;padding:24px;font-size:0.85rem;color:#666;margin-top:auto;';
+      footer.innerHTML = 'Contact: <a href="mailto:easytrade@gmail.com" style="color:var(--muted);text-decoration:none;">easytrade@gmail.com</a>';
+      document.querySelector('main').appendChild(footer);
+
       // User dropdown toggle
       const dropdown = document.getElementById('user-dropdown');
       const toggle = document.getElementById('user-email-toggle');
