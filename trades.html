@@ -121,22 +121,50 @@
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzYW5odXR6eWN0Y2p5Z2poemJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMTYzNDYsImV4cCI6MjA5MTY5MjM0Nn0.L0ATp-IriR708C2n3as_YXDgjHvtn_CWubbzPeSxRi0';
     const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    function detectAssetType(symbol, payload) {
+      if (payload?.assetType) return payload.assetType;
+      if (payload?.asset_type) return payload.asset_type;
+      if (!symbol) return 'Stock';
+      const s = symbol.toUpperCase();
+      // Futures: end with ! or =F
+      if (s.endsWith('!') || s.endsWith('=F') || /^(CL|ES|NQ|GC|SI|NG|ZB|ZN|YM|RTY|MES|MNQ|MCL|MGC)/.test(s)) return 'Future';
+      // Crypto: ends with USDT, USD, BTC, ETH pairings
+      if (s.endsWith('USDT') || s.endsWith('-USD') || s.endsWith('BTC') || s.endsWith('ETH')) return 'Crypto';
+      // Options: long symbol with numbers and C/P (e.g. AAPL240419C00150000)
+      if (/^[A-Z]{1,5}\d{6}[CP]\d+$/.test(s)) return 'Option';
+      return 'Stock';
+    }
+
+    function normalizeSymbol(symbol) {
+      if (!symbol) return symbol;
+      let s = symbol.includes(':') ? symbol.split(':')[1] : symbol;
+      // TradingView futures use ! suffix — map to Yahoo Finance equivalents
+      const futuresMap = {
+        'CL1!': 'CL=F', 'ES1!': 'ES=F', 'NQ1!': 'NQ=F', 'GC1!': 'GC=F',
+        'SI1!': 'SI=F', 'NG1!': 'NG=F', 'ZB1!': 'ZB=F', 'ZN1!': 'ZN=F',
+        'YM1!': 'YM=F', 'RTY1!': 'RTY=F', 'MES1!': 'MES=F', 'MNQ1!': 'MNQ=F',
+      };
+      if (futuresMap[s]) return futuresMap[s];
+      if (s.endsWith('!')) s = s.replace('!', '=F');
+      if (s.endsWith('USDT')) s = s.replace('USDT', '-USD');
+      return s;
+    }
+
     async function fetchPrice(symbol) {
+      if (!symbol) return null;
       try {
-        const ticker = symbol.includes(':') ? symbol.split(':')[1] : symbol;
-        const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`);
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/get-price?symbol=${encodeURIComponent(symbol)}`, {
+          headers: { 'apikey': SUPABASE_ANON_KEY }
+        });
         const json = await res.json();
-        return json.chart.result[0].meta.regularMarketPrice;
+        return json.price || null;
       } catch { return null; }
     }
 
     async function closeTrade(id, symbol, direction, entryPrice, quantity, broker) {
       let exitPrice = null;
       try {
-        const sym = (symbol || '').split(':')[1] || symbol;
-        const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1m&range=1d`);
-        const json = await res.json();
-        exitPrice = json.chart.result[0].meta.regularMarketPrice;
+        exitPrice = await fetchPrice(symbol);
       } catch(e) {}
 
       const pnl = exitPrice
@@ -227,9 +255,10 @@
             <td style="font-weight:600;">${t.name || t.symbol || '—'} <span class="badge" style="font-size:0.68rem;background:rgba(255,193,7,0.12);color:#ffc107;">Pending</span></td>
             <td style="color:var(--accent);font-weight:600;">${t.symbol || '—'}</td>
             <td><span class="badge ${direction === 'Long' ? 'badge-long' : 'badge-short'}">${direction}</span></td>
+            <td style="color:var(--muted);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em;">${detectAssetType(t.symbol, t.payload)}</td>
             <td>${t.quantity || '—'}</td>
-            <td>${entryPrice ? '$'+Number(entryPrice).toFixed(2) : '—'}</td>
-            <td>${currentPrice ? '$'+currentPrice.toFixed(2) : '—'}</td>
+            <td>${currentPrice ? '$'+currentPrice.toFixed(2) : (entryPrice ? '$'+Number(entryPrice).toFixed(2) : '—')}</td>
+            <td>${(currentPrice && t.quantity) ? '$'+(currentPrice * t.quantity).toFixed(2) : '—'}</td>
             <td style="color:var(--muted);font-size:0.8rem;">${t.broker || 'paper'}</td>
             <td style="display:flex;gap:6px;">
               <button class="btn-close-trade" style="border-color:var(--accent);color:var(--accent);" onclick="fillTrade('${t.id}','${t.action||'buy'}',${currentPrice||entryPrice||0},${t.quantity||1})">Fill</button>
@@ -239,8 +268,8 @@
         }));
         pendingEl.innerHTML = `<table class="trades-table">
           <thead><tr>
-            <th>System</th><th>Symbol</th><th>Side</th><th>Qty</th>
-            <th>Signal Price</th><th>Current</th><th>Broker</th><th></th>
+            <th>System</th><th>Symbol</th><th>Side</th><th>Type</th><th>Qty</th>
+            <th>Market Price</th><th>Est. Cost</th><th>Broker</th><th></th>
           </tr></thead>
           <tbody>${rows.join('')}</tbody>
         </table>`;
@@ -269,6 +298,7 @@
             <td style="font-weight:600;">${t.name || t.symbol || '—'}${statusBadge}</td>
             <td style="color:var(--accent);font-weight:600;">${t.symbol || '—'}</td>
             <td><span class="badge ${direction === 'Long' ? 'badge-long' : 'badge-short'}">${direction}</span></td>
+            <td style="color:var(--muted);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em;">${detectAssetType(t.symbol, t.payload)}</td>
             <td>${t.quantity || '—'}</td>
             <td>${entryPrice ? '$'+Number(entryPrice).toFixed(2) : '—'}</td>
             <td>${currentPrice ? '$'+currentPrice.toFixed(2) : '—'}</td>
@@ -282,7 +312,7 @@
         }));
         openEl.innerHTML = `<table class="trades-table">
           <thead><tr>
-            <th>System</th><th>Symbol</th><th>Side</th><th>Qty</th>
+            <th>System</th><th>Symbol</th><th>Side</th><th>Type</th><th>Qty</th>
             <th>Entry</th><th>Current</th><th>P&L</th><th>Broker</th><th></th>
           </tr></thead>
           <tbody>${rows.join('')}</tbody>
