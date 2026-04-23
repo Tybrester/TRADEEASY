@@ -572,15 +572,34 @@
       brokerSel.addEventListener('change', () => showBalance(brokerSel.value));
 
       async function refreshStats() {
-        // Refresh balance
-        const { data: freshAcct } = await sbClient.from('paper_accounts').select('balance').eq('user_id', user.id).maybeSingle();
-        const freshBalance = freshAcct?.balance ?? 100000;
-        if (brokerSel.value === 'paper') {
-          balEl.textContent = '$' + freshBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        }
-
         // Load all trades
         const { data: allTrades } = await sbClient.from('trades').select('id,status,pnl,symbol,action,price,quantity').eq('user_id', user.id);
+
+        // Get stored paper balance
+        const { data: freshAcct } = await sbClient.from('paper_accounts').select('balance').eq('user_id', user.id).maybeSingle();
+        const storedBalance = freshAcct?.balance ?? 100000;
+
+        // Calculate unrealized P&L from open positions
+        const openTrades = (allTrades || []).filter(t => t.status === 'filled' && t.symbol && t.price && t.quantity);
+        let unrealizedPnl = 0;
+        await Promise.all(openTrades.map(async t => {
+          try {
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/get-price?symbol=${encodeURIComponent(t.symbol)}`, { headers: { 'apikey': SUPABASE_ANON_KEY } });
+            const j = await res.json();
+            if (j.price) {
+              const diff = t.action === 'buy' ? (j.price - t.price) * t.quantity : (t.price - j.price) * t.quantity;
+              unrealizedPnl += diff;
+            }
+          } catch {}
+        }));
+
+        // Effective balance = stored balance + unrealized P&L
+        const effectiveBalance = storedBalance + unrealizedPnl;
+        if (brokerSel.value === 'paper') {
+          balEl.textContent = '$' + effectiveBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const pnlText = unrealizedPnl >= 0 ? `+${unrealizedPnl.toFixed(0)}` : unrealizedPnl.toFixed(0);
+          balSub.textContent = `Base: $${storedBalance.toLocaleString()} ${unrealizedPnl !== 0 ? '· Unrealized: $' + pnlText : ''}`;
+        }
 
         // Active trades count
         const activeCount = (allTrades || []).filter(t => t.status === 'open' || t.status === 'filled').length;
@@ -594,20 +613,7 @@
           .filter(t => t.status === 'closed' && t.pnl != null)
           .reduce((sum, t) => sum + parseFloat(t.pnl), 0);
 
-        const openTrades = (allTrades || []).filter(t => t.status === 'filled' && t.symbol && t.price && t.quantity);
-        let livePnl = 0;
-        await Promise.all(openTrades.map(async t => {
-          try {
-            const res = await fetch(`${SUPABASE_URL}/functions/v1/get-price?symbol=${encodeURIComponent(t.symbol)}`, { headers: { 'apikey': SUPABASE_ANON_KEY } });
-            const j = await res.json();
-            if (j.price) {
-              const diff = t.action === 'buy' ? (j.price - t.price) * t.quantity : (t.price - j.price) * t.quantity;
-              livePnl += diff;
-            }
-          } catch {}
-        }));
-
-        const totalPnl = closedPnl + livePnl;
+        const totalPnl = closedPnl + unrealizedPnl;
         const pnlCard = document.querySelector('.stat-card:last-child');
         if (pnlCard) {
           const pnlVal = pnlCard.querySelector('.value');
