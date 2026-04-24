@@ -346,7 +346,7 @@
       let actualPrice = numValue;
       if (type === 'percent') {
         // Convert percentage to price
-        const pct = numValue / 100;
+        const pct = Math.abs(numValue) / 100; // Use absolute value
         const isLong = direction === 'Long';
         if (field === 'take_profit') {
           // TP: Long=above entry, Short=below entry
@@ -356,10 +356,19 @@
           actualPrice = isLong ? entryPrice * (1 - pct) : entryPrice * (1 + pct);
         }
       }
+      
+      // Ensure price is positive and makes sense
+      if (actualPrice <= 0) {
+        if (statusEl) {
+          statusEl.textContent = 'Invalid price!';
+          statusEl.style.color = 'var(--red)';
+        }
+        return;
+      }
 
       const updateData = field === 'take_profit' 
-        ? { take_profit: actualPrice, take_profit_type: type, take_profit_input: numValue }
-        : { stop_loss: actualPrice, stop_loss_type: type, stop_loss_input: numValue };
+        ? { take_profit: actualPrice, take_profit_type: type, take_profit_input: Math.abs(numValue) }
+        : { stop_loss: actualPrice, stop_loss_type: type, stop_loss_input: Math.abs(numValue) };
       
       const { error } = await sbClient.from('trades').update(updateData).eq('id', id);
       if (error) {
@@ -793,8 +802,14 @@
         
         console.log(`[TP/SL Check] ${trade.symbol} | ${direction} | Current: $${currentPrice} | TP: $${tpPrice} | SL: $${slPrice}`);
         
+        // Skip if TP/SL are invalid (negative or zero)
+        if ((!isNaN(tpPrice) && tpPrice <= 0) || (!isNaN(slPrice) && slPrice <= 0)) {
+          console.log(`[TP/SL] Skipping ${trade.symbol} - invalid TP/SL values (negative or zero)`);
+          continue;
+        }
+        
         // Check Take Profit
-        if (!isNaN(tpPrice)) {
+        if (!isNaN(tpPrice) && tpPrice > 0) {
           if (direction === 'Long' && currentPrice >= tpPrice) {
             triggered = true;
             reason = 'Take Profit hit';
@@ -807,7 +822,7 @@
         }
         
         // Check Stop Loss
-        if (!triggered && !isNaN(slPrice)) {
+        if (!triggered && !isNaN(slPrice) && slPrice > 0) {
           if (direction === 'Long' && currentPrice <= slPrice) {
             triggered = true;
             reason = 'Stop Loss hit';
