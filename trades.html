@@ -326,7 +326,7 @@
       loadTrades();
     }
 
-    async function updateTPSL(id, field, value, type, entryPrice) {
+    async function updateTPSL(id, field, value, type, entryPrice, direction = 'Long') {
       const statusEl = document.getElementById(`${field === 'take_profit' ? 'tp' : 'sl'}-status-${id}`);
       if (statusEl) statusEl.textContent = 'Saving...';
       
@@ -342,15 +342,18 @@
         return;
       }
 
-      // Calculate actual price based on type
+      // Calculate actual price based on type and direction
       let actualPrice = numValue;
       if (type === 'percent') {
         // Convert percentage to price
         const pct = numValue / 100;
+        const isLong = direction === 'Long';
         if (field === 'take_profit') {
-          actualPrice = entryPrice * (1 + pct);  // TP is above entry for long
+          // TP: Long=above entry, Short=below entry
+          actualPrice = isLong ? entryPrice * (1 + pct) : entryPrice * (1 - pct);
         } else {
-          actualPrice = entryPrice * (1 - pct);  // SL is below entry for long
+          // SL: Long=below entry, Short=above entry
+          actualPrice = isLong ? entryPrice * (1 - pct) : entryPrice * (1 + pct);
         }
       }
 
@@ -520,8 +523,8 @@
             <td>${pnlHtml}</td>
             <td>
               <div style="display:flex;gap:6px;align-items:center;">
-                <input type="number" step="0.01" id="tp-${t.id}" placeholder="TP" value="${t.take_profit_input || t.take_profit || ''}" onkeydown="if(event.key==='Enter'){updateTPSL('${t.id}','take_profit',this.value,document.getElementById('tp-type-${t.id}').value,${entryPrice});this.style.borderColor='var(--accent)';setTimeout(()=>this.style.borderColor='#333',1000);}" style="width:100px;background:#1a1a1a;border:2px solid #333;color:var(--text);padding:8px 10px;border-radius:6px;font-size:0.85rem;font-weight:600;outline:none;transition:border-color 0.2s;">
-                <select id="tp-type-${t.id}" onchange="updateTPSL('${t.id}', 'take_profit', document.getElementById('tp-${t.id}').value, this.value, ${entryPrice})" style="background:#1a1a1a;border:2px solid #333;color:var(--text);padding:8px;border-radius:6px;font-size:0.8rem;width:45px;cursor:pointer;">
+                <input type="number" step="0.01" id="tp-${t.id}" placeholder="TP" value="${t.take_profit_input || t.take_profit || ''}" onkeydown="if(event.key==='Enter'){updateTPSL('${t.id}','take_profit',this.value,document.getElementById('tp-type-${t.id}').value,${entryPrice},'${direction}');this.style.borderColor='var(--accent)';setTimeout(()=>this.style.borderColor='#333',1000);}" style="width:100px;background:#1a1a1a;border:2px solid #333;color:var(--text);padding:8px 10px;border-radius:6px;font-size:0.85rem;font-weight:600;outline:none;transition:border-color 0.2s;">
+                <select id="tp-type-${t.id}" onchange="updateTPSL('${t.id}', 'take_profit', document.getElementById('tp-${t.id}').value, this.value, ${entryPrice}, '${direction}')" style="background:#1a1a1a;border:2px solid #333;color:var(--text);padding:8px;border-radius:6px;font-size:0.8rem;width:45px;cursor:pointer;">
                   <option value="price" ${t.take_profit_type !== 'percent' ? 'selected' : ''}>$</option>
                   <option value="percent" ${t.take_profit_type === 'percent' ? 'selected' : ''}>%</option>
                 </select>
@@ -530,8 +533,8 @@
             </td>
             <td>
               <div style="display:flex;gap:6px;align-items:center;">
-                <input type="number" step="0.01" id="sl-${t.id}" placeholder="SL" value="${t.stop_loss_input || t.stop_loss || ''}" onkeydown="if(event.key==='Enter'){updateTPSL('${t.id}','stop_loss',this.value,document.getElementById('sl-type-${t.id}').value,${entryPrice});this.style.borderColor='var(--red)';setTimeout(()=>this.style.borderColor='#333',1000);}" style="width:100px;background:#1a1a1a;border:2px solid #333;color:var(--text);padding:8px 10px;border-radius:6px;font-size:0.85rem;font-weight:600;outline:none;transition:border-color 0.2s;">
-                <select id="sl-type-${t.id}" onchange="updateTPSL('${t.id}', 'stop_loss', document.getElementById('sl-${t.id}').value, this.value, ${entryPrice})" style="background:#1a1a1a;border:2px solid #333;color:var(--text);padding:8px;border-radius:6px;font-size:0.8rem;width:45px;cursor:pointer;">
+                <input type="number" step="0.01" id="sl-${t.id}" placeholder="SL" value="${t.stop_loss_input || t.stop_loss || ''}" onkeydown="if(event.key==='Enter'){updateTPSL('${t.id}','stop_loss',this.value,document.getElementById('sl-type-${t.id}').value,${entryPrice},'${direction}');this.style.borderColor='var(--red)';setTimeout(()=>this.style.borderColor='#333',1000);}" style="width:100px;background:#1a1a1a;border:2px solid #333;color:var(--text);padding:8px 10px;border-radius:6px;font-size:0.85rem;font-weight:600;outline:none;transition:border-color 0.2s;">
+                <select id="sl-type-${t.id}" onchange="updateTPSL('${t.id}', 'stop_loss', document.getElementById('sl-${t.id}').value, this.value, ${entryPrice}, '${direction}')" style="background:#1a1a1a;border:2px solid #333;color:var(--text);padding:8px;border-radius:6px;font-size:0.8rem;width:45px;cursor:pointer;">
                   <option value="price" ${t.stop_loss_type !== 'percent' ? 'selected' : ''}>$</option>
                   <option value="percent" ${t.stop_loss_type === 'percent' ? 'selected' : ''}>%</option>
                 </select>
