@@ -89,8 +89,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Handle paper trading — update balance
-    if (broker === 'paper' || broker === 'EasyTrade Paper') {
+    // Handle paper trading — update balance and auto-fill if auto_submit enabled
+    const isPaperBroker = broker === 'paper' || broker === 'booftrade paper' || broker === 'EasyTrade Paper';
+    if (isPaperBroker) {
       if (system.auto_submit && price) {
         const cost = price * quantity;
         const { data: acct } = await supabase.from('paper_accounts').select('*').eq('user_id', userId).maybeSingle();
@@ -100,7 +101,8 @@ Deno.serve(async (req) => {
         } else {
           await supabase.from('paper_accounts').insert({ user_id: userId, balance: action === 'buy' ? 100000 - cost : 100000 + cost });
         }
-        await supabase.from('trades').update({ status: 'filled' }).eq('id', trade.id);
+        // Auto-fill the trade immediately
+        await supabase.from('trades').update({ status: 'filled', price: price }).eq('id', trade.id);
       }
     }
 

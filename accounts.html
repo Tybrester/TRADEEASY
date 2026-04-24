@@ -106,7 +106,7 @@
         <div id="connected-accounts-section"></div>
 
         <div style="text-align:center;padding:24px;font-size:0.85rem;color:#666;margin-top:auto;">
-          Contact: <a href="mailto:easytrade@gmail.com" style="color:var(--muted);text-decoration:none;">easytrade@gmail.com</a>
+          Contact: <a href="mailto:booftrade@gmail.com" style="color:var(--muted);text-decoration:none;">booftrade@gmail.com</a>
         </div>
       </main>
     </div>
@@ -141,19 +141,22 @@
 
       let html = '<div class="section-title">Connected Accounts</div>';
 
+      // Fetch paper balance from Supabase (syncs with dashboard)
+      const { data: paperAcct } = await sbClient.from('paper_accounts').select('balance').eq('user_id', user.id).maybeSingle();
+      const paperBalance = paperAcct?.balance ?? 100000;
+
       if (!paperEnabled && connectedBrokers.length === 0) {
         html += `<div class="empty-accounts">No accounts connected. <a href="brokers.html">Connect a broker →</a></div>`;
       } else {
         if (paperEnabled) {
-          const balance = parseFloat(localStorage.getItem('paper_balance') || '100000');
           html += `
             <div class="broker-account-card paper">
               <div>
-                <div class="bac-name">EasyTrade Paper</div>
+                <div class="bac-name">booftrade paper</div>
                 <div class="bac-type">Paper Trading · Simulated</div>
               </div>
               <div class="bac-balance">
-                <div class="bac-balance-val">$${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div class="bac-balance-val">$${paperBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 <div class="bac-balance-label">Available Balance</div>
               </div>
             </div>`;

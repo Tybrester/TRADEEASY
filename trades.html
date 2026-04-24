@@ -124,7 +124,7 @@
 
 
         <div style="text-align:center;padding:24px;font-size:0.85rem;color:#666;margin-top:auto;">
-          Contact: <a href="mailto:easytrade@gmail.com" style="color:var(--muted);text-decoration:none;">easytrade@gmail.com</a>
+          Contact: <a href="mailto:booftrade@gmail.com" style="color:var(--muted);text-decoration:none;">booftrade@gmail.com</a>
         </div>
       </main>
     </div>
@@ -187,9 +187,21 @@
         exitPrice = await fetchPrice(symbol);
       } catch(e) {}
 
-      const pnl = exitPrice
-        ? (direction === 'Long' ? (exitPrice - entryPrice) * quantity : (entryPrice - exitPrice) * quantity)
-        : 0;
+      // Futures and options multipliers
+      const contractMultipliers = {
+        // Futures ($ per point)
+        'ES=F': 50, 'MES=F': 5, 'NQ=F': 20, 'MNQ=F': 2,
+        'CL=F': 1000, 'MCL=F': 100, 'GC=F': 100, 'MGC=F': 10,
+        'SI=F': 5000, 'SIL=F': 1000, 'NG=F': 10000,
+        'ZB=F': 1000, 'ZN=F': 1000, 'YM=F': 5, 'MYM=F': 0.5,
+        'RTY=F': 50, 'M2K=F': 5,
+      };
+      const normalizedSymbol = normalizeSymbol(symbol);
+      // Check if options by symbol pattern (contains date and C/P)
+      const isOption = /\d{6}[CP]\d+$/.test(symbol);
+      const multiplier = isOption ? 100 : (contractMultipliers[normalizedSymbol] || 1);
+      const pointDiff = exitPrice ? (direction === 'Long' ? (exitPrice - entryPrice) : (entryPrice - exitPrice)) : 0;
+      const pnl = pointDiff * multiplier * quantity;
 
       await sbClient.from('trades').update({
         status: 'closed',
@@ -329,6 +341,18 @@
         </table>`;
       }
 
+      // Futures and options multipliers - must match dashboard
+      const contractMultipliers = {
+        // Futures ($ per point)
+        'ES=F': 50, 'MES=F': 5, 'NQ=F': 20, 'MNQ=F': 2,
+        'CL=F': 1000, 'MCL=F': 100, 'GC=F': 100, 'MGC=F': 10,
+        'SI=F': 5000, 'SIL=F': 1000, 'NG=F': 10000,
+        'ZB=F': 1000, 'ZN=F': 1000, 'YM=F': 5, 'MYM=F': 0.5,
+        'RTY=F': 50, 'M2K=F': 5,
+        // Options (100 shares per contract)
+        'OPTION': 100,
+      };
+
       if (open.length === 0) {
         openEl.innerHTML = '<div class="empty-state">No open positions yet.</div>';
       } else {
@@ -339,9 +363,14 @@
           const currentPrice = await fetchPrice(t.symbol);
           let pnlHtml = '—';
           if (currentPrice && entryPrice && t.quantity) {
-            const diff = direction === 'Long'
-              ? (currentPrice - entryPrice) * t.quantity
-              : (entryPrice - currentPrice) * t.quantity;
+            const normalizedSymbol = normalizeSymbol(t.symbol);
+            const pointDiff = direction === 'Long'
+              ? (currentPrice - entryPrice)
+              : (entryPrice - currentPrice);
+            // Check if options by symbol pattern (contains date and C/P)
+            const isOption = /\d{6}[CP]\d+$/.test(t.symbol);
+            const multiplier = isOption ? 100 : (contractMultipliers[normalizedSymbol] || 1);
+            const diff = pointDiff * multiplier * t.quantity;
             pnlHtml = `<span class="${diff >= 0 ? 'pnl-pos' : 'pnl-neg'}">${diff >= 0 ? '+' : ''}$${diff.toFixed(2)}</span>`;
           }
           const isFilled = t.status === 'filled';

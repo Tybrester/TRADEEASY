@@ -463,19 +463,18 @@
         <p>Here's an overview of your trading system.</p>
       </div>
 
+      <select id="broker-selector" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#aaa;font-size:0.72rem;font-family:inherit;padding:6px 12px;border-radius:5px;outline:none;cursor:pointer;margin-bottom:16px;">
+        <option value="paper">booftrade paper</option>
+      </select>
+
       <div class="stats-row">
         <div class="stat-card" style="position:relative;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-            <div class="label" style="margin-bottom:0;">Account Balance</div>
-            <select id="broker-selector" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#aaa;font-size:0.72rem;font-family:inherit;padding:4px 8px;border-radius:5px;outline:none;cursor:pointer;">
-              <option value="">— Select Account —</option>
-            </select>
-          </div>
+          <div class="label" style="margin-bottom:0;">Account Balance</div>
           <div class="value green" id="stat-balance">—</div>
-          <div class="sub" id="stat-balance-sub">No account connected</div>
+          <div class="sub" id="stat-balance-sub">Starting amount</div>
         </div>
         <div class="stat-card">
-          <div class="label">Unrealized P&L</div>
+          <div class="label">Total P&L</div>
           <div class="value" id="stat-unrealized">$0.00</div>
           <div class="sub" id="stat-unrealized-sub">No open positions</div>
         </div>
@@ -493,11 +492,6 @@
           <div class="label">Win Rate</div>
           <div class="value green" id="stat-winrate">—</div>
           <div class="sub" id="stat-winrate-sub">Start trading to track</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Realized P&L</div>
-          <div class="value" id="stat-realized">$0.00</div>
-          <div class="sub" id="stat-realized-sub">From closed trades</div>
         </div>
       </div>
 
@@ -581,27 +575,79 @@
       showBalance('paper');
       brokerSel.addEventListener('change', () => showBalance(brokerSel.value));
 
+      function normalizeSymbol(symbol) {
+        if (!symbol) return symbol;
+        let s = symbol.includes(':') ? symbol.split(':')[1] : symbol;
+        // TradingView futures use ! suffix — map to Yahoo Finance equivalents
+        const futuresMap = {
+          'CL1!': 'CL=F', 'ES1!': 'ES=F', 'NQ1!': 'NQ=F', 'GC1!': 'GC=F',
+          'SI1!': 'SI=F', 'NG1!': 'NG=F', 'ZB1!': 'ZB=F', 'ZN1!': 'ZN=F',
+          'YM1!': 'YM=F', 'RTY1!': 'RTY=F', 'MES1!': 'MES=F', 'MNQ1!': 'MNQ=F',
+        };
+        if (futuresMap[s]) return futuresMap[s];
+        if (s.endsWith('!')) s = s.replace('!', '=F');
+        if (s.endsWith('USDT')) s = s.replace('USDT', '-USD');
+        return s;
+      }
+
       async function refreshStats() {
         // Load all trades
         const { data: allTrades } = await sbClient.from('trades').select('id,status,pnl,symbol,action,price,quantity').eq('user_id', user.id);
 
         // Get stored paper balance
-        const { data: freshAcct } = await sbClient.from('paper_accounts').select('balance').eq('user_id', user.id).maybeSingle();
+        const { data: freshAcct, error: balanceError } = await sbClient.from('paper_accounts').select('balance').eq('user_id', user.id).maybeSingle();
+        console.log('Fetched balance:', freshAcct, 'Error:', balanceError);
         const storedBalance = freshAcct?.balance ?? 100000;
+        console.log('Using storedBalance:', storedBalance);
 
         // Calculate unrealized P&L from open positions
         const openTrades = (allTrades || []).filter(t => t.status === 'filled' && t.symbol && t.price && t.quantity);
         let unrealizedPnl = 0;
+        
+        // Futures and options multipliers
+        const contractMultipliers = {
+          // Futures ($ per point)
+          'ES=F': 50, 'MES=F': 5,  // E-mini S&P 500
+          'NQ=F': 20, 'MNQ=F': 2,  // E-mini NASDAQ
+          'CL=F': 1000, 'MCL=F': 100,  // Crude Oil
+          'GC=F': 100, 'MGC=F': 10,  // Gold
+          'SI=F': 5000, 'SIL=F': 1000,  // Silver
+          'NG=F': 10000,  // Natural Gas
+          'ZB=F': 1000, 'ZN=F': 1000,  // Bonds
+          'YM=F': 5, 'MYM=F': 0.5,  // Dow
+          'RTY=F': 50, 'M2K=F': 5,  // Russell
+          // Options (100 shares per contract)
+          'OPTION': 100,
+        };
+        
         await Promise.all(openTrades.map(async t => {
           try {
+            const normalizedSymbol = normalizeSymbol(t.symbol);
+            console.log('=== TRADE DEBUG ===');
+            console.log('Raw symbol:', t.symbol);
+            console.log('Normalized:', normalizedSymbol);
+            console.log('Entry price:', t.price, 'Current: ???');
+            console.log('Quantity:', t.quantity, 'Action:', t.action);
             const res = await fetch(`${SUPABASE_URL}/functions/v1/get-price?symbol=${encodeURIComponent(t.symbol)}`, { headers: { 'apikey': SUPABASE_ANON_KEY } });
             const j = await res.json();
-            if (j.price) {
-              const diff = t.action === 'buy' ? (j.price - t.price) * t.quantity : (t.price - j.price) * t.quantity;
-              unrealizedPnl += diff;
+            console.log('Fetched current price:', j.price);
+            if (j.price && t.price) {
+              const pointDiff = t.action === 'buy' ? (j.price - t.price) : (t.price - j.price);
+              // Check if options by symbol pattern (contains date and C/P)
+              const isOption = /\d{6}[CP]\d+$/.test(t.symbol);
+              const multiplier = isOption ? 100 : (contractMultipliers[normalizedSymbol] || 1);
+              const pnl = pointDiff * multiplier * t.quantity;
+              console.log('Point diff:', pointDiff.toFixed(2));
+              console.log('Multiplier:', multiplier);
+              console.log('Trade PnL:', pnl.toFixed(2));
+              unrealizedPnl += pnl;
+            } else {
+              console.log('SKIP: missing price data');
             }
-          } catch {}
+            console.log('===================');
+          } catch(e) { console.error('Price fetch error:', e); }
         }));
+        console.log('TOTAL Unrealized PnL:', unrealizedPnl.toFixed(2));
 
         // Account Balance (stored/base balance)
         if (brokerSel.value === 'paper') {
@@ -623,7 +669,7 @@
         const projEl = document.getElementById('stat-projected');
         if (projEl) {
           projEl.textContent = '$' + projectedBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          projEl.style.color = projectedBalance >= storedBalance ? 'var(--accent)' : 'var(--red)';
+          projEl.style.color = 'var(--accent)'; // Always green
         }
 
         // Active trades count
@@ -632,20 +678,6 @@
         if (sysEl) sysEl.textContent = activeCount;
         const subEl = sysEl?.closest('.stat-card')?.querySelector('.sub');
         if (subEl) subEl.textContent = activeCount === 0 ? 'No trades running' : `${activeCount} trade${activeCount !== 1 ? 's' : ''} running`;
-
-        // Realized P&L (from closed trades only)
-        const closedPnl = (allTrades || [])
-          .filter(t => t.status === 'closed' && t.pnl != null)
-          .reduce((sum, t) => sum + parseFloat(t.pnl), 0);
-
-        const realizedEl = document.getElementById('stat-realized');
-        const realizedSub = document.getElementById('stat-realized-sub');
-        if (realizedEl) {
-          realizedEl.textContent = (closedPnl >= 0 ? '+$' : '-$') + Math.abs(closedPnl).toFixed(2);
-          realizedEl.style.color = closedPnl >= 0 ? 'var(--accent)' : 'var(--red)';
-        }
-        const closedCount = (allTrades || []).filter(t => t.status === 'closed').length;
-        if (realizedSub) realizedSub.textContent = closedCount > 0 ? `${closedCount} closed trade${closedCount !== 1 ? 's' : ''}` : 'No closed trades';
 
         // Open positions table
         const posContainer = document.getElementById('positions-container');
@@ -665,22 +697,28 @@
               const current = priceMap[t.symbol];
               const entry = t.price || 0;
               const direction = t.action === 'buy' ? 'Long' : 'Short';
-              const diff = current ? (direction === 'Long' ? (current - entry) * t.quantity : (entry - current) * t.quantity) : null;
+              const normalizedSymbol = normalizeSymbol(t.symbol);
+              const pointDiff = current ? (direction === 'Long' ? (current - entry) : (entry - current)) : null;
+              // Check if options by symbol pattern (contains date and C/P)
+              const isOption = /\d{6}[CP]\d+$/.test(t.symbol);
+              const multiplier = isOption ? 100 : (contractMultipliers[normalizedSymbol] || 1);
+              const diff = pointDiff !== null ? pointDiff * multiplier * t.quantity : null;
               const pnlHtml = diff !== null
                 ? `<span style="color:${diff >= 0 ? 'var(--accent)' : 'var(--red)'}">${diff >= 0 ? '+' : ''}$${diff.toFixed(2)}</span>`
                 : '—';
               return `<tr>
                 <td style="color:var(--accent);font-weight:600;">${t.symbol || '—'}</td>
-                <td><span style="padding:2px 8px;border-radius:4px;font-size:0.78rem;font-weight:700;background:${direction==='Long'?'rgba(0,230,118,0.12)':'rgba(255,23,68,0.12)'};color:${direction==='Long'?'var(--accent)':'var(--red)'};">${direction}</span></td>
+                <td><span style="padding:2px 8px;border-radius:4px;font-size:0.78rem;font-weight:700;background:${direction==='Long'?'rgba(0,230,118,0.12)':'rgba(255,23,68,0.12)'};color:${direction==='Long'?'var(--accent)':'var(--red)'}">${direction}</span></td>
                 <td>${t.quantity || '—'}</td>
                 <td>${entry ? '$'+Number(entry).toFixed(2) : '—'}</td>
                 <td>${current ? '$'+current.toFixed(2) : '—'}</td>
                 <td>${pnlHtml}</td>
                 <td style="color:var(--muted);font-size:0.8rem;">${t.broker || 'paper'}</td>
+                <td><button onclick="closeTrade('${t.id}', '${t.symbol}', '${direction}', ${entry||0}, ${t.quantity||1}, '${t.broker||'paper'}')" style="background:transparent;border:1px solid var(--accent);color:var(--accent);font-size:0.75rem;padding:4px 10px;border-radius:5px;cursor:pointer;font-family:inherit;">Close</button></td>
               </tr>`;
             });
             posContainer.innerHTML = `<table class="positions-table">
-              <thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Current</th><th>P&L</th><th>Broker</th></tr></thead>
+              <thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Current</th><th>P&L</th><th>Broker</th><th>Action</th></tr></thead>
               <tbody>${rows.join('')}</tbody>
             </table>`;
           }
@@ -711,7 +749,7 @@
       // Contact footer
       const footer = document.createElement('div');
       footer.style.cssText = 'text-align:center;padding:24px;font-size:0.85rem;color:#666;margin-top:auto;';
-      footer.innerHTML = 'Contact: <a href="mailto:easytrade@gmail.com" style="color:var(--muted);text-decoration:none;">easytrade@gmail.com</a>';
+      footer.innerHTML = 'Contact: <a href="mailto:booftrade@gmail.com" style="color:var(--muted);text-decoration:none;">booftrade@gmail.com</a>';
       document.querySelector('main').appendChild(footer);
 
       // User dropdown toggle
@@ -728,6 +766,49 @@
           dropdown.classList.remove('open');
         }
       });
+    }
+
+    async function closeTrade(id, symbol, direction, entryPrice, quantity, broker) {
+      const { data: { session } } = await sbClient.auth.getSession();
+      if (!session) return;
+      
+      let exitPrice = null;
+      try {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/get-price?symbol=${encodeURIComponent(symbol)}`, { headers: { 'apikey': SUPABASE_ANON_KEY } });
+        const j = await res.json();
+        exitPrice = j.price;
+      } catch(e) {}
+
+      // Normalize symbol for multiplier lookup
+      const normalizedSymbol = normalizeSymbol(symbol);
+      // Futures contract multipliers ($ per point)
+      const futuresMultipliers = {
+        'ES=F': 50, 'MES=F': 5, 'NQ=F': 20, 'MNQ=F': 2,
+        'CL=F': 1000, 'MCL=F': 100, 'GC=F': 100, 'MGC=F': 10,
+        'SI=F': 5000, 'SIL=F': 1000, 'NG=F': 10000,
+        'ZB=F': 1000, 'ZN=F': 1000, 'YM=F': 5, 'MYM=F': 0.5,
+        'RTY=F': 50, 'M2K=F': 5,
+      };
+      const multiplier = futuresMultipliers[normalizedSymbol] || 1;
+      const pointDiff = exitPrice ? (direction === 'Long' ? (exitPrice - entryPrice) : (entryPrice - exitPrice)) : 0;
+      const pnl = pointDiff * multiplier * quantity;
+
+      await sbClient.from('trades').update({
+        status: 'closed',
+        closed_at: new Date().toISOString(),
+        pnl: pnl,
+      }).eq('id', id);
+
+      // Update paper account balance in Supabase
+      if (broker === 'paper' || broker === 'booftrade paper' || broker === 'EasyTrade Paper') {
+        const { data: acct } = await sbClient.from('paper_accounts').select('balance').eq('user_id', session.user.id).maybeSingle();
+        if (acct) {
+          const newBalance = acct.balance + pnl;
+          await sbClient.from('paper_accounts').update({ balance: newBalance, updated_at: new Date().toISOString() }).eq('user_id', session.user.id);
+        }
+      }
+
+      refreshStats(); // Refresh dashboard stats
     }
 
     async function signOut() {
