@@ -408,7 +408,10 @@
           return;
         }
 
-        if (json.error) throw new Error(json.error);
+        // Handle error - either from json.error or non-ok status
+        if (!res.ok || json.error) {
+          throw new Error(json.error || 'Invalid credentials. Please check your username and password.');
+        }
 
         localStorage.setItem('webhook_tastytrade', 'true');
         applyTastyUI(true, username);
