@@ -116,6 +116,11 @@
             <div class="empty-state">No open positions yet.</div>
           </div>
 
+          <div class="section-title" style="margin-top:32px;color:var(--red);">Failed Trades</div>
+          <div id="failed-trades-container">
+            <div class="empty-state">No failed trades.</div>
+          </div>
+
           <div class="section-title" style="margin-top:32px;">Closed Trades</div>
           <div id="closed-trades-container">
             <div class="empty-state">No closed trades yet.</div>
@@ -279,6 +284,35 @@
       loadTrades();
     }
 
+    async function retryTrade(id) {
+      const { data: { session } } = await sbClient.auth.getSession();
+      if (!session) return;
+      
+      // Get trade details
+      const { data: trade } = await sbClient.from('trades').select('*').eq('id', id).single();
+      if (!trade) return;
+      
+      // Try to fill it again
+      const cost = trade.price * trade.quantity;
+      const { data: acct } = await sbClient.from('paper_accounts').select('*').eq('user_id', session.user.id).maybeSingle();
+      const currentBalance = acct?.balance ?? 100000;
+      
+      if (trade.action === 'buy' && cost > currentBalance) {
+        showTradeError(`Still insufficient funds. Trade cost ($${cost.toLocaleString()}) exceeds balance ($${currentBalance.toLocaleString()})`);
+        return;
+      }
+      
+      // Update balance
+      if (acct) {
+        const newBalance = trade.action === 'buy' ? acct.balance - cost : acct.balance + cost;
+        await sbClient.from('paper_accounts').update({ balance: newBalance, updated_at: new Date().toISOString() }).eq('user_id', session.user.id);
+      }
+      
+      // Mark as filled
+      await sbClient.from('trades').update({ status: 'filled', failure_reason: null }).eq('id', id);
+      loadTrades();
+    }
+
     async function loadSystemsFilter() {
       const { data: { session } } = await sbClient.auth.getSession();
       if (!session) return;
@@ -303,10 +337,12 @@
 
       const pending = (trades || []).filter(t => t.status === 'open');
       const open    = (trades || []).filter(t => t.status === 'filled');
+      const failed  = (trades || []).filter(t => t.status === 'failed');
       const closed  = (trades || []).filter(t => t.status === 'closed');
 
       const pendingEl = document.getElementById('pending-positions-container');
       const openEl    = document.getElementById('open-positions-container');
+      const failedEl  = document.getElementById('failed-trades-container');
       const closedEl  = document.getElementById('closed-trades-container');
 
       // PENDING
@@ -397,6 +433,35 @@
           <thead><tr>
             <th>System</th><th>Symbol</th><th>Side</th><th>Type</th><th>Qty</th>
             <th>Entry</th><th>Current</th><th>P&L</th><th>Broker</th><th></th>
+          </tr></thead>
+          <tbody>${rows.join('')}</tbody>
+        </table>`;
+      }
+
+      // FAILED TRADES
+      if (failed.length === 0) {
+        failedEl.innerHTML = '<div class="empty-state">No failed trades.</div>';
+      } else {
+        const rows = failed.map(t => {
+          const entryPrice = t.entry_price ?? t.price;
+          const direction  = t.direction || (t.action === 'buy' ? 'Long' : 'Short');
+          return `<tr>
+            <td style="font-weight:600;">${t.name || t.symbol || '—'}</td>
+            <td style="color:var(--red);font-weight:600;">${t.symbol || '—'}</td>
+            <td><span class="badge ${direction === 'Long' ? 'badge-long' : 'badge-short'}">${direction}</span></td>
+            <td><span class="badge" style="background:rgba(255,23,68,0.12);color:var(--red);">FAILED</span></td>
+            <td>${t.quantity || '—'}</td>
+            <td>${entryPrice ? '$'+Number(entryPrice).toFixed(2) : '—'}</td>
+            <td style="color:var(--muted);">—</td>
+            <td style="color:var(--red);font-size:0.85rem;">${t.failure_reason || 'Insufficient balance'}</td>
+            <td style="color:var(--muted);font-size:0.8rem;">${t.broker || 'paper'}</td>
+            <td><button class="btn-icon" onclick="retryTrade('${t.id}')" title="Retry">↻</button></td>
+          </tr>`;
+        });
+        failedEl.innerHTML = `<table class="trades-table">
+          <thead><tr>
+            <th>System</th><th>Symbol</th><th>Side</th><th>Type</th><th>Qty</th>
+            <th>Entry</th><th>P&L</th><th>Reason</th><th>Broker</th><th></th>
           </tr></thead>
           <tbody>${rows.join('')}</tbody>
         </table>`;

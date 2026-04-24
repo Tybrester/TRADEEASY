@@ -95,14 +95,27 @@ Deno.serve(async (req) => {
       if (system.auto_submit && price) {
         const cost = price * quantity;
         const { data: acct } = await supabase.from('paper_accounts').select('*').eq('user_id', userId).maybeSingle();
-        if (acct) {
-          const newBalance = action === 'buy' ? acct.balance - cost : acct.balance + cost;
-          await supabase.from('paper_accounts').update({ balance: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId);
+        const currentBalance = acct?.balance ?? 100000;
+        
+        // Check sufficient balance for buy orders
+        if (action === 'buy' && cost > currentBalance) {
+          // Mark as failed due to insufficient funds
+          await supabase.from('trades').update({ 
+            status: 'failed', 
+            price: price,
+            failure_reason: `Insufficient funds: trade cost $${cost.toFixed(2)} exceeds balance $${currentBalance.toFixed(2)}`
+          }).eq('id', trade.id);
         } else {
-          await supabase.from('paper_accounts').insert({ user_id: userId, balance: action === 'buy' ? 100000 - cost : 100000 + cost });
+          // Sufficient balance - proceed with fill
+          if (acct) {
+            const newBalance = action === 'buy' ? acct.balance - cost : acct.balance + cost;
+            await supabase.from('paper_accounts').update({ balance: newBalance, updated_at: new Date().toISOString() }).eq('user_id', userId);
+          } else {
+            await supabase.from('paper_accounts').insert({ user_id: userId, balance: action === 'buy' ? 100000 - cost : 100000 + cost });
+          }
+          // Auto-fill the trade immediately
+          await supabase.from('trades').update({ status: 'filled', price: price }).eq('id', trade.id);
         }
-        // Auto-fill the trade immediately
-        await supabase.from('trades').update({ status: 'filled', price: price }).eq('id', trade.id);
       }
     }
 

@@ -256,6 +256,14 @@
 
     const form = document.getElementById('signin-form');
     const msg = document.getElementById('msg');
+    const emailInput = document.getElementById('email');
+
+    // Pre-fill email from URL if provided
+    const urlParams = new URLSearchParams(window.location.search);
+    const prefilledEmail = urlParams.get('email');
+    if (prefilledEmail) {
+      emailInput.value = prefilledEmail;
+    }
 
     function showMsg(text) {
       msg.textContent = text;
@@ -284,7 +292,9 @@
       if (error) {
         showMsg(error.message);
       } else {
-        window.location.href = 'dashboard.html';
+        // Use redirect param if provided, otherwise go to dashboard
+        const redirectUrl = urlParams.get('redirect') || 'dashboard.html';
+        window.location.href = redirectUrl;
       }
     });
   </script>
