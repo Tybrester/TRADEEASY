@@ -787,25 +787,35 @@
         let triggered = false;
         let reason = '';
         
+        // Convert to numbers (Supabase returns NUMERIC as strings)
+        const tpPrice = parseFloat(trade.take_profit);
+        const slPrice = parseFloat(trade.stop_loss);
+        
+        console.log(`[TP/SL Check] ${trade.symbol} | ${direction} | Current: $${currentPrice} | TP: $${tpPrice} | SL: $${slPrice}`);
+        
         // Check Take Profit
-        if (trade.take_profit) {
-          if (direction === 'Long' && currentPrice >= trade.take_profit) {
+        if (!isNaN(tpPrice)) {
+          if (direction === 'Long' && currentPrice >= tpPrice) {
             triggered = true;
             reason = 'Take Profit hit';
-          } else if (direction === 'Short' && currentPrice <= trade.take_profit) {
+            console.log(`[TP/SL] Long TP triggered: ${currentPrice} >= ${tpPrice}`);
+          } else if (direction === 'Short' && currentPrice <= tpPrice) {
             triggered = true;
             reason = 'Take Profit hit';
+            console.log(`[TP/SL] Short TP triggered: ${currentPrice} <= ${tpPrice}`);
           }
         }
         
         // Check Stop Loss
-        if (!triggered && trade.stop_loss) {
-          if (direction === 'Long' && currentPrice <= trade.stop_loss) {
+        if (!triggered && !isNaN(slPrice)) {
+          if (direction === 'Long' && currentPrice <= slPrice) {
             triggered = true;
             reason = 'Stop Loss hit';
-          } else if (direction === 'Short' && currentPrice >= trade.stop_loss) {
+            console.log(`[TP/SL] Long SL triggered: ${currentPrice} <= ${slPrice}`);
+          } else if (direction === 'Short' && currentPrice >= slPrice) {
             triggered = true;
             reason = 'Stop Loss hit';
+            console.log(`[TP/SL] Short SL triggered: ${currentPrice} >= ${slPrice}`);
           }
         }
         
