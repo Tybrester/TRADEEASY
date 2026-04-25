@@ -457,7 +457,7 @@
       </div>
 
       <select id="broker-selector" style="background:#1a1a1a;border:1px solid #2a2a2a;color:#aaa;font-size:0.72rem;font-family:inherit;padding:6px 12px;border-radius:5px;outline:none;cursor:pointer;margin-bottom:16px;">
-        <option value="paper">booftrade paper</option>
+        <option value="paper">BoofCapital paper</option>
       </select>
 
       <div class="stats-row">
@@ -752,7 +752,7 @@
       // Contact footer
       const footer = document.createElement('div');
       footer.style.cssText = 'text-align:center;padding:24px;font-size:0.85rem;color:#666;margin-top:auto;';
-      footer.innerHTML = 'Contact: <a href="mailto:booftrade@gmail.com" style="color:var(--muted);text-decoration:none;">booftrade@gmail.com</a>';
+      footer.innerHTML = 'Contact: <a href="mailto:BoofCapital@gmail.com" style="color:var(--muted);text-decoration:none;">BoofCapital@gmail.com</a>';
       document.querySelector('main').appendChild(footer);
 
       // User dropdown toggle
@@ -830,7 +830,7 @@
         }).eq('id', id);
 
         // Update paper account balance in Supabase
-        if (broker === 'paper' || broker === 'booftrade paper' || broker === 'EasyTrade Paper') {
+        if (broker === 'paper' || broker === 'BoofCapital paper' || broker === 'EasyTrade Paper') {
           const { data: acct } = await sbClient.from('paper_accounts').select('balance').eq('user_id', session.user.id).maybeSingle();
           if (acct) {
             const newBalance = acct.balance + pnl;

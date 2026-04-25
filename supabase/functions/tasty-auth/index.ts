@@ -22,41 +22,147 @@ Deno.serve(async (req) => {
     );
 
     // Build session payload
-    const payload: Record<string, unknown> = { login: username, password, 'remember-me': true };
+    // Use a consistent device ID based on user_id so it's recognized as same device
+    const deviceId = user_id.replace(/-/g, '').substring(0, 16);
+    const payload: Record<string, unknown> = { 
+      login: username, 
+      password, 
+      'remember-me': true,
+      'device-id': deviceId
+    };
     if (mfa_code) payload['one-time-password'] = mfa_code;
 
     const res = await fetch('https://api.tastytrade.com/sessions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Device-Id': deviceId,
+        'X-Device-Name': 'BoofCapital-web'
+      },
       body: JSON.stringify(payload)
     });
 
     const json = await res.json();
+    
+    console.log('[TastyAuth] Response status:', res.status);
+    console.log('[TastyAuth] Response body:', JSON.stringify(json));
 
     // Device/MFA challenge — tell client to ask for code
     if (!res.ok && !json.data?.['session-token']) {
       const errMsg = (json.error?.message || json['error-message'] || '').toLowerCase();
+      const errorCode = json.error?.code || '';
+      console.log('[TastyAuth] Error message:', errMsg, 'Code:', errorCode);
+      
+      // Handle device challenge required
+      if (errorCode === 'device_challenge_required' || errMsg.includes('device_challenge')) {
+        // Store challenge info in Supabase for the verification step
+        const challengeToken = res.headers.get('X-Tastyworks-Challenge-Token') || 
+                              json.redirect?.headers?.[0] || 
+                              'pending';
+        
+        await supabase.from('oauth_states').upsert({
+          user_id: user_id,
+          state: 'tasty_challenge_' + user_id,
+          challenge_token: challengeToken,
+          username: username,
+          password: password, // Temporarily store for challenge completion
+          created_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+        
+        return new Response(JSON.stringify({ 
+          mfa_required: true,
+          message: 'Device authentication required. Check your email/SMS for a verification code.'
+        }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Only treat as MFA if error message contains MFA-related terms
       const needsMfa = errMsg.includes('device') || errMsg.includes('challenge') ||
-        errMsg.includes('mfa') || errMsg.includes('verification') || res.status === 401;
+        errMsg.includes('mfa') || errMsg.includes('verification') || 
+        errMsg.includes('two-factor') || errMsg.includes('2fa') ||
+        errMsg.includes('security code') || errMsg.includes('login code');
+      console.log('[TastyAuth] Needs MFA?', needsMfa);
       if (needsMfa) {
         return new Response(JSON.stringify({ mfa_required: true }), {
           status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
+      // Otherwise it's invalid credentials
       return new Response(JSON.stringify({ error: json.error?.message || json['error-message'] || 'Invalid credentials' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    const rememberToken = json.data?.['remember-token'] || null;
-    const sessionToken = json.data?.['session-token'] || null;
+    let rememberToken = json.data?.['remember-token'] || null;
+    let sessionToken = json.data?.['session-token'] || null;
+
+    // Handle device challenge completion if MFA code provided
+    if (mfa_code && !sessionToken) {
+      // Look up pending challenge
+      const { data: challengeData } = await supabase.from('oauth_states')
+        .select('*')
+        .eq('user_id', user_id)
+        .eq('state', 'tasty_challenge_' + user_id)
+        .maybeSingle();
+      
+      if (challengeData) {
+        console.log('[TastyAuth] Completing device challenge with code');
+        
+        // Complete the device challenge
+        const challengeRes = await fetch('https://api.tastytrade.com/device-challenge', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Device-Id': deviceId,
+            'X-Tastyworks-Challenge-Token': challengeData.challenge_token || ''
+          },
+          body: JSON.stringify({
+            'one-time-password': mfa_code,
+            'remember-me': true
+          })
+        });
+        
+        const challengeJson = await challengeRes.json();
+        console.log('[TastyAuth] Challenge response:', JSON.stringify(challengeJson));
+        
+        if (challengeJson.data?.['session-token']) {
+          // Challenge completed successfully, retry login
+          const retryRes = await fetch('https://api.tastytrade.com/sessions', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'X-Device-Id': deviceId,
+              'X-Device-Name': 'BoofCapital-web'
+            },
+            body: JSON.stringify({
+              login: username,
+              password: password,
+              'remember-me': true,
+              'device-id': deviceId
+            })
+          });
+          
+          const retryJson = await retryRes.json();
+          if (retryJson.data?.['session-token']) {
+            json.data = retryJson.data;
+            // Update tokens for later use
+            sessionToken = retryJson.data['session-token'];
+            rememberToken = retryJson.data['remember-token'] || null;
+          }
+        }
+        
+        // Clean up challenge data
+        await supabase.from('oauth_states').delete().eq('user_id', user_id).eq('state', 'tasty_challenge_' + user_id);
+      }
+    }
 
     // Get account number
     let accountNumber = null;
-    if (sessionToken) {
+    if (json.data?.['session-token']) {
       try {
         const acctRes = await fetch('https://api.tastytrade.com/customers/me/accounts', {
-          headers: { Authorization: sessionToken }
+          headers: { Authorization: json.data['session-token'] }
         });
         const acctJson = await acctRes.json();
         accountNumber = acctJson?.data?.items?.[0]?.account?.['account-number'] || null;

@@ -429,7 +429,7 @@ Deno.serve(async (req) => {
     }
 
     // Handle paper trading with balance check
-    const isPaperBroker = broker === 'paper' || broker === 'booftrade paper' || broker === 'EasyTrade Paper';
+    const isPaperBroker = broker === 'paper' || broker === 'BoofCapital paper' || broker === 'EasyTrade Paper';
     let tradeStatus = 'open';
     let failureReason = null;
     let finalPrice = price;
