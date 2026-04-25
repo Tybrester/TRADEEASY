@@ -159,9 +159,11 @@
 
       // Check paper trading in localStorage OR Supabase
       const paperInLocalStorage = localStorage.getItem('paper_trading_enabled') === 'true';
-      const { data: paperAcct } = await sbClient.from('paper_accounts').select('balance').eq('user_id', user.id).maybeSingle();
+      const { data: paperAcct, error: paperErr } = await sbClient.from('paper_accounts').select('balance').eq('user_id', user.id).maybeSingle();
+      console.log('[Accounts] paperInLocalStorage:', paperInLocalStorage, 'paperAcct:', paperAcct, 'error:', paperErr);
       const paperEnabled = paperInLocalStorage || !!paperAcct;
       const paperBalance = paperAcct?.balance ?? 100000;
+      console.log('[Accounts] paperEnabled:', paperEnabled, 'paperBalance:', paperBalance);
       
       const section = document.getElementById('connected-accounts-section');
 
@@ -244,9 +246,11 @@
         }
       }
 
+      console.log('[Accounts] Final check - paperEnabled:', paperEnabled, 'tastyConnected:', tastyConnected);
       if (!paperEnabled && !tastyConnected) {
         html += `<div class="empty-accounts">No accounts connected. <a href="brokers.html">Connect a broker →</a></div>`;
       } else {
+        console.log('[Accounts] Rendering paper account:', paperEnabled);
         if (paperEnabled) {
           html += `
             <div class="broker-account-card paper">
