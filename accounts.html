@@ -169,6 +169,9 @@
 
       let html = '<div class="section-title">Connected Accounts</div>';
       
+      // Check for other brokers via localStorage (TradersPost webhooks)
+      const connectedBrokers = BROKER_KEYS.filter(k => localStorage.getItem(`webhook_${k}`));
+      
       // Check for tastytrade in both localStorage AND Supabase
       const tastyInLocalStorage = localStorage.getItem('webhook_tastytrade');
       const { data: tastyCredsCheck } = await sbClient.from('broker_credentials').select('id').eq('user_id', user.id).eq('broker', 'tastytrade').maybeSingle();
