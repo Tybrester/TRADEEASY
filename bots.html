@@ -37,7 +37,8 @@
 
     main { flex: 1; display: flex; gap: 0; overflow: hidden; }
     .bots-col { flex: 1; min-width: 0; padding: 28px 28px; overflow-y: auto; }
-    .trades-col { width: 320px; flex-shrink: 0; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+    .trades-col { width: 320px; flex-shrink: 0; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+    .activity-spacer { flex-shrink: 0; }
 
     .page-header { margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; }
     .page-header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
@@ -300,13 +301,13 @@
                 <div class="pnl-stat"><div class="pnl-stat-label">Open</div><div class="pnl-stat-value neu" id="stat-open">—</div></div>
               </div>
             </div>
-            <div class="trades-feed" id="trades-feed" style="max-height:420px;">
+            <div class="trades-feed" id="trades-feed">
               <div class="feed-empty">Loading trades...</div>
             </div>
           </div>
 
-          <!-- Divider -->
-          <div style="height:1px;background:var(--border);margin:16px 0;"></div>
+          <!-- Spacer to align options activity with options bots section -->
+          <div class="activity-spacer" id="activity-spacer"></div>
 
           <!-- Options Bot Activity -->
           <div id="panel-options">
@@ -839,7 +840,29 @@
       await loadOptionsBots();
       await loadTrades();
       await loadOptionsTrades();
+      alignActivityPanels();
+      window.addEventListener('resize', alignActivityPanels);
       setInterval(() => { loadTrades(); loadOptionsTrades(); }, 30000);
+    }
+
+    function alignActivityPanels() {
+      const optionsDivider = document.querySelector('.section-divider');
+      const stockPanel = document.getElementById('panel-stocks');
+      const spacer = document.getElementById('activity-spacer');
+      if (!optionsDivider || !stockPanel || !spacer) return;
+
+      const botsCol = document.querySelector('.bots-col');
+      const tradesCol = document.querySelector('.trades-col');
+      if (!botsCol || !tradesCol) return;
+
+      const dividerTop = optionsDivider.getBoundingClientRect().top;
+      const tradesColTop = tradesCol.getBoundingClientRect().top;
+      const stockPanelHeight = stockPanel.getBoundingClientRect().height;
+
+      // How far below the trades col top is the options divider on the left
+      const targetOffset = dividerTop - tradesColTop;
+      const spacerHeight = Math.max(0, targetOffset - stockPanelHeight);
+      spacer.style.height = spacerHeight + 'px';
     }
 
     async function loadOptionsTrades() {
