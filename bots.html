@@ -35,12 +35,42 @@
     .sidebar-item.active { background: rgba(0,230,118,0.08); color: var(--accent); font-weight: 600; }
     .sidebar-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); border-radius: 0 2px 2px 0; }
 
-    main { flex: 1; padding: 28px 36px; overflow-y: auto; }
+    main { flex: 1; display: flex; gap: 0; overflow: hidden; }
+    .bots-col { flex: 1; min-width: 0; padding: 28px 28px; overflow-y: auto; }
+    .trades-col { width: 320px; flex-shrink: 0; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
 
     .page-header { margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; }
     .page-header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
 
-    .bots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; margin-top: 8px; }
+    .bots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; margin-top: 8px; }
+
+    /* Right panel */
+    .trades-panel-header { padding: 18px 18px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .trades-panel-title { font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 14px; }
+    .pnl-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .pnl-stat { background: #0d0d0d; border: 1px solid #1a1a1a; border-radius: 8px; padding: 10px 12px; }
+    .pnl-stat-label { font-size: 0.62rem; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.06em; }
+    .pnl-stat-value { font-size: 1.05rem; font-weight: 900; margin-top: 3px; }
+    .pnl-stat-value.pos { color: var(--accent); }
+    .pnl-stat-value.neg { color: var(--red); }
+    .pnl-stat-value.neu { color: var(--text); }
+    .trades-feed { flex: 1; overflow-y: auto; padding: 0; }
+    .feed-empty { text-align: center; padding: 40px 16px; color: #444; font-size: 0.82rem; }
+    .feed-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 18px; border-bottom: 1px solid #141414; gap: 8px; transition: background 0.1s; }
+    .feed-row:hover { background: rgba(255,255,255,0.02); }
+    .feed-row.new { animation: flashIn 0.6s ease; }
+    @keyframes flashIn { from { background: rgba(0,230,118,0.08); } to { background: transparent; } }
+    .feed-action { font-size: 0.68rem; font-weight: 800; padding: 3px 8px; border-radius: 8px; text-transform: uppercase; flex-shrink: 0; }
+    .feed-action.buy { background: rgba(0,230,118,0.12); color: var(--accent); }
+    .feed-action.sell { background: rgba(255,23,68,0.12); color: var(--red); }
+    .feed-sym { font-weight: 800; font-size: 0.85rem; }
+    .feed-price { font-size: 0.75rem; color: var(--muted); }
+    .feed-pnl { font-size: 0.78rem; font-weight: 800; flex-shrink: 0; }
+    .feed-pnl.pos { color: var(--accent); }
+    .feed-pnl.neg { color: var(--red); }
+    .feed-pnl.open { color: #555; }
+    .feed-time { font-size: 0.68rem; color: #444; }
+    @media (max-width: 900px) { .sidebar { display: none; } .bots-col { padding: 20px 16px; } .trades-col { display: none; } }
 
     .bot-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 16px; transition: border-color 0.2s, box-shadow 0.2s; }
     .bot-card.running { border-color: rgba(0,230,118,0.35); box-shadow: 0 0 24px rgba(0,230,118,0.08); }
@@ -218,17 +248,30 @@
       </aside>
 
       <main>
-        <div class="page-header">
-          <h1>Bots</h1>
+        <!-- Left: Bot cards -->
+        <div class="bots-col">
+          <div class="page-header">
+            <h1>Bots</h1>
+          </div>
+          <div id="bots-container">
+            <div class="empty-state">Loading bots...</div>
+          </div>
         </div>
 
-        <div id="bots-container">
-          <div class="empty-state">Loading bots...</div>
-        </div>
-
-
-        <div style="text-align:center;padding:24px;font-size:0.85rem;color:#666;margin-top:auto;">
-          Contact: <a href="mailto:BoofCapital@gmail.com" style="color:var(--muted);text-decoration:none;">BoofCapital@gmail.com</a>
+        <!-- Right: Trades feed + P&L -->
+        <div class="trades-col">
+          <div class="trades-panel-header">
+            <div class="trades-panel-title">Bot Activity</div>
+            <div class="pnl-stats-grid" id="pnl-stats">
+              <div class="pnl-stat"><div class="pnl-stat-label">Total P&L</div><div class="pnl-stat-value neu" id="stat-pnl">—</div></div>
+              <div class="pnl-stat"><div class="pnl-stat-label">Win Rate</div><div class="pnl-stat-value neu" id="stat-wr">—</div></div>
+              <div class="pnl-stat"><div class="pnl-stat-label">Total Trades</div><div class="pnl-stat-value neu" id="stat-total">—</div></div>
+              <div class="pnl-stat"><div class="pnl-stat-label">Open</div><div class="pnl-stat-value neu" id="stat-open">—</div></div>
+            </div>
+          </div>
+          <div class="trades-feed" id="trades-feed">
+            <div class="feed-empty">Loading trades...</div>
+          </div>
         </div>
       </main>
     </div>
@@ -548,6 +591,59 @@
       });
 
       await loadBots();
+      await loadTrades();
+      setInterval(loadTrades, 30000);
+    }
+
+    async function loadTrades() {
+      const { data: trades } = await sbClient
+        .from('trades')
+        .select('id, system_id, symbol, action, price, quantity, pnl, status, created_at')
+        .eq('user_id', currentUserId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      const feed = document.getElementById('trades-feed');
+      const t = trades || [];
+
+      // P&L stats
+      const closed = t.filter(x => x.pnl != null);
+      const wins   = closed.filter(x => x.pnl > 0).length;
+      const totalPnl = closed.reduce((s, x) => s + Number(x.pnl), 0);
+      const winRate  = closed.length > 0 ? Math.round(wins / closed.length * 100) : 0;
+      const open     = t.filter(x => x.status === 'filled' && x.pnl == null).length;
+
+      const pnlEl = document.getElementById('stat-pnl');
+      const wrEl  = document.getElementById('stat-wr');
+      const totEl = document.getElementById('stat-total');
+      const opnEl = document.getElementById('stat-open');
+      if (pnlEl) { pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2); pnlEl.className = 'pnl-stat-value ' + (totalPnl >= 0 ? 'pos' : 'neg'); }
+      if (wrEl)  { wrEl.textContent  = winRate + '%'; wrEl.className = 'pnl-stat-value ' + (winRate >= 50 ? 'pos' : 'neg'); }
+      if (totEl) { totEl.textContent = t.length; totEl.className = 'pnl-stat-value neu'; }
+      if (opnEl) { opnEl.textContent = open; opnEl.className = 'pnl-stat-value neu'; }
+
+      // Feed rows
+      if (t.length === 0) { feed.innerHTML = '<div class="feed-empty">No bot trades yet</div>'; return; }
+
+      feed.innerHTML = t.map(tr => {
+        const pnlClass = tr.pnl != null ? (tr.pnl >= 0 ? 'pos' : 'neg') : 'open';
+        const pnlText  = tr.pnl != null ? (tr.pnl >= 0 ? '+' : '') + '$' + Number(tr.pnl).toFixed(2) : 'Open';
+        const dt = new Date(tr.created_at);
+        const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        return `<div class="feed-row">
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+            <span class="feed-action ${tr.action}">${tr.action}</span>
+            <div>
+              <div class="feed-sym">${tr.symbol}</div>
+              <div class="feed-price">$${Number(tr.price).toFixed(2)} &times; ${tr.quantity}</div>
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div class="feed-pnl ${pnlClass}">${pnlText}</div>
+            <div class="feed-time">${timeStr}</div>
+          </div>
+        </div>`;
+      }).join('');
     }
 
     async function signOut() {
