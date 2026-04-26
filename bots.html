@@ -402,8 +402,6 @@
         const autoStatus = isRunning ? 'Auto-trading options · checks every hour' : 'Options bot stopped';
         const card = document.createElement('div');
         card.className = 'bot-card' + (isRunning ? ' running' : ' stopped');
-        card.style.borderColor = isRunning ? 'rgba(255,193,7,0.35)' : '';
-        card.style.boxShadow = isRunning ? '0 0 24px rgba(255,193,7,0.08)' : '';
         card.id = 'optcard-' + b.id;
         card.innerHTML = `
           <div class="bot-header">
@@ -446,9 +444,13 @@
           </div>
 
           <!-- Settings -->
-          <div class="settings-lock-wrap">
+          <div id="opt-auto-settings-${b.id}">
+            <div class="section-label">Auto Bot Settings</div>
+            <div class="settings-lock-wrap">
+            <div id="opt-settings-lock-${b.id}" class="settings-lock-overlay ${isRunning ? '' : 'hidden'}">
+              <div class="settings-lock-msg">Turn off the bot to<br/><span>edit settings</span></div>
+            </div>
             <div class="auto-settings">
-              <div class="section-label">Settings</div>
               <div class="auto-settings-row"><span>Scan Mode</span>
                 <select class="auto-input wide" id="oscan-${b.id}" onchange="toggleOptScanMode('${b.id}', this.value)">
                   <option value="single" ${!b.bot_scan_mode||b.bot_scan_mode==='single'?'selected':''}>Single Symbol</option>
@@ -520,8 +522,6 @@
                 Indicator: <strong style="color:#82b1ff;">Adaptive SuperTrend + EMA50 + ADX(14)</strong> · Signals on candle close
               </div>
             </div>
-            <div class="settings-lock-overlay ${isRunning ? '' : 'hidden'}" id="opt-settings-lock-${b.id}">
-              <div class="settings-lock-msg">Turn off the bot to<br/><span>edit settings</span></div>
             </div>
           </div>
         `;
@@ -589,7 +589,7 @@
       const lock = document.getElementById('opt-settings-lock-' + botId);
       if (badge) { badge.className = 'status-badge ' + (on ? 'running' : 'stopped'); badge.textContent = on ? 'Running' : 'Stopped'; }
       if (detail) detail.textContent = on ? 'Auto-trading options · checks every hour' : 'Options bot stopped';
-      if (card) { card.classList.toggle('running', on); card.classList.toggle('stopped', !on); card.style.borderColor = on ? 'rgba(255,193,7,0.35)' : ''; card.style.boxShadow = on ? '0 0 24px rgba(255,193,7,0.08)' : ''; }
+      if (card) { card.classList.toggle('running', on); card.classList.toggle('stopped', !on); card.style.borderColor = ''; card.style.boxShadow = ''; }
       if (lock) lock.classList.toggle('hidden', !on);
     }
 
