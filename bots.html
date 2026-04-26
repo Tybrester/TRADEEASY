@@ -57,6 +57,15 @@
     .status-dot.off { background: #444; }
     @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
 
+    .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+    .status-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .status-badge.running { background: rgba(0,230,118,0.12); color: var(--accent); border: 1px solid rgba(0,230,118,0.25); }
+    .status-badge.running::before { background: var(--accent); box-shadow: 0 0 5px var(--accent); animation: pulse 2s infinite; }
+    .status-badge.stopped { background: rgba(255,255,255,0.04); color: #666; border: 1px solid #222; }
+    .status-badge.stopped::before { background: #444; }
+    .status-badge.paused { background: rgba(255,193,7,0.1); color: #ffc107; border: 1px solid rgba(255,193,7,0.2); }
+    .status-badge.paused::before { background: #ffc107; }
+
     .bot-toggles { display: flex; flex-direction: column; gap: 10px; background: #0f0f0f; border-radius: 10px; padding: 14px; }
     .bot-toggle-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.84rem; color: var(--muted); }
     .toggle-switch { position: relative; width: 40px; height: 22px; }
@@ -346,6 +355,7 @@
       const grid = document.createElement('div');
       grid.className = 'bots-grid';
 
+
       systems.forEach(s => {
         const isRunning = s.enabled && s.auto_submit;
         const isAuto = (s.bot_mode === 'auto');
@@ -375,14 +385,17 @@
         card.id = 'botcard-' + s.id;
         card.innerHTML = `
           <div class="bot-header">
-            <div>
-              <div class="bot-name">${s.name}</div>
-              <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;">
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                <div class="bot-name">${s.name}</div>
+                <span class="status-badge ${isRunning ? 'running' : 'stopped'}" id="status-badge-${s.id}">${isRunning ? 'Running' : 'Stopped'}</span>
+              </div>
+              <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center;">
                 <span class="bot-broker-tag ${brokerClass}" id="broker-tag-${s.id}">${brokerLabel}</span>
                 ${isAuto ? `<span class="indicator-badge">🤖 Auto</span>` : `<span style="font-size:0.7rem;font-weight:700;color:#888;padding:3px 10px;border-radius:20px;background:#1a1a1a;">Webhook</span>`}
+                <span style="font-size:0.72rem;color:#555;" id="status-detail-${s.id}">${autoStatus}</span>
               </div>
             </div>
-            <div class="status-dot ${isRunning ? 'on' : 'off'}" id="dot-${s.id}"></div>
           </div>
 
           <!-- Bot mode tabs -->
@@ -554,27 +567,20 @@
         grid.appendChild(card);
       });
 
-      container.innerHTML = '';
       container.appendChild(grid);
     }
 
     async function setBotMode(systemId, mode, clickedBtn) {
       await sbClient.from('systems').update({ bot_mode: mode }).eq('id', systemId);
-      // Update tabs
       const card = document.getElementById('botcard-' + systemId);
       card.querySelectorAll('.mode-tab').forEach(b => b.classList.remove('active'));
       clickedBtn.classList.add('active');
-      // Show/hide panels
       const autoPanel = document.getElementById('auto-settings-' + systemId);
       const webhookPanel = document.getElementById('webhook-section-' + systemId);
-      const statusText = document.getElementById('status-text-' + systemId);
-      const isRunning = document.getElementById('master-' + systemId)?.checked;
       if (autoPanel) autoPanel.style.display = mode === 'auto' ? 'block' : 'none';
       if (webhookPanel) webhookPanel.style.display = mode === 'auto' ? 'none' : 'block';
-      if (statusText) {
-        if (mode === 'auto') statusText.textContent = isRunning ? 'Auto-trading on 1h candles' : 'Auto mode — bot stopped';
-        else statusText.textContent = isRunning ? 'Running — accepting signals' : 'Stopped — signals ignored';
-      }
+      const isRunning = document.getElementById('master-' + systemId)?.checked;
+      refreshStatusBadge(systemId, isRunning, mode);
     }
 
     async function saveAutoSettings(systemId) {
@@ -642,6 +648,26 @@
       });
     }
 
+    function refreshStatusBadge(systemId, isRunning, mode) {
+      const badge = document.getElementById('status-badge-' + systemId);
+      const detail = document.getElementById('status-detail-' + systemId);
+      const card = document.getElementById('botcard-' + systemId);
+      // Determine current mode if not passed
+      if (!mode) {
+        const autoPanel = document.getElementById('auto-settings-' + systemId);
+        mode = autoPanel && autoPanel.style.display !== 'none' ? 'auto' : 'webhook';
+      }
+      if (badge) {
+        badge.className = 'status-badge ' + (isRunning ? 'running' : 'stopped');
+        badge.textContent = isRunning ? 'Running' : 'Stopped';
+      }
+      if (detail) {
+        if (mode === 'auto') detail.textContent = isRunning ? 'Auto-trading · checks every hour' : 'Auto mode — bot stopped';
+        else detail.textContent = isRunning ? 'Listening for webhook signals' : 'Stopped — signals ignored';
+      }
+      if (card) { card.classList.toggle('running', isRunning); card.classList.toggle('stopped', !isRunning); }
+    }
+
     function refreshBrokerTag(systemId, broker) {
       const tag = document.getElementById('broker-tag-' + systemId);
       if (!tag) return;
@@ -693,48 +719,22 @@
     async function toggleBot(systemId, on) {
       const enabled = on;
       const autoSubmit = on;
-
-      // Update both fields together
       await sbClient.from('systems').update({ enabled, auto_submit: autoSubmit }).eq('id', systemId);
-
-      // Sync sub-toggles
       const enToggle = document.getElementById('tog-en-' + systemId);
       const asToggle = document.getElementById('tog-as-' + systemId);
       if (enToggle) enToggle.checked = enabled;
       if (asToggle) asToggle.checked = autoSubmit;
-
-      // Update dot + label
-      const dot = document.getElementById('dot-' + systemId);
-      const statusText = document.getElementById('status-text-' + systemId);
-      const card = document.getElementById('botcard-' + systemId);
-      if (dot) { dot.className = 'status-dot ' + (on ? 'on' : 'off'); }
-      if (statusText) { statusText.textContent = on ? 'Running — accepting signals' : 'Stopped — signals ignored'; }
-      if (card) {
-        card.classList.toggle('running', on);
-        card.classList.toggle('stopped', !on);
-      }
+      refreshStatusBadge(systemId, on);
     }
 
     async function onSubToggle(systemId) {
       const enabled = document.getElementById('tog-en-' + systemId)?.checked;
       const autoSubmit = document.getElementById('tog-as-' + systemId)?.checked;
       const isRunning = enabled && autoSubmit;
-
       await sbClient.from('systems').update({ enabled, auto_submit: autoSubmit }).eq('id', systemId);
-
-      // Sync master toggle
       const master = document.getElementById('master-' + systemId);
       if (master) master.checked = isRunning;
-
-      const dot = document.getElementById('dot-' + systemId);
-      const statusText = document.getElementById('status-text-' + systemId);
-      const card = document.getElementById('botcard-' + systemId);
-      if (dot) { dot.className = 'status-dot ' + (isRunning ? 'on' : 'off'); }
-      if (statusText) { statusText.textContent = isRunning ? 'Running — accepting signals' : 'Stopped — signals ignored'; }
-      if (card) {
-        card.classList.toggle('running', isRunning);
-        card.classList.toggle('stopped', !isRunning);
-      }
+      refreshStatusBadge(systemId, isRunning);
     }
 
     function copyWebhook(systemId, btn) {
