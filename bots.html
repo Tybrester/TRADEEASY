@@ -70,6 +70,15 @@
     .feed-pnl.neg { color: var(--red); }
     .feed-pnl.open { color: #555; }
     .feed-time { font-size: 0.68rem; color: #444; }
+    .section-divider { display: flex; align-items: center; gap: 12px; margin: 32px 0 20px; }
+    .section-divider-line { flex: 1; height: 1px; background: var(--border); }
+    .section-divider-label { font-size: 0.72rem; font-weight: 800; color: #555; text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
+    .option-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,193,7,0.08); border: 1px solid rgba(255,193,7,0.2); color: #ffc107; font-size: 0.72rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
+    .expiry-pill { padding: 5px 14px; border-radius: 20px; border: 1px solid #2a2a2a; background: transparent; color: var(--muted); font-size: 0.76rem; font-weight: 700; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .expiry-pill:hover { border-color: #ffc107; color: #ffc107; }
+    .expiry-pill.active { border-color: #ffc107; background: rgba(255,193,7,0.1); color: #ffc107; }
+    .new-options-btn { background: rgba(255,193,7,0.1); border: 1px solid rgba(255,193,7,0.3); color: #ffc107; font-size: 0.82rem; font-weight: 800; padding: 9px 18px; border-radius: 8px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .new-options-btn:hover { background: rgba(255,193,7,0.18); }
     @media (max-width: 900px) { .sidebar { display: none; } .bots-col { padding: 20px 16px; } .trades-col { display: none; } }
 
     .bot-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 16px; transition: border-color 0.2s, box-shadow 0.2s; }
@@ -263,6 +272,19 @@
           <div id="bots-container">
             <div class="empty-state">Loading bots...</div>
           </div>
+
+          <!-- Options Bots Section -->
+          <div class="section-divider">
+            <div class="section-divider-line"></div>
+            <div class="section-divider-label">⚡ Options Bots (Paper)</div>
+            <div class="section-divider-line"></div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+            <button class="new-options-btn" onclick="showNewOptionsBotModal()">+ New Options Bot</button>
+          </div>
+          <div id="options-bots-container">
+            <div class="empty-state" style="border-color:#2a2000;">Loading options bots...</div>
+          </div>
         </div>
 
         <!-- Right: Trades feed + P&L -->
@@ -291,6 +313,7 @@
     const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = null;
+    let optionsBotEditId = null;
 
     function buildWebhookUrl(userId, systemId) {
       return `${WEBHOOK_BASE}?user_id=${userId}&system_id=${systemId}`;
@@ -298,6 +321,173 @@
 
     async function toggleSystemField(id, field, value) {
       await sbClient.from('systems').update({ [field]: value }).eq('id', id);
+    }
+
+    async function loadOptionsBots() {
+      const container = document.getElementById('options-bots-container');
+      const { data: bots } = await sbClient.from('options_bots').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false });
+      if (!bots || bots.length === 0) {
+        container.innerHTML = `<div class="empty-state" style="border-color:#2a2000;"><div style="font-size:2rem;margin-bottom:12px;">⚡</div><div>No options bots yet.</div><div style="margin-top:8px;font-size:0.82rem;">Click "+ New Options Bot" to create one.</div></div>`;
+        return;
+      }
+      container.innerHTML = '';
+      const grid = document.createElement('div');
+      grid.className = 'bots-grid';
+      bots.forEach(b => {
+        const isRunning = b.enabled && b.auto_submit;
+        const paperBalance = Number(b.paper_balance ?? 150000);
+        const expiryLabel = b.bot_expiry_type === '0dte' ? '0DTE' : b.bot_expiry_type === 'weekly' ? 'Weekly' : 'Monthly';
+        const otmLabel = b.bot_otm_strikes === 0 ? 'ATM' : `${b.bot_otm_strikes} Strike${b.bot_otm_strikes > 1 ? 's' : ''} OTM`;
+        const autoStatus = isRunning ? 'Auto-trading options · checks every hour' : 'Options bot stopped';
+        const card = document.createElement('div');
+        card.className = 'bot-card' + (isRunning ? ' running' : ' stopped');
+        card.style.borderColor = isRunning ? 'rgba(255,193,7,0.35)' : '';
+        card.style.boxShadow = isRunning ? '0 0 24px rgba(255,193,7,0.08)' : '';
+        card.id = 'optcard-' + b.id;
+        card.innerHTML = `
+          <div class="bot-header">
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                <div class="bot-name">${b.name}</div>
+                <span class="status-badge ${isRunning ? 'running' : 'stopped'}" id="opt-status-badge-${b.id}">${isRunning ? 'Running' : 'Stopped'}</span>
+              </div>
+              <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center;">
+                <span class="bot-broker-tag bot-broker-paper">Paper</span>
+                <span class="option-badge">⚡ Options</span>
+                <span style="font-size:0.72rem;color:#555;">${expiryLabel} · ${otmLabel}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Paper balance -->
+          <div class="paper-balance-box" style="border-color:#2a2000;">
+            <div>
+              <div class="paper-balance-label">Paper Balance</div>
+              <div class="paper-balance-value" id="opt-paper-bal-${b.id}">$${paperBalance.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+            </div>
+            <button class="reset-btn" onclick="resetOptionsPaperBalance('${b.id}')">Reset to $150k</button>
+          </div>
+
+          <!-- Master toggle -->
+          <div style="background:#0f0f0f;border-radius:10px;padding:14px 16px;">
+            <div class="big-toggle-wrap">
+              <div>
+                <div class="big-toggle-label">Bot Active</div>
+                <div class="big-toggle-sub" id="opt-status-text-${b.id}">${autoStatus}</div>
+              </div>
+              <label class="big-toggle-switch">
+                <input type="checkbox" id="opt-master-${b.id}" ${isRunning ? 'checked' : ''} onchange="toggleOptionsBot('${b.id}', this.checked)"/>
+                <span class="big-toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Settings -->
+          <div class="settings-lock-wrap">
+            <div class="auto-settings">
+              <div class="section-label">Settings</div>
+              <div class="auto-settings-row"><span>Symbol</span><input class="auto-input" id="osym-${b.id}" value="${b.bot_symbol||'SPY'}" placeholder="SPY"/></div>
+              <div class="auto-settings-row"><span>$ Per Trade</span><input class="auto-input" id="odol-${b.id}" type="number" value="${b.bot_dollar_amount||500}" min="100"/></div>
+              <div class="auto-settings-row"><span>Interval</span>
+                <select class="auto-input wide" id="oint-${b.id}">
+                  <option value="1h" ${b.bot_interval==='1h'?'selected':''}>1 Hour</option>
+                  <option value="4h" ${b.bot_interval==='4h'?'selected':''}>4 Hour</option>
+                  <option value="1d" ${b.bot_interval==='1d'?'selected':''}>Daily</option>
+                </select>
+              </div>
+              <div class="auto-settings-row"><span>Expiration</span>
+                <div style="display:flex;gap:6px;">
+                  <button id="oexp-0dte-${b.id}" class="expiry-pill ${b.bot_expiry_type==='0dte'?'active':''}" onclick="setOptionsExpiry('${b.id}','0dte')">0DTE</button>
+                  <button id="oexp-weekly-${b.id}" class="expiry-pill ${b.bot_expiry_type==='weekly'||!b.bot_expiry_type?'active':''}" onclick="setOptionsExpiry('${b.id}','weekly')">Weekly</button>
+                  <button id="oexp-monthly-${b.id}" class="expiry-pill ${b.bot_expiry_type==='monthly'?'active':''}" onclick="setOptionsExpiry('${b.id}','monthly')">Monthly</button>
+                </div>
+              </div>
+              <div class="auto-settings-row"><span>OTM Strikes</span>
+                <select class="auto-input" id="ootm-${b.id}">
+                  <option value="0" ${b.bot_otm_strikes===0?'selected':''}>ATM</option>
+                  <option value="1" ${b.bot_otm_strikes===1||b.bot_otm_strikes==null?'selected':''}>1 Strike OTM</option>
+                  <option value="2" ${b.bot_otm_strikes===2?'selected':''}>2 Strikes OTM</option>
+                  <option value="3" ${b.bot_otm_strikes===3?'selected':''}>3 Strikes OTM</option>
+                </select>
+              </div>
+              <div class="auto-settings-row"><span>Direction</span>
+                <div style="display:flex;gap:6px;">
+                  <button id="odir-both-${b.id}" class="dir-pill ${!b.bot_trade_direction||b.bot_trade_direction==='both'?'active':''}" onclick="setOptionsDir('${b.id}','both')">Both</button>
+                  <button id="odir-long-${b.id}" class="dir-pill ${b.bot_trade_direction==='long'?'active':''}" onclick="setOptionsDir('${b.id}','long')">Calls</button>
+                  <button id="odir-short-${b.id}" class="dir-pill ${b.bot_trade_direction==='short'?'active':''}" onclick="setOptionsDir('${b.id}','short')">Puts</button>
+                </div>
+              </div>
+              <div class="auto-settings-row" style="justify-content:flex-end;gap:8px;">
+                <button class="save-btn" style="background:#ffc107;color:#000;" onclick="saveOptionsSettings('${b.id}')">Save Settings</button>
+              </div>
+              <div class="run-result" id="opt-run-result-${b.id}"></div>
+            </div>
+            <div class="settings-lock-overlay ${isRunning ? '' : 'hidden'}" id="opt-settings-lock-${b.id}">
+              <div class="settings-lock-icon">🔒</div>
+              <div class="settings-lock-msg">Bot is running.<br/><span>Stop bot to edit settings.</span></div>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+      container.appendChild(grid);
+    }
+
+    function setOptionsExpiry(botId, type) {
+      ['0dte','weekly','monthly'].forEach(t => {
+        const btn = document.getElementById(`oexp-${t}-${botId}`);
+        if (btn) btn.classList.toggle('active', t === type);
+      });
+    }
+
+    function setOptionsDir(botId, dir) {
+      ['both','long','short'].forEach(d => {
+        const btn = document.getElementById(`odir-${d}-${botId}`);
+        if (btn) btn.classList.toggle('active', d === dir);
+      });
+    }
+
+    async function saveOptionsSettings(botId) {
+      const sym = document.getElementById('osym-' + botId)?.value?.toUpperCase().trim();
+      const dol = parseFloat(document.getElementById('odol-' + botId)?.value);
+      const int = document.getElementById('oint-' + botId)?.value;
+      const otm = parseInt(document.getElementById('ootm-' + botId)?.value);
+      const expiry = ['0dte','weekly','monthly'].find(t => document.getElementById(`oexp-${t}-${botId}`)?.classList.contains('active')) || 'weekly';
+      const dir = ['both','long','short'].find(d => document.getElementById(`odir-${d}-${botId}`)?.classList.contains('active')) || 'both';
+      await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_interval: int, bot_otm_strikes: otm, bot_expiry_type: expiry, bot_trade_direction: dir }).eq('id', botId);
+      const r = document.getElementById('opt-run-result-' + botId);
+      if (r) { r.textContent = '✓ Settings saved'; r.className = 'run-result green'; setTimeout(() => { r.textContent=''; r.className='run-result'; }, 2000); }
+    }
+
+    async function toggleOptionsBot(botId, on) {
+      await sbClient.from('options_bots').update({ enabled: on, auto_submit: on }).eq('id', botId);
+      const badge = document.getElementById('opt-status-badge-' + botId);
+      const detail = document.getElementById('opt-status-text-' + botId);
+      const card = document.getElementById('optcard-' + botId);
+      const lock = document.getElementById('opt-settings-lock-' + botId);
+      if (badge) { badge.className = 'status-badge ' + (on ? 'running' : 'stopped'); badge.textContent = on ? 'Running' : 'Stopped'; }
+      if (detail) detail.textContent = on ? 'Auto-trading options · checks every hour' : 'Options bot stopped';
+      if (card) { card.classList.toggle('running', on); card.classList.toggle('stopped', !on); card.style.borderColor = on ? 'rgba(255,193,7,0.35)' : ''; card.style.boxShadow = on ? '0 0 24px rgba(255,193,7,0.08)' : ''; }
+      if (lock) lock.classList.toggle('hidden', !on);
+    }
+
+    async function resetOptionsPaperBalance(botId) {
+      if (!confirm('Reset options paper balance back to $150,000?')) return;
+      await sbClient.from('options_bots').update({ paper_balance: 150000, paper_balance_start: 150000 }).eq('id', botId);
+      const el = document.getElementById('opt-paper-bal-' + botId);
+      if (el) el.textContent = '$150,000.00';
+    }
+
+    function showNewOptionsBotModal() {
+      const name = prompt('Name your options bot:');
+      if (!name || !name.trim()) return;
+      createOptionsBot(name.trim());
+    }
+
+    async function createOptionsBot(name) {
+      const { error } = await sbClient.from('options_bots').insert({ user_id: currentUserId, name, enabled: false, auto_submit: false });
+      if (error) { alert('Error: ' + error.message); return; }
+      await loadOptionsBots();
     }
 
     async function loadBots() {
@@ -582,6 +772,7 @@
       });
 
       await loadBots();
+      await loadOptionsBots();
       await loadTrades();
       setInterval(loadTrades, 30000);
     }
