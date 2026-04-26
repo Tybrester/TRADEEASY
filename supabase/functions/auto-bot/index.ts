@@ -385,27 +385,24 @@ Deno.serve(async (req) => {
     }
 
     // ── Symbol lists for scan mode ──────────────────────────────────────────
-    // SP500 representative (~200 largest) + NQ100
     const SCAN_STOCKS = [
-      // NQ100 core
-      'QQQ','AAPL','MSFT','NVDA','AMZN','META','TSLA','GOOGL','GOOG','AVGO',
-      'COST','NFLX','AMD','ADBE','QCOM','LIN','TXN','INTU','ISRG','AMGN',
-      'CMCSA','PEP','HON','VRTX','REGN','PANW','KLAC','LRCX','SNPS','CDNS',
-      'MRVL','ASML','ABNB','CRWD','FTNT','DXCM','CEG','MRNA','IDXX','BIIB',
-      'CSGP','TTWO','ILMN','WBD','ZS','SIRI','DLTR','FANG','FAST','PCAR',
-      // SP500 large caps
-      'SPY','V','MA','JPM','UNH','JNJ','WMT','XOM','BAC','PG',
-      'HD','CVX','MRK','ABBV','KO','PFE','LLY','TMO','MCD','ACN',
-      'DHR','NEE','ABT','ORCL','CRM','WFC','BMY','MS','GS','RTX',
-      'CAT','UPS','NOW','SPGI','AXP','BLK','DE','MMM','GE','SCHW',
-      'C','CB','TJX','SYK','ZTS','ADI','MDLZ','GILD','CI','BDX',
-      'USB','PLD','MO','EOG','DUK','SO','ICE','ITW','CME','PNC',
-      'AON','HCA','CL','FDX','EMR','EW','PSA','NSC','D','APD',
-      'BSX','MCO','ROP','TGT','REGN','SHW','TFC','AIG','MET','ADP',
-      'WELL','ELV','MCHP','F','GM','UBER','LYFT','ABNB','DASH','RBLX',
-      'PLTR','COIN','HOOD','SOFI','SQ','PYPL','SHOP','SNOW','DDOG','NET',
-      'ZM','ROKU','TWLO','U','PATH','AI','GTLB','MDB','CFLT','BILL',
-      'ARM','SMCI','ANET','ONTO','AMBA','ALGN','PODD','AXNX','TMDX','CELH',
+      // Mega-cap / most liquid
+      'AAPL','MSFT','AMZN','NVDA','TSLA','GOOG','GOOGL','META','NFLX','BRK-B',
+      'JPM','BAC','WFC','V','MA','PG','KO','PFE','UNH','HD',
+      // Tech / consumer
+      'INTC','CSCO','ADBE','CRM','ORCL','AMD','QCOM','TXN','IBM','AVGO',
+      // Energy / industrial
+      'XOM','CVX','BA','CAT','MMM','GE','HON','LMT','NOC','DE',
+      // Financial / banking
+      'C','GS','MS','AXP','BLK','SCHW','BK','SPGI','ICE',
+      // Healthcare / pharma
+      'MRK','ABBV','AMGN','BMY','LLY','GILD','JNJ','REGN','VRTX','BIIB',
+      // Consumer / retail
+      'WMT','COST','TGT','LOW','MCD','SBUX','NKE','BKNG',
+      // Communications / internet
+      'SNAP','UBER','LYFT','SPOT','ZM','DOCU','PINS','ROKU','SHOP',
+      // Misc large caps
+      'CVS','TMO','MDT','ISRG','F','GM',
     ];
     // Crypto: all with consistent daily volume > $100M
     const SCAN_CRYPTO = [
