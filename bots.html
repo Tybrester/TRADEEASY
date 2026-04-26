@@ -488,6 +488,16 @@
                   <span style="font-size:0.78rem;color:#555;">% loss</span>
                 </div>
               </div>
+              <div class="auto-settings-row">
+                <span>Broker</span>
+                <select class="auto-input" id="obrk-${b.id}" style="width:160px;">
+                  <option value="paper" ${!b.broker||b.broker==='paper'?'selected':''}>Paper Trading</option>
+                  <option value="tastytrade" ${b.broker==='tastytrade'?'selected':''}>Tastytrade (Live)</option>
+                </select>
+              </div>
+              <div id="obrk-warn-${b.id}" style="font-size:0.72rem;color:#ff7043;display:${b.broker==='tastytrade'?'flex':'none'};align-items:center;gap:6px;background:rgba(255,112,67,0.08);border:1px solid rgba(255,112,67,0.2);border-radius:6px;padding:8px 10px;">
+                <span>Live options trading — real orders will be placed on Tastytrade</span>
+              </div>
               <div class="auto-settings-row" style="justify-content:flex-end;gap:8px;">
                 <button class="save-btn" style="background:#ffc107;color:#000;" onclick="saveOptionsSettings('${b.id}')">Save Settings</button>
               </div>
@@ -549,7 +559,10 @@
       const scanMode = document.getElementById('oscan-' + botId)?.value || 'single';
       const tp = parseFloat(document.getElementById('otp-' + botId)?.value) || 100;
       const sl = Math.abs(parseFloat(document.getElementById('osl-' + botId)?.value) || 20);
-      await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_interval: int, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl }).eq('id', botId);
+      const broker = document.getElementById('obrk-' + botId)?.value || 'paper';
+      const brkWarn = document.getElementById('obrk-warn-' + botId);
+      if (brkWarn) brkWarn.style.display = broker === 'tastytrade' ? 'flex' : 'none';
+      await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_interval: int, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, broker }).eq('id', botId);
       const r = document.getElementById('opt-run-result-' + botId);
       if (r) { r.textContent = '✓ Settings saved'; r.className = 'run-result green'; setTimeout(() => { r.textContent=''; r.className='run-result'; }, 2000); }
     }
