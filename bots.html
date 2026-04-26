@@ -135,6 +135,12 @@
 
     .indicator-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(130,177,255,0.08); border: 1px solid rgba(130,177,255,0.15); color: #82b1ff; font-size: 0.72rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
 
+    .dir-pill { padding: 5px 14px; border-radius: 20px; border: 1px solid #2a2a2a; background: transparent; color: var(--muted); font-size: 0.76rem; font-weight: 700; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .dir-pill:hover { border-color: #444; color: var(--text); }
+    .dir-pill.active { border-color: var(--accent); background: rgba(0,230,118,0.1); color: var(--accent); }
+    .dir-pill.active[id*='long'] { border-color: var(--accent); background: rgba(0,230,118,0.1); color: var(--accent); }
+    .dir-pill.active[id*='short'] { border-color: var(--red); background: rgba(255,23,68,0.1); color: var(--red); }
+
     @media (max-width: 900px) { .sidebar { display: none; } main { padding: 20px 16px; } }
   </style>
 </head>
@@ -295,6 +301,7 @@
         const interval = s.bot_interval || '1h';
         const broker = s.broker || 'paper';
         const brokerIsTasty = broker === 'tastytrade';
+        const botDir = s.bot_trade_direction || 'both';
 
         const autoStatus = isAuto
           ? (isRunning ? 'Auto-trading on 1h candles' : 'Auto mode — bot stopped')
@@ -361,6 +368,15 @@
                   <option value="4h" ${interval==='4h'?'selected':''}>4 hour</option>
                   <option value="1d" ${interval==='1d'?'selected':''}>1 day</option>
                 </select>
+              </div>
+              <div class="auto-settings-row" style="align-items:flex-start;">
+                <span style="padding-top:2px;">Direction</span>
+                <div style="display:flex;gap:6px;">
+                  <button type="button" class="dir-pill ${botDir==='both'?'active':''}" id="dir-both-${s.id}" onclick="setBotDir('${s.id}','both')">Both</button>
+                  <button type="button" class="dir-pill ${botDir==='long'?'active':''}" id="dir-long-${s.id}" onclick="setBotDir('${s.id}','long')">Long</button>
+                  <button type="button" class="dir-pill ${botDir==='short'?'active':''}" id="dir-short-${s.id}" onclick="setBotDir('${s.id}','short')">Short</button>
+                </div>
+                <input type="hidden" id="dir-${s.id}" value="${botDir}" />
               </div>
               <div class="auto-settings-row">
                 <span>Broker</span>
@@ -469,11 +485,13 @@
       const dollarAmount = parseFloat(document.getElementById('amt-' + systemId)?.value) || 500;
       const interval = document.getElementById('int-' + systemId)?.value || '1h';
       const broker = document.getElementById('brk-' + systemId)?.value || 'paper';
+      const botTradeDir = document.getElementById('dir-' + systemId)?.value || 'both';
       await sbClient.from('systems').update({
         bot_symbol: symbol,
         bot_dollar_amount: dollarAmount,
         bot_interval: interval,
         broker,
+        bot_trade_direction: botTradeDir,
       }).eq('id', systemId);
       // Update header broker tag
       refreshBrokerTag(systemId, broker);
@@ -500,6 +518,14 @@
       // Show/hide warning
       const warn = document.getElementById('broker-warn-' + systemId);
       if (warn) warn.style.display = broker === 'tastytrade' ? 'flex' : 'none';
+    }
+
+    function setBotDir(systemId, direction) {
+      document.getElementById('dir-' + systemId).value = direction;
+      ['both', 'long', 'short'].forEach(d => {
+        const btn = document.getElementById('dir-' + d + '-' + systemId);
+        if (btn) btn.classList.toggle('active', d === direction);
+      });
     }
 
     function refreshBrokerTag(systemId, broker) {

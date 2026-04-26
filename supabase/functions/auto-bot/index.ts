@@ -382,7 +382,7 @@ Deno.serve(async (req) => {
         symbol:        system.bot_symbol         ?? 'SPY',
         dollarAmount:  system.bot_dollar_amount  ?? 500,
         interval:      system.bot_interval       ?? '1h',
-        tradeDirection: system.trade_direction   ?? 'both',
+        tradeDirection: system.bot_trade_direction ?? system.trade_direction ?? 'both',
       };
 
       console.log(`[AutoBot] Running system "${system.name}" | ${settings.symbol} ${settings.interval}`);
