@@ -332,6 +332,38 @@ async function placeTastyOrder(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  const supabaseGET = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+
+  // GET /portfolio-value?system_id=xxx — cash + current value of open stock positions
+  if (req.method === 'GET') {
+    const url = new URL(req.url);
+    const systemId = url.searchParams.get('system_id');
+    if (!systemId) return new Response(JSON.stringify({ error: 'system_id required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+    const { data: sys } = await supabaseGET.from('systems').select('paper_balance').eq('id', systemId).single();
+    const cash = Number(sys?.paper_balance ?? 150000);
+
+    // Fetch open (filled, no pnl) trades
+    const { data: openTrades } = await supabaseGET.from('trades').select('*').eq('system_id', systemId).eq('status', 'filled').is('pnl', null);
+    let openValue = 0;
+    if (openTrades && openTrades.length > 0) {
+      for (const t of openTrades) {
+        try {
+          const candles = await fetchCandles(t.symbol, '1h', 5);
+          const price = candles.length ? candles[candles.length - 1].close : Number(t.price);
+          openValue += price * Number(t.quantity);
+        } catch (_) { openValue += Number(t.price) * Number(t.quantity); }
+      }
+    }
+
+    return new Response(JSON.stringify({ cash, open_value: openValue, total: cash + openValue }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
   // Allow cron (no auth header) OR user JWT OR service role key
   const authHeader = req.headers.get('Authorization') || '';
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
