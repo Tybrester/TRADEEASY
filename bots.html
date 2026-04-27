@@ -862,7 +862,11 @@
       await loadOptionsBots();
     }
 
-    async function loadAllTrades() {
+    let allTradesPage = 1;
+    const TRADES_PER_PAGE = 15;
+
+    async function loadAllTrades(page = 1) {
+      allTradesPage = page;
       const container = document.getElementById('all-trades-container');
       container.innerHTML = '<div class="empty-state">Loading trades...</div>';
       
@@ -875,19 +879,19 @@
         stockBots?.forEach(b => botNames[b.id] = { name: b.name, type: 'stock' });
         optionsBots?.forEach(b => botNames[b.id] = { name: b.name, type: 'options' });
         
-        // Get recent stock trades
+        // Get recent stock trades (load 100 for pagination)
         const { data: stockTrades } = await sbClient.from('stock_trades')
           .select('*')
           .eq('user_id', currentUserId)
           .order('created_at', { ascending: false })
-          .limit(15);
+          .limit(100);
         
-        // Get recent options trades  
+        // Get recent options trades (load 100 for pagination)
         const { data: optionsTrades } = await sbClient.from('options_trades')
           .select('*')
           .eq('user_id', currentUserId)
           .order('created_at', { ascending: false })
-          .limit(15);
+          .limit(100);
         
         // Combine and format trades
         const allTrades = [];
@@ -939,7 +943,14 @@
           return;
         }
         
-        const rows = allTrades.map(t => {
+        // Pagination
+        const totalTrades = allTrades.length;
+        const totalPages = Math.ceil(totalTrades / TRADES_PER_PAGE);
+        const startIdx = (allTradesPage - 1) * TRADES_PER_PAGE;
+        const endIdx = startIdx + TRADES_PER_PAGE;
+        const paginatedTrades = allTrades.slice(startIdx, endIdx);
+        
+        const rows = paginatedTrades.map(t => {
           const timeAgo = timeSince(new Date(t.createdAt));
           const pnlClass = t.pnl > 0 ? 'trade-buy' : t.pnl < 0 ? 'trade-sell' : '';
           const pnlText = t.pnl ? `$${Number(t.pnl).toFixed(2)}` : '-';
@@ -972,6 +983,28 @@
           </tr>`;
         }).join('');
         
+        // Pagination controls
+        const hasPrev = allTradesPage > 1;
+        const hasNext = allTradesPage < totalPages;
+        
+        const paginationHtml = `
+          <div style="display:flex; align-items:center; justify-content:center; gap:20px; padding:16px; background:#0a0a0a; border-top:1px solid #1a1a1a;">
+            <button onclick="loadAllTrades(${allTradesPage - 1})" 
+              style="background:${hasPrev ? 'var(--card-bg)' : 'transparent'}; border:1px solid ${hasPrev ? 'var(--border)' : '#222'}; color:${hasPrev ? 'var(--text)' : '#444'}; padding:8px 16px; border-radius:8px; cursor:${hasPrev ? 'pointer' : 'not-allowed'}; font-size:0.8rem; font-weight:600; transition:all 0.15s;"
+              ${!hasPrev ? 'disabled' : ''}>
+              ← Prev
+            </button>
+            <span style="color:#666; font-size:0.8rem; font-weight:600;">
+              Page ${allTradesPage} of ${totalPages} · ${totalTrades} trades
+            </span>
+            <button onclick="loadAllTrades(${allTradesPage + 1})" 
+              style="background:${hasNext ? 'var(--card-bg)' : 'transparent'}; border:1px solid ${hasNext ? 'var(--border)' : '#222'}; color:${hasNext ? 'var(--text)' : '#444'}; padding:8px 16px; border-radius:8px; cursor:${hasNext ? 'pointer' : 'not-allowed'}; font-size:0.8rem; font-weight:600; transition:all 0.15s;"
+              ${!hasNext ? 'disabled' : ''}>
+              Next →
+            </button>
+          </div>
+        `;
+        
         container.innerHTML = `<table class="all-trades-table">
           <thead>
             <tr>
@@ -987,7 +1020,7 @@
           </thead>
           <tbody>${rows}</tbody>
         </table>
-        <div style="text-align:center; padding:12px; color:#555; font-size:0.75rem;">Showing last 15 trades · <button onclick="loadAllTrades()" style="background:none; border:none; color:var(--accent); cursor:pointer; font-size:0.75rem; text-decoration:underline;">Refresh</button></div>`;
+        ${paginationHtml}`;
         
       } catch (err) {
         console.error('[loadAllTrades] Error:', err);
