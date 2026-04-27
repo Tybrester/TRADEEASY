@@ -37,11 +37,20 @@
 
     main { flex: 1; overflow-y: auto; }
     .bots-col { padding: 28px 28px; }
-    .activity-drawer { display: none; background: #0a0a0a; border: 1px solid #1f1f1f; border-radius: 10px; padding: 16px; margin-top: 4px; }
-    .activity-drawer.open { display: block; }
     .activity-toggle { background: none; border: 1px solid #2a2a2a; color: var(--muted); font-size: 0.75rem; font-weight: 700; padding: 5px 14px; border-radius: 6px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
     .activity-toggle:hover { border-color: var(--accent); color: var(--accent); }
-    .activity-toggle.active { border-color: var(--accent); color: var(--accent); background: rgba(0,230,118,0.07); }
+    .activity-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 500; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+    .activity-modal-overlay.open { display: flex; }
+    .activity-modal { background: #111; border: 1px solid #222; border-radius: 16px; width: 90%; max-width: 720px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+    .activity-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 16px; border-bottom: 1px solid #1f1f1f; flex-shrink: 0; }
+    .activity-modal-title { font-size: 1rem; font-weight: 800; }
+    .activity-modal-close { background: none; border: 1px solid #2a2a2a; color: var(--muted); font-size: 1rem; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+    .activity-modal-close:hover { border-color: var(--red); color: var(--red); }
+    .activity-modal-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 18px 24px; border-bottom: 1px solid #1a1a1a; flex-shrink: 0; }
+    .activity-modal-stat { background: #0a0a0a; border-radius: 8px; padding: 10px 14px; }
+    .activity-modal-stat-label { font-size: 0.65rem; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.07em; }
+    .activity-modal-stat-value { font-size: 1.1rem; font-weight: 900; margin-top: 3px; }
+    .activity-modal-body { overflow-y: auto; padding: 16px 24px; flex: 1; }
 
     .page-header { margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; }
     .page-header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
@@ -302,6 +311,20 @@
     </div>
   </div>
 
+  <!-- Activity Modal -->
+  <div class="activity-modal-overlay" id="activity-modal-overlay" onclick="closeActivityModal(event)">
+    <div class="activity-modal">
+      <div class="activity-modal-header">
+        <div class="activity-modal-title" id="activity-modal-title">Bot Activity</div>
+        <button class="activity-modal-close" onclick="closeActivityModal()">✕</button>
+      </div>
+      <div class="activity-modal-stats" id="activity-modal-stats"></div>
+      <div class="activity-modal-body" id="activity-modal-body">
+        <div class="feed-empty">Loading...</div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const SUPABASE_URL = 'https://isanhutzyctcjygjhzbn.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzYW5odXR6eWN0Y2p5Z2poemJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMTYzNDYsImV4cCI6MjA5MTY5MjM0Nn0.L0ATp-IriR708C2n3as_YXDgjHvtn_CWubbzPeSxRi0';
@@ -506,13 +529,9 @@
             </div>
           </div>
 
-          <!-- Activity Drawer -->
+          <!-- Activity Button -->
           <div>
-            <button class="activity-toggle" id="oact-btn-${b.id}" onclick="toggleOptionsBotActivity('${b.id}')">View Activity</button>
-          </div>
-          <div class="activity-drawer" id="oact-drawer-${b.id}">
-            <div style="font-size:0.72rem;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Trade History</div>
-            <div id="oact-feed-${b.id}"><div class="feed-empty">Loading...</div></div>
+            <button class="activity-toggle" onclick="openBotActivityModal('${b.id}', '${b.name}', 'options')">View Activity</button>
           </div>
 
         `;
@@ -520,53 +539,6 @@
       });
       container.appendChild(grid);
       bots.forEach(b => refreshOptBalance(b.id));
-    }
-
-    async function toggleOptionsBotActivity(botId) {
-      const drawer = document.getElementById('oact-drawer-' + botId);
-      const btn = document.getElementById('oact-btn-' + botId);
-      const isOpen = drawer.classList.contains('open');
-      drawer.classList.toggle('open', !isOpen);
-      btn.classList.toggle('active', !isOpen);
-      btn.textContent = isOpen ? 'View Activity' : 'Hide Activity';
-      if (!isOpen) await loadOptionsBotActivity(botId);
-    }
-
-    async function loadOptionsBotActivity(botId) {
-      const feed = document.getElementById('oact-feed-' + botId);
-      const { data: trades } = await sbClient
-        .from('options_trades')
-        .select('symbol, option_type, strike, expiration_date, contracts, premium_per_contract, pnl, status, created_at')
-        .eq('user_id', currentUserId)
-        .eq('bot_id', botId)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (!trades || trades.length === 0) {
-        feed.innerHTML = '<div class="feed-empty">No trades yet for this bot.</div>';
-        return;
-      }
-
-      feed.innerHTML = trades.map(tr => {
-        const isCall = tr.option_type === 'call';
-        const pnlClass = tr.pnl != null ? (tr.pnl >= 0 ? 'pos' : 'neg') : 'open';
-        const pnlText = tr.pnl != null ? (tr.pnl >= 0 ? '+' : '') + '$' + Number(tr.pnl).toFixed(2) : 'Open';
-        const dt = new Date(tr.created_at);
-        const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        return `<div class="feed-row">
-          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-            <span class="feed-action ${isCall ? 'buy' : 'sell'}">${isCall ? 'CALL' : 'PUT'}</span>
-            <div>
-              <div class="feed-sym">${tr.symbol} $${tr.strike} ${tr.expiration_date}</div>
-              <div class="feed-price">${tr.contracts} contract${tr.contracts > 1 ? 's' : ''} @ $${Number(tr.premium_per_contract).toFixed(2)}</div>
-            </div>
-          </div>
-          <div style="text-align:right;flex-shrink:0;">
-            <div class="feed-pnl ${pnlClass}">${pnlText}</div>
-            <div class="feed-time">${timeStr}</div>
-          </div>
-        </div>`;
-      }).join('');
     }
 
     function toggleOptScanMode(botId, mode) {
@@ -837,13 +809,9 @@
             </div>
           </div>
 
-          <!-- Activity Drawer -->
+          <!-- Activity Button -->
           <div>
-            <button class="activity-toggle" id="act-btn-${s.id}" onclick="toggleBotActivity('${s.id}')">View Activity</button>
-          </div>
-          <div class="activity-drawer" id="act-drawer-${s.id}">
-            <div style="font-size:0.72rem;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Trade History</div>
-            <div id="act-feed-${s.id}"><div class="feed-empty">Loading...</div></div>
+            <button class="activity-toggle" onclick="openBotActivityModal('${s.id}', '${s.name}', 'stock')">View Activity</button>
           </div>
 
         `;
@@ -955,53 +923,66 @@
       refreshStatusBadge(systemId, on);
     }
 
-    async function toggleBotActivity(systemId) {
-      const drawer = document.getElementById('act-drawer-' + systemId);
-      const btn = document.getElementById('act-btn-' + systemId);
-      const isOpen = drawer.classList.contains('open');
-      drawer.classList.toggle('open', !isOpen);
-      btn.classList.toggle('active', !isOpen);
-      btn.textContent = isOpen ? 'View Activity' : 'Hide Activity';
-      if (!isOpen) await loadBotActivity(systemId);
-    }
+    async function openBotActivityModal(id, name, type) {
+      document.getElementById('activity-modal-title').textContent = name + ' — Activity';
+      document.getElementById('activity-modal-body').innerHTML = '<div class="feed-empty">Loading...</div>';
+      document.getElementById('activity-modal-stats').innerHTML = '';
+      document.getElementById('activity-modal-overlay').classList.add('open');
 
-    async function loadBotActivity(systemId) {
-      const feed = document.getElementById('act-feed-' + systemId);
-      const { data: trades } = await sbClient
-        .from('trades')
-        .select('symbol, action, price, quantity, pnl, status, created_at')
-        .eq('user_id', currentUserId)
-        .eq('system_id', systemId)
-        .eq('source', 'auto')
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (!trades || trades.length === 0) {
-        feed.innerHTML = '<div class="feed-empty">No trades yet for this bot.</div>';
-        return;
+      if (type === 'stock') {
+        const { data: trades } = await sbClient.from('trades')
+          .select('symbol, action, price, quantity, pnl, status, created_at')
+          .eq('user_id', currentUserId).eq('system_id', id).eq('source', 'auto')
+          .order('created_at', { ascending: false }).limit(100);
+        const t = trades || [];
+        const closed = t.filter(x => x.pnl != null);
+        const totalPnl = closed.reduce((s, x) => s + Number(x.pnl), 0);
+        const winRate = closed.length > 0 ? Math.round(closed.filter(x => x.pnl > 0).length / closed.length * 100) : 0;
+        const openC = t.filter(x => x.status === 'filled' && x.pnl == null).length;
+        document.getElementById('activity-modal-stats').innerHTML = `
+          <div class="activity-modal-stat"><div class="activity-modal-stat-label">Total P&L</div><div class="activity-modal-stat-value" style="color:${totalPnl>=0?'var(--accent)':'var(--red)'}">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</div></div>
+          <div class="activity-modal-stat"><div class="activity-modal-stat-label">Win Rate</div><div class="activity-modal-stat-value">${winRate}%</div></div>
+          <div class="activity-modal-stat"><div class="activity-modal-stat-label">Total Trades</div><div class="activity-modal-stat-value">${t.length}</div></div>
+          <div class="activity-modal-stat"><div class="activity-modal-stat-label">Open</div><div class="activity-modal-stat-value">${openC}</div></div>`;
+        if (!t.length) { document.getElementById('activity-modal-body').innerHTML = '<div class="feed-empty">No trades yet for this bot.</div>'; return; }
+        document.getElementById('activity-modal-body').innerHTML = t.map(tr => {
+          const pnlClass = tr.pnl != null ? (tr.pnl >= 0 ? 'pos' : 'neg') : 'open';
+          const pnlText = tr.pnl != null ? (tr.pnl >= 0 ? '+' : '') + '$' + Number(tr.pnl).toFixed(2) : 'Open';
+          const dt = new Date(tr.created_at);
+          const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          return `<div class="feed-row"><div style="display:flex;align-items:center;gap:8px;min-width:0;"><span class="feed-action ${tr.action}">${tr.action.toUpperCase()}</span><div><div class="feed-sym">${tr.symbol}</div><div class="feed-price">$${Number(tr.price).toFixed(2)} &times; ${tr.quantity}</div></div></div><div style="text-align:right;flex-shrink:0;"><div class="feed-pnl ${pnlClass}">${pnlText}</div><div class="feed-time">${timeStr}</div></div></div>`;
+        }).join('');
+      } else {
+        const { data: trades } = await sbClient.from('options_trades')
+          .select('symbol, option_type, strike, expiration_date, contracts, premium_per_contract, pnl, status, created_at')
+          .eq('user_id', currentUserId).eq('bot_id', id)
+          .order('created_at', { ascending: false }).limit(100);
+        const t = trades || [];
+        const closed = t.filter(x => x.pnl != null);
+        const totalPnl = closed.reduce((s, x) => s + Number(x.pnl), 0);
+        const winRate = closed.length > 0 ? Math.round(closed.filter(x => x.pnl > 0).length / closed.length * 100) : 0;
+        const openC = t.filter(x => x.status === 'open').length;
+        document.getElementById('activity-modal-stats').innerHTML = `
+          <div class="activity-modal-stat"><div class="activity-modal-stat-label">Total P&L</div><div class="activity-modal-stat-value" style="color:${totalPnl>=0?'var(--accent)':'var(--red)'}">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</div></div>
+          <div class="activity-modal-stat"><div class="activity-modal-stat-label">Win Rate</div><div class="activity-modal-stat-value">${winRate}%</div></div>
+          <div class="activity-modal-stat"><div class="activity-modal-stat-label">Total Trades</div><div class="activity-modal-stat-value">${t.length}</div></div>
+          <div class="activity-modal-stat"><div class="activity-modal-stat-label">Open</div><div class="activity-modal-stat-value">${openC}</div></div>`;
+        if (!t.length) { document.getElementById('activity-modal-body').innerHTML = '<div class="feed-empty">No trades yet for this bot.</div>'; return; }
+        document.getElementById('activity-modal-body').innerHTML = t.map(tr => {
+          const isCall = tr.option_type === 'call';
+          const pnlClass = tr.pnl != null ? (tr.pnl >= 0 ? 'pos' : 'neg') : 'open';
+          const pnlText = tr.pnl != null ? (tr.pnl >= 0 ? '+' : '') + '$' + Number(tr.pnl).toFixed(2) : 'Open';
+          const dt = new Date(tr.created_at);
+          const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          return `<div class="feed-row"><div style="display:flex;align-items:center;gap:8px;min-width:0;"><span class="feed-action ${isCall?'buy':'sell'}">${isCall?'CALL':'PUT'}</span><div><div class="feed-sym">${tr.symbol} $${tr.strike} ${tr.expiration_date}</div><div class="feed-price">${tr.contracts} contract${tr.contracts>1?'s':''} @ $${Number(tr.premium_per_contract).toFixed(2)}</div></div></div><div style="text-align:right;flex-shrink:0;"><div class="feed-pnl ${pnlClass}">${pnlText}</div><div class="feed-time">${timeStr}</div></div></div>`;
+        }).join('');
       }
-
-      feed.innerHTML = trades.map(tr => {
-        const pnlClass = tr.pnl != null ? (tr.pnl >= 0 ? 'pos' : 'neg') : 'open';
-        const pnlText = tr.pnl != null ? (tr.pnl >= 0 ? '+' : '') + '$' + Number(tr.pnl).toFixed(2) : 'Open';
-        const dt = new Date(tr.created_at);
-        const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        return `<div class="feed-row">
-          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-            <span class="feed-action ${tr.action}">${tr.action.toUpperCase()}</span>
-            <div>
-              <div class="feed-sym">${tr.symbol}</div>
-              <div class="feed-price">$${Number(tr.price).toFixed(2)} &times; ${tr.quantity}</div>
-            </div>
-          </div>
-          <div style="text-align:right;flex-shrink:0;">
-            <div class="feed-pnl ${pnlClass}">${pnlText}</div>
-            <div class="feed-time">${timeStr}</div>
-          </div>
-        </div>`;
-      }).join('');
     }
 
+    function closeActivityModal(e) {
+      if (e && e.target !== document.getElementById('activity-modal-overlay')) return;
+      document.getElementById('activity-modal-overlay').classList.remove('open');
+    }
 
     async function init() {
       const { data: { session } } = await sbClient.auth.getSession();
