@@ -345,10 +345,12 @@ Deno.serve(async (req) => {
     const { data: bots, error: botErr } = await query;
     if (botErr) throw botErr;
     if (!bots || bots.length === 0) {
-      return new Response(JSON.stringify({ message: 'No active options bots' }), {
+      return new Response(JSON.stringify({ message: 'No active options bots', debug: { targetBotId, targetUserId } }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
+
+    console.log(`Found ${bots.length} active bots:`, bots.map(b => ({ id: b.id, name: b.name, user_id: b.user_id?.slice(0,8), symbol: b.bot_symbol, scan_mode: b.bot_scan_mode })));
 
     const results: object[] = [];
     const R = 0.05; // risk-free rate
@@ -509,6 +511,8 @@ Deno.serve(async (req) => {
         results.push({ bot_id: bot.id, status: 'error', error: String(err) });
       }
     }
+
+    console.log(`Processed ${results.length} results:`, results);
 
     return new Response(JSON.stringify({ processed: results.length, results }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
