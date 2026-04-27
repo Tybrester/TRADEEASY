@@ -392,20 +392,13 @@ Deno.serve(async (req) => {
     const R = 0.05; // risk-free rate
     const now = new Date();
     
-    // Check if markets are open (9:30 AM - 4:00 PM ET, Monday-Friday)
+    // Check market hours (options on stocks only trade 9:30 AM - 4:00 PM ET)
     const etNow = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
     const hour = etNow.getHours();
     const minute = etNow.getMinutes();
-    const day = etNow.getDay(); // 0 = Sunday, 6 = Saturday
+    const day = etNow.getDay();
     const isWeekday = day >= 1 && day <= 5;
-    const isMarketHours = isWeekday && (hour > 9 || (hour === 9 && minute >= 30)) && hour < 16;
-    
-    if (!isMarketHours) {
-      console.log(`[OptionsBot] Markets closed (${etNow.toLocaleTimeString('en-US', {timeZone: 'America/New_York'})} ET). Skipping.`);
-      return new Response(JSON.stringify({ message: 'Markets closed', et_time: etNow.toLocaleTimeString('en-US', {timeZone: 'America/New_York'}), processed: 0, results: [] }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
+    const isOptionsMarketHours = isWeekday && (hour > 9 || (hour === 9 && minute >= 30)) && hour < 16;
 
     const SCAN_STOCKS = [
       'AAPL','MSFT','AMZN','NVDA','TSLA','GOOG','GOOGL','META','NFLX','BRK-B',
@@ -426,6 +419,12 @@ Deno.serve(async (req) => {
       
       if (minutesSinceLastRun < runIntervalMin) {
         console.log(`[OptionsBot] Skipping "${bot.name}" - ran ${minutesSinceLastRun.toFixed(1)}m ago, interval=${runIntervalMin}m`);
+        continue;
+      }
+      
+      // Options only trade during market hours (skip after hours)
+      if (!isOptionsMarketHours) {
+        console.log(`[OptionsBot] Skipping "${bot.name}" - options markets closed (${etNow.toLocaleTimeString('en-US', {timeZone: 'America/New_York'})} ET)`);
         continue;
       }
       

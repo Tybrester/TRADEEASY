@@ -678,20 +678,13 @@ Deno.serve(async (req) => {
     const results: object[] = [];
     const now = new Date();
     
-    // Check if markets are open (9:30 AM - 4:00 PM ET, Monday-Friday)
+    // Check market hours (crypto/futures trade 24/7, stocks only 9:30 AM - 4:00 PM ET)
     const etNow = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
     const hour = etNow.getHours();
     const minute = etNow.getMinutes();
     const day = etNow.getDay();
     const isWeekday = day >= 1 && day <= 5;
-    const isMarketHours = isWeekday && (hour > 9 || (hour === 9 && minute >= 30)) && hour < 16;
-    
-    if (!isMarketHours) {
-      console.log(`[AutoBot] Markets closed (${etNow.toLocaleTimeString('en-US', {timeZone: 'America/New_York'})} ET). Skipping.`);
-      return new Response(JSON.stringify({ message: 'Markets closed', et_time: etNow.toLocaleTimeString('en-US', {timeZone: 'America/New_York'}), processed: 0, results: [] }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
+    const isStockMarketHours = isWeekday && (hour > 9 || (hour === 9 && minute >= 30)) && hour < 16;
 
     for (const bot of bots) {
       // Check if bot should run based on run_interval_min
@@ -718,6 +711,14 @@ Deno.serve(async (req) => {
 
       const scanModeValue: string = (bot.bot_scan_mode as string) || 'single';
       const scanModes = scanModeValue.split(',').map(m => m.trim()).filter(m => m);
+      
+      // Check if bot is trading stocks after hours
+      const tradingStocks = scanModes.some(m => m === 'scan_stocks' || m === 'single' || m === 'scan_all');
+      if (tradingStocks && !isStockMarketHours) {
+        console.log(`[AutoBot] Skipping "${bot.name}" - stock markets closed (${etNow.toLocaleTimeString('en-US', {timeZone: 'America/New_York'})} ET)`);
+        continue;
+      }
+      
       console.log(`[AutoBot] Running "${bot.name}" | modes=${scanModes.join('+')} | ${settings.interval} | interval=${runIntervalMin}m`);
 
       try {
