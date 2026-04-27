@@ -577,7 +577,13 @@
                 </div>
               </div>
               <div class="auto-settings-row">
-                <span>Broker</span>
+                <span>Signal</span>
+                <select class="auto-input" id="osig-${b.id}" style="width:220px;">
+                  <option value="supertrend" ${(b.bot_signal||'supertrend')==='supertrend'?'selected':''}>Adaptive SuperTrend + EMA50 + ADX(14)</option>
+                  <option value="rsi_macd" ${b.bot_signal==='rsi_macd'?'selected':''}>RSI + EMA + MACD + Bollinger Bands + ATR</option>
+                </select>
+              </div>
+              <div class="auto-settings-row"><span>Broker</span>
                 <select class="auto-input" id="obrk-${b.id}" style="width:160px;">
                   <option value="paper" ${!b.broker||b.broker==='paper'?'selected':''}>Paper Trading</option>
                   <option value="tastytrade" ${b.broker==='tastytrade'?'selected':''}>Tastytrade (Live)</option>
@@ -651,9 +657,10 @@
       const tp = parseFloat(document.getElementById('otp-' + botId)?.value) || 100;
       const sl = Math.abs(parseFloat(document.getElementById('osl-' + botId)?.value) || 20);
       const broker = document.getElementById('obrk-' + botId)?.value || 'paper';
+      const botSignal = document.getElementById('osig-' + botId)?.value || 'supertrend';
       const brkWarn = document.getElementById('obrk-warn-' + botId);
       if (brkWarn) brkWarn.style.display = broker === 'tastytrade' ? 'flex' : 'none';
-      await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_interval: int, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, broker }).eq('id', botId);
+      await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_interval: int, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, broker, bot_signal: botSignal }).eq('id', botId);
       const r = document.getElementById('opt-run-result-' + botId);
       if (r) { r.textContent = '✓ Settings saved'; r.className = 'run-result green'; setTimeout(() => { r.textContent=''; r.className='run-result'; }, 2000); }
     }
