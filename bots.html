@@ -923,6 +923,13 @@
       if (!session) { window.location.href = 'signin.html'; return; }
       currentUserId = session.user.id;
 
+      // Gate: only allow access if bots_enabled in user_settings
+      const isAdmin = session.user.id === 'd0bb84ba-f968-446c-9792-9bcff8849e37';
+      if (!isAdmin) {
+        const { data: settings } = await sbClient.from('user_settings').select('bots_enabled').eq('user_id', currentUserId).maybeSingle();
+        if (!settings?.bots_enabled) { window.location.href = 'dashboard.html'; return; }
+      }
+
       document.getElementById('loading-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
 

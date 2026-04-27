@@ -153,8 +153,10 @@
         <a href="paper-market.html" class="sidebar-item">Paper Market</a>
         <a href="accounts.html" class="sidebar-item">Accounts</a>
         <a href="brokers.html" class="sidebar-item">Brokers</a>
+        <div id="bots-sidebar-section" style="display:none;">
         <div class="sidebar-section" style="margin-top:24px;">Bots</div>
         <a href="bots.html" class="sidebar-item">Bots</a>
+        </div>
         <div class="sidebar-section" style="margin-top:24px;">Help</div>
         <a href="how-it-works.html" class="sidebar-item">How it Works</a>
         <div style="margin-top:auto;">
@@ -562,6 +564,20 @@
         if (el) el.style.display = '';
         if (sec) sec.style.display = '';
       }
+      // Show Bots sidebar if enabled (or admin)
+      (async () => {
+        const isAdmin = session.user.id === 'd0bb84ba-f968-446c-9792-9bcff8849e37';
+        if (isAdmin) {
+          const bsec = document.getElementById('bots-sidebar-section');
+          if (bsec) bsec.style.display = '';
+        } else {
+          const { data: us } = await sbClient.from('user_settings').select('bots_enabled').eq('user_id', session.user.id).maybeSingle();
+          if (us?.bots_enabled) {
+            const bsec = document.getElementById('bots-sidebar-section');
+            if (bsec) bsec.style.display = '';
+          }
+        }
+      })();
 
       // User dropdown toggle
       const dropdown = document.getElementById('user-dropdown');
