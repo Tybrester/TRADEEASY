@@ -391,6 +391,21 @@ Deno.serve(async (req) => {
     const results: object[] = [];
     const R = 0.05; // risk-free rate
     const now = new Date();
+    
+    // Check if markets are open (9:30 AM - 4:00 PM ET, Monday-Friday)
+    const etNow = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
+    const hour = etNow.getHours();
+    const minute = etNow.getMinutes();
+    const day = etNow.getDay(); // 0 = Sunday, 6 = Saturday
+    const isWeekday = day >= 1 && day <= 5;
+    const isMarketHours = isWeekday && (hour > 9 || (hour === 9 && minute >= 30)) && hour < 16;
+    
+    if (!isMarketHours) {
+      console.log(`[OptionsBot] Markets closed (${etNow.toLocaleTimeString('en-US', {timeZone: 'America/New_York'})} ET). Skipping.`);
+      return new Response(JSON.stringify({ message: 'Markets closed', et_time: etNow.toLocaleTimeString('en-US', {timeZone: 'America/New_York'}), processed: 0, results: [] }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
     const SCAN_STOCKS = [
       'AAPL','MSFT','AMZN','NVDA','TSLA','GOOG','GOOGL','META','NFLX','BRK-B',
