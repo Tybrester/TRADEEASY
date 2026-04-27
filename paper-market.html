@@ -74,6 +74,9 @@
     .chart-trades { flex-shrink: 0; border-top: 1px solid var(--border); background: var(--surface); height: 220px; overflow-y: auto; }
     .chart-trades-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--border); }
     .chart-trades-title { font-size: 0.72rem; font-weight: 700; color: #444; text-transform: uppercase; letter-spacing: 0.1em; }
+    .bottom-tab { background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);font-size:0.78rem;font-weight:700;padding:0 16px 8px;cursor:pointer;font-family:inherit;text-transform:uppercase;letter-spacing:0.06em;transition:all 0.15s; }
+    .bottom-tab.active { color:var(--accent);border-bottom-color:var(--accent); }
+    .bottom-tab:hover { color:var(--text); }
     .trades-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
     .trades-table th { padding: 6px 14px; text-align: left; font-size: 0.68rem; font-weight: 700; color: #444; text-transform: uppercase; letter-spacing: 0.07em; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
     .trades-table td { padding: 7px 14px; border-bottom: 1px solid #141414; color: var(--text); vertical-align: middle; white-space: nowrap; }
@@ -261,11 +264,17 @@
         <!-- Trades table below chart+panel -->
         <div class="chart-trades">
           <div class="chart-trades-header">
-            <span class="chart-trades-title">Trade History</span>
+            <div style="display:flex;gap:0;">
+              <button class="bottom-tab active" id="tab-history" onclick="switchBottomTab('history')">Trade History</button>
+              <button class="bottom-tab" id="tab-positions" onclick="switchBottomTab('positions')">Open Positions</button>
+            </div>
             <span id="chart-trades-count" style="font-size:0.72rem;color:#555;"></span>
           </div>
           <div id="chart-trades-body">
-            <div class="tbl-empty">No trades yet — select a system and place an order</div>
+            <div class="tbl-empty">No trades yet — place an order to get started</div>
+          </div>
+          <div id="chart-positions-body" style="display:none;">
+            <div class="tbl-empty">No open positions</div>
           </div>
         </div>
       </main>
@@ -514,6 +523,7 @@
       });
 
       loadHistory();
+      if (document.getElementById('tab-positions').classList.contains('active')) loadOpenPositions();
       showMsg('Position closed · P&L: ' + (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2), 'success');
     }
 
@@ -529,6 +539,56 @@
         .limit(20);
 
       loadChartTrades(data || []);
+    }
+
+    function switchBottomTab(tab) {
+      document.getElementById('tab-history').classList.toggle('active', tab === 'history');
+      document.getElementById('tab-positions').classList.toggle('active', tab === 'positions');
+      document.getElementById('chart-trades-body').style.display = tab === 'history' ? '' : 'none';
+      document.getElementById('chart-positions-body').style.display = tab === 'positions' ? '' : 'none';
+      const countEl = document.getElementById('chart-trades-count');
+      if (tab === 'positions') { loadOpenPositions(); if (countEl) countEl.textContent = ''; }
+    }
+
+    async function loadOpenPositions() {
+      const body = document.getElementById('chart-positions-body');
+      const countEl = document.getElementById('chart-trades-count');
+      if (!selectedSystem) { body.innerHTML = '<div class="tbl-empty">No system selected</div>'; return; }
+      const { data } = await sbClient.from('trades')
+        .select('id, symbol, action, price, quantity, created_at')
+        .eq('user_id', currentUser.id)
+        .eq('system_id', selectedSystem.id)
+        .eq('source', 'paper-market')
+        .is('pnl', null)
+        .order('created_at', { ascending: false });
+      const rows = data || [];
+      if (rows.length === 0) { body.innerHTML = '<div class="tbl-empty">No open positions</div>'; return; }
+      if (countEl) countEl.textContent = rows.length + ' open';
+      body.innerHTML = `<table class="trades-table">
+        <thead><tr>
+          <th>Opened</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry Price</th><th>Current</th><th>Unrealized P&amp;L</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r => {
+            const dt = new Date(r.created_at);
+            const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            const cur = livePrice || Number(r.price);
+            const unreal = r.action === 'buy' ? (cur - Number(r.price)) * r.quantity : (Number(r.price) - cur) * r.quantity;
+            const pnlClass = unreal >= 0 ? 'pos' : 'neg';
+            const pnlStr = (unreal >= 0 ? '+' : '') + '$' + unreal.toFixed(2);
+            return `<tr style="cursor:pointer;" onclick="navigateToSymbol('${r.symbol}')" title="View on chart">
+              <td style="color:#555;">${timeStr}</td>
+              <td style="font-weight:700;">${r.symbol}</td>
+              <td><span class="tbl-side ${r.action}">${r.action.toUpperCase()}</span></td>
+              <td>${r.quantity}</td>
+              <td>$${Number(r.price).toFixed(2)}</td>
+              <td>${livePrice ? '$' + livePrice.toFixed(2) : '—'}</td>
+              <td class="tbl-pnl ${pnlClass}">${pnlStr}</td>
+              <td><button class="pos-close" onclick="event.stopPropagation();closePosition('${r.id}','${r.action}',${r.quantity},${r.price})">Close</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
     }
 
     function loadChartTrades(rows) {
