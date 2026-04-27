@@ -80,6 +80,80 @@
     .act-section-label { font-size: 0.72rem; font-weight: 700; color: #444; text-transform: uppercase; letter-spacing: 0.1em; margin: 24px 0 10px; padding-bottom: 8px; border-bottom: 1px solid #1a1a1a; }
     .act-empty { color: var(--muted); font-size: 0.85rem; padding: 14px 0; }
 
+    /* All Bot Trades - Cleaner Table Styles */
+    .all-trades-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .all-trades-table th { 
+      font-size: 0.7rem; 
+      font-weight: 700; 
+      color: #666; 
+      text-transform: uppercase; 
+      letter-spacing: 0.08em; 
+      padding: 12px 10px; 
+      text-align: left; 
+      border-bottom: 2px solid #222;
+      white-space: nowrap;
+    }
+    .all-trades-table td { 
+      padding: 14px 10px; 
+      border-bottom: 1px solid #1a1a1a; 
+      vertical-align: middle;
+    }
+    .all-trades-table tr:hover td { background: rgba(255,255,255,0.03); }
+    .all-trades-table .bot-name { 
+      font-size: 0.8rem; 
+      font-weight: 600; 
+      color: var(--text);
+      display: block;
+      margin-bottom: 4px;
+    }
+    .trade-type-stock { 
+      font-size: 0.6rem; 
+      font-weight: 800; 
+      padding: 2px 8px; 
+      border-radius: 12px; 
+      background: rgba(0,230,118,0.12); 
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .trade-type-options { 
+      font-size: 0.6rem; 
+      font-weight: 800; 
+      padding: 2px 8px; 
+      border-radius: 12px; 
+      background: rgba(255,193,7,0.12); 
+      color: #ffc107;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .trade-buy { color: var(--accent); font-weight: 700; }
+    .trade-sell { color: var(--red); font-weight: 700; }
+    .badge-long { 
+      font-size: 0.65rem; 
+      font-weight: 700; 
+      padding: 3px 10px; 
+      border-radius: 12px; 
+      background: rgba(0,230,118,0.12); 
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+    .badge-short { 
+      font-size: 0.65rem; 
+      font-weight: 700; 
+      padding: 3px 10px; 
+      border-radius: 12px; 
+      background: rgba(255,23,68,0.12); 
+      color: var(--red);
+      text-transform: uppercase;
+    }
+    .time-ago { color: #555; font-size: 0.75rem; white-space: nowrap; }
+    .option-details { 
+      font-size: 0.7rem; 
+      color: #777; 
+      display: block;
+      margin-top: 4px;
+    }
+
     .page-header { margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; }
     .page-header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
 
@@ -873,17 +947,27 @@
             ? '<span class="trade-type-stock">STOCK</span>' 
             : '<span class="trade-type-options">OPTIONS</span>';
           const optionDetails = t.botType === 'options' && t.optionType 
-            ? `<br><small style="color:var(--muted)">${t.optionType.toUpperCase()} $${t.strike} ${t.expiration}</small>` 
+            ? `<span class="option-details">${t.optionType.toUpperCase()} $${t.strike} · ${t.expiration}</span>` 
             : '';
           
+          const statusBadge = t.status === 'open' || t.status === 'filled' 
+            ? '<span class="badge-long">OPEN</span>' 
+            : '<span class="badge-short">CLOSED</span>';
+          
           return `<tr>
-            <td><span class="bot-name">${t.botName}</span>${typeBadge}</td>
-            <td><strong>${t.symbol}</strong>${optionDetails}</td>
+            <td>
+              <span class="bot-name">${t.botName}</span>
+              ${typeBadge}
+            </td>
+            <td>
+              <strong>${t.symbol}</strong>
+              ${optionDetails}
+            </td>
             <td class="trade-${t.action === 'buy' ? 'buy' : 'sell'}">${t.action.toUpperCase()}</td>
             <td>${t.quantity}</td>
             <td>$${Number(t.price).toFixed(2)}</td>
             <td class="${pnlClass}">${pnlText}</td>
-            <td><span class="badge-${t.status === 'filled' || t.status === 'open' ? 'long' : 'short'}">${t.status}</span></td>
+            <td>${statusBadge}</td>
             <td class="time-ago">${timeAgo}</td>
           </tr>`;
         }).join('');
