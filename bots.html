@@ -41,16 +41,29 @@
     .activity-toggle:hover { border-color: var(--accent); color: var(--accent); }
     .activity-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 500; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
     .activity-modal-overlay.open { display: flex; }
-    .activity-modal { background: #111; border: 1px solid #222; border-radius: 16px; width: 90%; max-width: 720px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
-    .activity-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 16px; border-bottom: 1px solid #1f1f1f; flex-shrink: 0; }
-    .activity-modal-title { font-size: 1rem; font-weight: 800; }
+    .activity-modal { background: #111; border: 1px solid #222; border-radius: 16px; width: 96%; max-width: 1100px; height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+    .activity-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 28px 16px; border-bottom: 1px solid #1f1f1f; flex-shrink: 0; }
+    .activity-modal-title { font-size: 1.1rem; font-weight: 800; }
     .activity-modal-close { background: none; border: 1px solid #2a2a2a; color: var(--muted); font-size: 1rem; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
     .activity-modal-close:hover { border-color: var(--red); color: var(--red); }
-    .activity-modal-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 18px 24px; border-bottom: 1px solid #1a1a1a; flex-shrink: 0; }
-    .activity-modal-stat { background: #0a0a0a; border-radius: 8px; padding: 10px 14px; }
-    .activity-modal-stat-label { font-size: 0.65rem; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.07em; }
-    .activity-modal-stat-value { font-size: 1.1rem; font-weight: 900; margin-top: 3px; }
-    .activity-modal-body { overflow-y: auto; padding: 16px 24px; flex: 1; }
+    .activity-modal-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 20px 28px; border-bottom: 1px solid #1a1a1a; flex-shrink: 0; }
+    .activity-modal-stat { background: #0a0a0a; border-radius: 10px; padding: 14px 18px; }
+    .activity-modal-stat-label { font-size: 0.68rem; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.07em; }
+    .activity-modal-stat-value { font-size: 1.4rem; font-weight: 900; margin-top: 4px; }
+    .activity-modal-body { overflow-y: auto; padding: 0 28px 24px; flex: 1; }
+    .act-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    .act-table th { font-size: 0.72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: #111; }
+    .act-table td { padding: 14px 16px; font-size: 0.88rem; border-bottom: 1px solid #161616; vertical-align: middle; }
+    .act-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .act-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+    .act-badge-buy { background: rgba(0,230,118,0.12); color: var(--accent); }
+    .act-badge-sell { background: rgba(255,23,68,0.12); color: var(--red); }
+    .act-badge-call { background: rgba(0,230,118,0.12); color: var(--accent); }
+    .act-badge-put { background: rgba(255,193,7,0.12); color: #ffc107; }
+    .act-badge-open { background: rgba(255,255,255,0.06); color: #888; }
+    .act-badge-closed { background: rgba(0,230,118,0.08); color: #555; }
+    .pnl-pos { color: var(--accent); font-weight: 700; }
+    .pnl-neg { color: var(--red); font-weight: 700; }
 
     .page-header { margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; }
     .page-header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
@@ -931,51 +944,90 @@
 
       if (type === 'stock') {
         const { data: trades } = await sbClient.from('trades')
-          .select('symbol, action, price, quantity, pnl, status, created_at')
+          .select('symbol, action, direction, price, entry_price, quantity, pnl, status, created_at, closed_at, broker')
           .eq('user_id', currentUserId).eq('system_id', id).eq('source', 'auto')
-          .order('created_at', { ascending: false }).limit(100);
+          .order('created_at', { ascending: false }).limit(200);
         const t = trades || [];
-        const closed = t.filter(x => x.pnl != null);
-        const totalPnl = closed.reduce((s, x) => s + Number(x.pnl), 0);
-        const winRate = closed.length > 0 ? Math.round(closed.filter(x => x.pnl > 0).length / closed.length * 100) : 0;
+        const closedT = t.filter(x => x.pnl != null);
+        const totalPnl = closedT.reduce((s, x) => s + Number(x.pnl), 0);
+        const winRate = closedT.length > 0 ? Math.round(closedT.filter(x => x.pnl > 0).length / closedT.length * 100) : 0;
         const openC = t.filter(x => x.status === 'filled' && x.pnl == null).length;
         document.getElementById('activity-modal-stats').innerHTML = `
           <div class="activity-modal-stat"><div class="activity-modal-stat-label">Total P&L</div><div class="activity-modal-stat-value" style="color:${totalPnl>=0?'var(--accent)':'var(--red)'}">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</div></div>
           <div class="activity-modal-stat"><div class="activity-modal-stat-label">Win Rate</div><div class="activity-modal-stat-value">${winRate}%</div></div>
           <div class="activity-modal-stat"><div class="activity-modal-stat-label">Total Trades</div><div class="activity-modal-stat-value">${t.length}</div></div>
           <div class="activity-modal-stat"><div class="activity-modal-stat-label">Open</div><div class="activity-modal-stat-value">${openC}</div></div>`;
-        if (!t.length) { document.getElementById('activity-modal-body').innerHTML = '<div class="feed-empty">No trades yet for this bot.</div>'; return; }
-        document.getElementById('activity-modal-body').innerHTML = t.map(tr => {
-          const pnlClass = tr.pnl != null ? (tr.pnl >= 0 ? 'pos' : 'neg') : 'open';
-          const pnlText = tr.pnl != null ? (tr.pnl >= 0 ? '+' : '') + '$' + Number(tr.pnl).toFixed(2) : 'Open';
+        if (!t.length) { document.getElementById('activity-modal-body').innerHTML = '<div class="feed-empty" style="padding:40px;">No trades yet for this bot.</div>'; return; }
+        const rows = t.map(tr => {
+          const side = tr.direction || (tr.action === 'buy' ? 'Long' : 'Short');
+          const entry = tr.entry_price ?? tr.price;
+          const pnlHtml = tr.pnl != null
+            ? `<span class="${tr.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${tr.pnl >= 0 ? '+' : ''}$${Number(tr.pnl).toFixed(2)}</span>`
+            : '<span style="color:#555;">Open</span>';
+          const statusBadge = tr.status === 'closed'
+            ? `<span class="act-badge act-badge-closed">Closed</span>`
+            : tr.status === 'filled'
+            ? `<span class="act-badge act-badge-open">Open</span>`
+            : `<span class="act-badge" style="background:rgba(255,193,7,0.1);color:#ffc107;">${tr.status}</span>`;
           const dt = new Date(tr.created_at);
-          const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-          return `<div class="feed-row"><div style="display:flex;align-items:center;gap:8px;min-width:0;"><span class="feed-action ${tr.action}">${tr.action.toUpperCase()}</span><div><div class="feed-sym">${tr.symbol}</div><div class="feed-price">$${Number(tr.price).toFixed(2)} &times; ${tr.quantity}</div></div></div><div style="text-align:right;flex-shrink:0;"><div class="feed-pnl ${pnlClass}">${pnlText}</div><div class="feed-time">${timeStr}</div></div></div>`;
+          const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          return `<tr>
+            <td style="font-weight:600;">${tr.symbol || '—'}</td>
+            <td><span class="act-badge ${side==='Long'?'act-badge-buy':'act-badge-sell'}">${side}</span></td>
+            <td>${tr.quantity || '—'}</td>
+            <td>${entry ? '$'+Number(entry).toFixed(2) : '—'}</td>
+            <td>${pnlHtml}</td>
+            <td>${statusBadge}</td>
+            <td style="color:var(--muted);font-size:0.8rem;">${tr.broker || 'paper'}</td>
+            <td style="color:var(--muted);font-size:0.78rem;">${timeStr}</td>
+          </tr>`;
         }).join('');
+        document.getElementById('activity-modal-body').innerHTML = `<table class="act-table">
+          <thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>P&amp;L</th><th>Status</th><th>Broker</th><th>Date</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
       } else {
         const { data: trades } = await sbClient.from('options_trades')
           .select('symbol, option_type, strike, expiration_date, contracts, premium_per_contract, pnl, status, created_at')
           .eq('user_id', currentUserId).eq('bot_id', id)
-          .order('created_at', { ascending: false }).limit(100);
+          .order('created_at', { ascending: false }).limit(200);
         const t = trades || [];
-        const closed = t.filter(x => x.pnl != null);
-        const totalPnl = closed.reduce((s, x) => s + Number(x.pnl), 0);
-        const winRate = closed.length > 0 ? Math.round(closed.filter(x => x.pnl > 0).length / closed.length * 100) : 0;
+        const closedT = t.filter(x => x.pnl != null);
+        const totalPnl = closedT.reduce((s, x) => s + Number(x.pnl), 0);
+        const winRate = closedT.length > 0 ? Math.round(closedT.filter(x => x.pnl > 0).length / closedT.length * 100) : 0;
         const openC = t.filter(x => x.status === 'open').length;
         document.getElementById('activity-modal-stats').innerHTML = `
           <div class="activity-modal-stat"><div class="activity-modal-stat-label">Total P&L</div><div class="activity-modal-stat-value" style="color:${totalPnl>=0?'var(--accent)':'var(--red)'}">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</div></div>
           <div class="activity-modal-stat"><div class="activity-modal-stat-label">Win Rate</div><div class="activity-modal-stat-value">${winRate}%</div></div>
           <div class="activity-modal-stat"><div class="activity-modal-stat-label">Total Trades</div><div class="activity-modal-stat-value">${t.length}</div></div>
           <div class="activity-modal-stat"><div class="activity-modal-stat-label">Open</div><div class="activity-modal-stat-value">${openC}</div></div>`;
-        if (!t.length) { document.getElementById('activity-modal-body').innerHTML = '<div class="feed-empty">No trades yet for this bot.</div>'; return; }
-        document.getElementById('activity-modal-body').innerHTML = t.map(tr => {
+        if (!t.length) { document.getElementById('activity-modal-body').innerHTML = '<div class="feed-empty" style="padding:40px;">No trades yet for this bot.</div>'; return; }
+        const rows = t.map(tr => {
           const isCall = tr.option_type === 'call';
-          const pnlClass = tr.pnl != null ? (tr.pnl >= 0 ? 'pos' : 'neg') : 'open';
-          const pnlText = tr.pnl != null ? (tr.pnl >= 0 ? '+' : '') + '$' + Number(tr.pnl).toFixed(2) : 'Open';
+          const pnlHtml = tr.pnl != null
+            ? `<span class="${tr.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${tr.pnl >= 0 ? '+' : ''}$${Number(tr.pnl).toFixed(2)}</span>`
+            : '<span style="color:#555;">Open</span>';
+          const statusBadge = tr.status === 'closed'
+            ? `<span class="act-badge act-badge-closed">Closed</span>`
+            : `<span class="act-badge act-badge-open">Open</span>`;
           const dt = new Date(tr.created_at);
-          const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-          return `<div class="feed-row"><div style="display:flex;align-items:center;gap:8px;min-width:0;"><span class="feed-action ${isCall?'buy':'sell'}">${isCall?'CALL':'PUT'}</span><div><div class="feed-sym">${tr.symbol} $${tr.strike} ${tr.expiration_date}</div><div class="feed-price">${tr.contracts} contract${tr.contracts>1?'s':''} @ $${Number(tr.premium_per_contract).toFixed(2)}</div></div></div><div style="text-align:right;flex-shrink:0;"><div class="feed-pnl ${pnlClass}">${pnlText}</div><div class="feed-time">${timeStr}</div></div></div>`;
+          const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          return `<tr>
+            <td style="font-weight:600;">${tr.symbol || '—'}</td>
+            <td><span class="act-badge ${isCall?'act-badge-call':'act-badge-put'}">${isCall?'CALL':'PUT'}</span></td>
+            <td>$${tr.strike}</td>
+            <td>${tr.expiration_date || '—'}</td>
+            <td>${tr.contracts} contract${tr.contracts>1?'s':''}</td>
+            <td>$${Number(tr.premium_per_contract).toFixed(2)}</td>
+            <td>${pnlHtml}</td>
+            <td>${statusBadge}</td>
+            <td style="color:var(--muted);font-size:0.78rem;">${timeStr}</td>
+          </tr>`;
         }).join('');
+        document.getElementById('activity-modal-body').innerHTML = `<table class="act-table">
+          <thead><tr><th>Symbol</th><th>Type</th><th>Strike</th><th>Expiry</th><th>Contracts</th><th>Premium</th><th>P&amp;L</th><th>Status</th><th>Date</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
       }
     }
 
