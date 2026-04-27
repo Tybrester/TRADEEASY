@@ -35,10 +35,13 @@
     .sidebar-item.active { background: rgba(0,230,118,0.08); color: var(--accent); border-left-color: var(--accent); font-weight: 600; }
     
 
-    main { flex: 1; display: flex; gap: 0; overflow: hidden; }
-    .bots-col { flex: 1; min-width: 0; padding: 28px 28px; overflow-y: auto; }
-    .trades-col { width: 320px; flex-shrink: 0; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
-    .activity-spacer { flex-shrink: 0; }
+    main { flex: 1; overflow-y: auto; }
+    .bots-col { padding: 28px 28px; }
+    .activity-drawer { display: none; background: #0a0a0a; border: 1px solid #1f1f1f; border-radius: 10px; padding: 16px; margin-top: 4px; }
+    .activity-drawer.open { display: block; }
+    .activity-toggle { background: none; border: 1px solid #2a2a2a; color: var(--muted); font-size: 0.75rem; font-weight: 700; padding: 5px 14px; border-radius: 6px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .activity-toggle:hover { border-color: var(--accent); color: var(--accent); }
+    .activity-toggle.active { border-color: var(--accent); color: var(--accent); background: rgba(0,230,118,0.07); }
 
     .page-header { margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; }
     .page-header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
@@ -80,7 +83,7 @@
     .expiry-pill.active { border-color: #ffc107; background: rgba(255,193,7,0.1); color: #ffc107; }
     .new-options-btn { background: rgba(255,193,7,0.1); border: 1px solid rgba(255,193,7,0.3); color: #ffc107; font-size: 0.82rem; font-weight: 800; padding: 9px 18px; border-radius: 8px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
     .new-options-btn:hover { background: rgba(255,193,7,0.18); }
-    @media (max-width: 900px) { .sidebar { display: none; } .bots-col { padding: 20px 16px; } .trades-col { display: none; } }
+    @media (max-width: 900px) { .sidebar { display: none; } .bots-col { padding: 20px 16px; } }
 
     .bot-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 16px; transition: border-color 0.2s, box-shadow 0.2s; }
     .bot-card.running { border-color: rgba(0,230,118,0.35); box-shadow: 0 0 24px rgba(0,230,118,0.08); }
@@ -295,53 +298,6 @@
           </div>
         </div>
 
-        <!-- Right: Trades feed + P&L -->
-        <div class="trades-col">
-          <!-- Stock Bot Activity -->
-          <div id="panel-stocks">
-            <div class="trades-panel-header">
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-                <div class="trades-panel-title">Stock Bot Activity</div>
-                <select id="stock-bot-filter" style="background:#111;border:1px solid #222;color:#888;font-size:0.72rem;border-radius:6px;padding:3px 8px;" onchange="loadTrades()">
-                  <option value="">All Bots</option>
-                </select>
-              </div>
-              <div class="pnl-stats-grid" id="pnl-stats">
-                <div class="pnl-stat"><div class="pnl-stat-label">Total P&L</div><div class="pnl-stat-value neu" id="stat-pnl">—</div></div>
-                <div class="pnl-stat"><div class="pnl-stat-label">Win Rate</div><div class="pnl-stat-value neu" id="stat-wr">—</div></div>
-                <div class="pnl-stat"><div class="pnl-stat-label">Total Trades</div><div class="pnl-stat-value neu" id="stat-total">—</div></div>
-                <div class="pnl-stat"><div class="pnl-stat-label">Open</div><div class="pnl-stat-value neu" id="stat-open">—</div></div>
-              </div>
-            </div>
-            <div class="trades-feed" id="trades-feed">
-              <div class="feed-empty">Loading trades...</div>
-            </div>
-          </div>
-
-          <!-- Spacer to align options activity with options bots section -->
-          <div class="activity-spacer" id="activity-spacer"></div>
-
-          <!-- Options Bot Activity -->
-          <div id="panel-options">
-            <div class="trades-panel-header">
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-                <div class="trades-panel-title" style="color:#ffc107;">Options Bot Activity</div>
-                <select id="options-bot-filter" style="background:#111;border:1px solid #222;color:#888;font-size:0.72rem;border-radius:6px;padding:3px 8px;" onchange="loadOptionsTrades()">
-                  <option value="">All Bots</option>
-                </select>
-              </div>
-              <div class="pnl-stats-grid" id="opt-pnl-stats">
-                <div class="pnl-stat"><div class="pnl-stat-label">Total P&L</div><div class="pnl-stat-value neu" id="opt-stat-pnl">—</div></div>
-                <div class="pnl-stat"><div class="pnl-stat-label">Win Rate</div><div class="pnl-stat-value neu" id="opt-stat-wr">—</div></div>
-                <div class="pnl-stat"><div class="pnl-stat-label">Total Trades</div><div class="pnl-stat-value neu" id="opt-stat-total">—</div></div>
-                <div class="pnl-stat"><div class="pnl-stat-label">Open</div><div class="pnl-stat-value neu" id="opt-stat-open">—</div></div>
-              </div>
-            </div>
-            <div class="trades-feed" id="options-feed" style="max-height:280px;">
-              <div class="feed-empty">Loading options trades...</div>
-            </div>
-          </div>
-        </div>
       </main>
     </div>
   </div>
@@ -549,19 +505,68 @@
             </div>
             </div>
           </div>
+
+          <!-- Activity Drawer -->
+          <div>
+            <button class="activity-toggle" id="oact-btn-${b.id}" onclick="toggleOptionsBotActivity('${b.id}')">View Activity</button>
+          </div>
+          <div class="activity-drawer" id="oact-drawer-${b.id}">
+            <div style="font-size:0.72rem;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Trade History</div>
+            <div id="oact-feed-${b.id}"><div class="feed-empty">Loading...</div></div>
+          </div>
+
         `;
         grid.appendChild(card);
       });
       container.appendChild(grid);
-      // Refresh each bot's liquidation balance from the edge function
       bots.forEach(b => refreshOptBalance(b.id));
-      // Populate options bot filter dropdown
-      const optFilter = document.getElementById('options-bot-filter');
-      if (optFilter) {
-        const cur = optFilter.value;
-        optFilter.innerHTML = '<option value="">All Bots</option>' +
-          bots.map(b => `<option value="${b.id}" ${cur===b.id?'selected':''}>${b.name}</option>`).join('');
+    }
+
+    async function toggleOptionsBotActivity(botId) {
+      const drawer = document.getElementById('oact-drawer-' + botId);
+      const btn = document.getElementById('oact-btn-' + botId);
+      const isOpen = drawer.classList.contains('open');
+      drawer.classList.toggle('open', !isOpen);
+      btn.classList.toggle('active', !isOpen);
+      btn.textContent = isOpen ? 'View Activity' : 'Hide Activity';
+      if (!isOpen) await loadOptionsBotActivity(botId);
+    }
+
+    async function loadOptionsBotActivity(botId) {
+      const feed = document.getElementById('oact-feed-' + botId);
+      const { data: trades } = await sbClient
+        .from('options_trades')
+        .select('symbol, option_type, strike, expiration_date, contracts, premium_per_contract, pnl, status, created_at')
+        .eq('user_id', currentUserId)
+        .eq('bot_id', botId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (!trades || trades.length === 0) {
+        feed.innerHTML = '<div class="feed-empty">No trades yet for this bot.</div>';
+        return;
       }
+
+      feed.innerHTML = trades.map(tr => {
+        const isCall = tr.option_type === 'call';
+        const pnlClass = tr.pnl != null ? (tr.pnl >= 0 ? 'pos' : 'neg') : 'open';
+        const pnlText = tr.pnl != null ? (tr.pnl >= 0 ? '+' : '') + '$' + Number(tr.pnl).toFixed(2) : 'Open';
+        const dt = new Date(tr.created_at);
+        const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        return `<div class="feed-row">
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+            <span class="feed-action ${isCall ? 'buy' : 'sell'}">${isCall ? 'CALL' : 'PUT'}</span>
+            <div>
+              <div class="feed-sym">${tr.symbol} $${tr.strike} ${tr.expiration_date}</div>
+              <div class="feed-price">${tr.contracts} contract${tr.contracts > 1 ? 's' : ''} @ $${Number(tr.premium_per_contract).toFixed(2)}</div>
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div class="feed-pnl ${pnlClass}">${pnlText}</div>
+            <div class="feed-time">${timeStr}</div>
+          </div>
+        </div>`;
+      }).join('');
     }
 
     function toggleOptScanMode(botId, mode) {
@@ -832,21 +837,22 @@
             </div>
           </div>
 
+          <!-- Activity Drawer -->
+          <div>
+            <button class="activity-toggle" id="act-btn-${s.id}" onclick="toggleBotActivity('${s.id}')">View Activity</button>
+          </div>
+          <div class="activity-drawer" id="act-drawer-${s.id}">
+            <div style="font-size:0.72rem;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Trade History</div>
+            <div id="act-feed-${s.id}"><div class="feed-empty">Loading...</div></div>
+          </div>
+
         `;
 
         grid.appendChild(card);
       });
 
       container.appendChild(grid);
-      // Refresh each paper bot's liquidation balance
       systems.filter(s => s.broker !== 'tastytrade').forEach(s => refreshStockBalance(s.id));
-      // Populate stock bot filter dropdown
-      const stockFilter = document.getElementById('stock-bot-filter');
-      if (stockFilter) {
-        const cur = stockFilter.value;
-        stockFilter.innerHTML = '<option value="">All Bots</option>' +
-          systems.map(s => `<option value="${s.id}" ${cur===s.id?'selected':''}>${s.name}</option>`).join('');
-      }
     }
 
 
@@ -949,6 +955,53 @@
       refreshStatusBadge(systemId, on);
     }
 
+    async function toggleBotActivity(systemId) {
+      const drawer = document.getElementById('act-drawer-' + systemId);
+      const btn = document.getElementById('act-btn-' + systemId);
+      const isOpen = drawer.classList.contains('open');
+      drawer.classList.toggle('open', !isOpen);
+      btn.classList.toggle('active', !isOpen);
+      btn.textContent = isOpen ? 'View Activity' : 'Hide Activity';
+      if (!isOpen) await loadBotActivity(systemId);
+    }
+
+    async function loadBotActivity(systemId) {
+      const feed = document.getElementById('act-feed-' + systemId);
+      const { data: trades } = await sbClient
+        .from('trades')
+        .select('symbol, action, price, quantity, pnl, status, created_at')
+        .eq('user_id', currentUserId)
+        .eq('system_id', systemId)
+        .eq('source', 'auto')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (!trades || trades.length === 0) {
+        feed.innerHTML = '<div class="feed-empty">No trades yet for this bot.</div>';
+        return;
+      }
+
+      feed.innerHTML = trades.map(tr => {
+        const pnlClass = tr.pnl != null ? (tr.pnl >= 0 ? 'pos' : 'neg') : 'open';
+        const pnlText = tr.pnl != null ? (tr.pnl >= 0 ? '+' : '') + '$' + Number(tr.pnl).toFixed(2) : 'Open';
+        const dt = new Date(tr.created_at);
+        const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        return `<div class="feed-row">
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+            <span class="feed-action ${tr.action}">${tr.action.toUpperCase()}</span>
+            <div>
+              <div class="feed-sym">${tr.symbol}</div>
+              <div class="feed-price">$${Number(tr.price).toFixed(2)} &times; ${tr.quantity}</div>
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div class="feed-pnl ${pnlClass}">${pnlText}</div>
+            <div class="feed-time">${timeStr}</div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
 
     async function init() {
       const { data: { session } } = await sbClient.auth.getSession();
@@ -985,138 +1038,6 @@
 
       await loadBots();
       await loadOptionsBots();
-      await loadTrades();
-      await loadOptionsTrades();
-      alignActivityPanels();
-      window.addEventListener('resize', alignActivityPanels);
-      setInterval(() => { loadTrades(); loadOptionsTrades(); }, 30000);
-    }
-
-    function alignActivityPanels() {
-      const optionsDivider = document.querySelector('.section-divider');
-      const stockPanel = document.getElementById('panel-stocks');
-      const spacer = document.getElementById('activity-spacer');
-      if (!optionsDivider || !stockPanel || !spacer) return;
-
-      const botsCol = document.querySelector('.bots-col');
-      const tradesCol = document.querySelector('.trades-col');
-      if (!botsCol || !tradesCol) return;
-
-      const dividerTop = optionsDivider.getBoundingClientRect().top;
-      const tradesColTop = tradesCol.getBoundingClientRect().top;
-      const stockPanelHeight = stockPanel.getBoundingClientRect().height;
-
-      // How far below the trades col top is the options divider on the left
-      const targetOffset = dividerTop - tradesColTop;
-      const spacerHeight = Math.max(0, targetOffset - stockPanelHeight);
-      spacer.style.height = spacerHeight + 'px';
-    }
-
-    async function loadOptionsTrades() {
-      const feed = document.getElementById('options-feed');
-      const filterVal = document.getElementById('options-bot-filter')?.value || '';
-      let q = sbClient
-        .from('options_trades')
-        .select('*')
-        .eq('user_id', currentUserId)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      if (filterVal) q = q.eq('bot_id', filterVal);
-      const { data: trades } = await q;
-
-      const t = trades || [];
-      const closed = t.filter(x => x.pnl != null);
-      const wins = closed.filter(x => x.pnl > 0).length;
-      const totalPnl = closed.reduce((s, x) => s + Number(x.pnl), 0);
-      const winRate = closed.length > 0 ? Math.round(wins / closed.length * 100) : 0;
-      const openCount = t.filter(x => x.status === 'open').length;
-
-      const pnlEl = document.getElementById('opt-stat-pnl');
-      const wrEl  = document.getElementById('opt-stat-wr');
-      const totEl = document.getElementById('opt-stat-total');
-      const opnEl = document.getElementById('opt-stat-open');
-      if (pnlEl) { pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2); pnlEl.className = 'pnl-stat-value ' + (totalPnl >= 0 ? 'pos' : 'neg'); }
-      if (wrEl)  { wrEl.textContent = winRate + '%'; wrEl.className = 'pnl-stat-value ' + (winRate >= 50 ? 'pos' : 'neg'); }
-      if (totEl) { totEl.textContent = t.length; totEl.className = 'pnl-stat-value neu'; }
-      if (opnEl) { opnEl.textContent = openCount; opnEl.className = 'pnl-stat-value neu'; }
-
-      if (t.length === 0) { feed.innerHTML = '<div class="feed-empty">No options trades yet</div>'; return; }
-
-      feed.innerHTML = t.map(tr => {
-        const isCall = tr.option_type === 'call';
-        const pnlClass = tr.pnl != null ? (tr.pnl >= 0 ? 'pos' : 'neg') : 'open';
-        const pnlText  = tr.pnl != null ? (tr.pnl >= 0 ? '+' : '') + '$' + Number(tr.pnl).toFixed(2) : 'Open';
-        const dt = new Date(tr.created_at);
-        const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        return `<div class="feed-row">
-          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-            <span class="feed-action ${isCall ? 'buy' : 'sell'}">${isCall ? 'CALL' : 'PUT'}</span>
-            <div>
-              <div class="feed-sym">${tr.symbol} $${tr.strike} ${tr.expiration_date}</div>
-              <div class="feed-price">${tr.contracts} contract${tr.contracts > 1 ? 's' : ''} @ $${Number(tr.premium_per_contract).toFixed(2)}</div>
-            </div>
-          </div>
-          <div style="text-align:right;flex-shrink:0;">
-            <div class="feed-pnl ${pnlClass}">${pnlText}</div>
-            <div class="feed-time">${timeStr}</div>
-          </div>
-        </div>`;
-      }).join('');
-    }
-
-    async function loadTrades() {
-      const filterVal = document.getElementById('stock-bot-filter')?.value || '';
-      let q = sbClient
-        .from('trades')
-        .select('id, system_id, symbol, action, price, quantity, pnl, status, created_at')
-        .eq('user_id', currentUserId)
-        .eq('source', 'auto')
-        .order('created_at', { ascending: false })
-        .limit(100);
-      if (filterVal) q = q.eq('system_id', filterVal);
-      const { data: trades } = await q;
-
-      const feed = document.getElementById('trades-feed');
-      const t = trades || [];
-
-      // P&L stats
-      const closed = t.filter(x => x.pnl != null);
-      const wins   = closed.filter(x => x.pnl > 0).length;
-      const totalPnl = closed.reduce((s, x) => s + Number(x.pnl), 0);
-      const winRate  = closed.length > 0 ? Math.round(wins / closed.length * 100) : 0;
-      const open     = t.filter(x => x.status === 'filled' && x.pnl == null).length;
-
-      const pnlEl = document.getElementById('stat-pnl');
-      const wrEl  = document.getElementById('stat-wr');
-      const totEl = document.getElementById('stat-total');
-      const opnEl = document.getElementById('stat-open');
-      if (pnlEl) { pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2); pnlEl.className = 'pnl-stat-value ' + (totalPnl >= 0 ? 'pos' : 'neg'); }
-      if (wrEl)  { wrEl.textContent  = winRate + '%'; wrEl.className = 'pnl-stat-value ' + (winRate >= 50 ? 'pos' : 'neg'); }
-      if (totEl) { totEl.textContent = t.length; totEl.className = 'pnl-stat-value neu'; }
-      if (opnEl) { opnEl.textContent = open; opnEl.className = 'pnl-stat-value neu'; }
-
-      // Feed rows
-      if (t.length === 0) { feed.innerHTML = '<div class="feed-empty">No bot trades yet</div>'; return; }
-
-      feed.innerHTML = t.map(tr => {
-        const pnlClass = tr.pnl != null ? (tr.pnl >= 0 ? 'pos' : 'neg') : 'open';
-        const pnlText  = tr.pnl != null ? (tr.pnl >= 0 ? '+' : '') + '$' + Number(tr.pnl).toFixed(2) : 'Open';
-        const dt = new Date(tr.created_at);
-        const timeStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        return `<div class="feed-row">
-          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-            <span class="feed-action ${tr.action}">${tr.action}</span>
-            <div>
-              <div class="feed-sym">${tr.symbol}</div>
-              <div class="feed-price">$${Number(tr.price).toFixed(2)} &times; ${tr.quantity}</div>
-            </div>
-          </div>
-          <div style="text-align:right;flex-shrink:0;">
-            <div class="feed-pnl ${pnlClass}">${pnlText}</div>
-            <div class="feed-time">${timeStr}</div>
-          </div>
-        </div>`;
-      }).join('');
     }
 
     async function signOut() {
