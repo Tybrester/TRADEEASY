@@ -81,20 +81,28 @@
     .act-empty { color: var(--muted); font-size: 0.85rem; padding: 14px 0; }
 
     /* All Bot Trades - Cleaner Table Styles */
-    .all-trades-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .all-trades-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; table-layout: fixed; }
     .all-trades-table th { 
-      font-size: 0.7rem; 
+      font-size: 0.65rem; 
       font-weight: 700; 
       color: #666; 
       text-transform: uppercase; 
       letter-spacing: 0.08em; 
-      padding: 12px 10px; 
+      padding: 10px 6px; 
       text-align: left; 
       border-bottom: 2px solid #222;
       white-space: nowrap;
     }
+    .all-trades-table th:nth-child(1) { width: 22%; } /* Bot Name */
+    .all-trades-table th:nth-child(2) { width: 14%; } /* Symbol */
+    .all-trades-table th:nth-child(3) { width: 8%; } /* Action */
+    .all-trades-table th:nth-child(4) { width: 6%; } /* Qty */
+    .all-trades-table th:nth-child(5) { width: 10%; } /* Price */
+    .all-trades-table th:nth-child(6) { width: 14%; } /* P&L */
+    .all-trades-table th:nth-child(7) { width: 10%; } /* Status */
+    .all-trades-table th:nth-child(8) { width: 16%; } /* Time */
     .all-trades-table td { 
-      padding: 14px 10px; 
+      padding: 12px 6px; 
       border-bottom: 1px solid #1a1a1a; 
       vertical-align: middle;
     }
