@@ -1121,9 +1121,9 @@
       document.getElementById('activity-modal-overlay').classList.add('open');
 
       if (type === 'stock') {
-        const { data: trades } = await sbClient.from('trades')
-          .select('symbol, action, direction, price, entry_price, quantity, pnl, status, failure_reason, created_at, closed_at, broker')
-          .eq('user_id', currentUserId).eq('system_id', id).eq('source', 'auto')
+        const { data: trades } = await sbClient.from('stock_trades')
+          .select('symbol, action, price, quantity, pnl, status, broker_error, created_at, filled_at, broker')
+          .eq('user_id', currentUserId).eq('bot_id', id)
           .order('created_at', { ascending: false }).limit(500);
         const t = trades || [];
         const openT   = t.filter(x => x.status === 'filled' && x.pnl == null);
