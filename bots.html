@@ -335,6 +335,18 @@
           </div>
         </div>
 
+        <!-- ALL TRADES SECTION -->
+        <div style="margin-top: 40px; padding-top: 32px; border-top: 1px solid var(--border);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+            <h2 style="font-size: 1.1rem; font-weight: 700; color: var(--text); margin: 0;">All Bot Trades</h2>
+            <button onclick="loadAllTrades()" style="background: var(--accent-dim); color: #000; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.8rem;">Refresh</button>
+          </div>
+          
+          <div id="all-trades-container">
+            <div class="empty-state">Loading trades...</div>
+          </div>
+        </div>
+
       </main>
     </div>
   </div>
@@ -773,6 +785,139 @@
       if (error) { console.error('[CreateOptionsBot] Error:', error); alert('Error: ' + error.message); return; }
       console.log('[CreateOptionsBot] Created:', data?.[0]?.id);
       await loadOptionsBots();
+    }
+
+    async function loadAllTrades() {
+      const container = document.getElementById('all-trades-container');
+      container.innerHTML = '<div class="empty-state">Loading trades...</div>';
+      
+      try {
+        // Get all stock bots for name lookup
+        const { data: stockBots } = await sbClient.from('stock_bots').select('id,name').eq('user_id', currentUserId);
+        const { data: optionsBots } = await sbClient.from('options_bots').select('id,name').eq('user_id', currentUserId);
+        
+        const botNames = {};
+        stockBots?.forEach(b => botNames[b.id] = { name: b.name, type: 'stock' });
+        optionsBots?.forEach(b => botNames[b.id] = { name: b.name, type: 'options' });
+        
+        // Get recent stock trades
+        const { data: stockTrades } = await sbClient.from('stock_trades')
+          .select('*')
+          .eq('user_id', currentUserId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        
+        // Get recent options trades  
+        const { data: optionsTrades } = await sbClient.from('options_trades')
+          .select('*')
+          .eq('user_id', currentUserId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        
+        // Combine and format trades
+        const allTrades = [];
+        
+        stockTrades?.forEach(t => {
+          allTrades.push({
+            id: t.id,
+            botId: t.bot_id,
+            botName: botNames[t.bot_id]?.name || 'Unknown Bot',
+            botType: 'stock',
+            symbol: t.symbol,
+            action: t.action,
+            quantity: t.quantity,
+            price: t.price,
+            pnl: t.pnl,
+            status: t.status,
+            broker: t.broker,
+            createdAt: t.created_at,
+            filledAt: t.filled_at
+          });
+        });
+        
+        optionsTrades?.forEach(t => {
+          allTrades.push({
+            id: t.id,
+            botId: t.bot_id,
+            botName: botNames[t.bot_id]?.name || 'Unknown Bot',
+            botType: 'options',
+            symbol: t.symbol,
+            action: t.signal || t.action,
+            quantity: t.contracts,
+            price: t.premium_per_contract || t.price,
+            pnl: t.pnl,
+            status: t.status,
+            broker: 'Paper',
+            createdAt: t.created_at,
+            filledAt: t.filled_at,
+            strike: t.strike,
+            optionType: t.option_type,
+            expiration: t.expiration_date
+          });
+        });
+        
+        // Sort by created_at descending
+        allTrades.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        
+        if (allTrades.length === 0) {
+          container.innerHTML = '<div class="empty-state">No trades yet.</div>';
+          return;
+        }
+        
+        const rows = allTrades.map(t => {
+          const timeAgo = timeSince(new Date(t.createdAt));
+          const pnlClass = t.pnl > 0 ? 'trade-buy' : t.pnl < 0 ? 'trade-sell' : '';
+          const pnlText = t.pnl ? `$${Number(t.pnl).toFixed(2)}` : '-';
+          const typeBadge = t.botType === 'stock' 
+            ? '<span class="trade-type-stock">STOCK</span>' 
+            : '<span class="trade-type-options">OPTIONS</span>';
+          const optionDetails = t.botType === 'options' && t.optionType 
+            ? `<br><small style="color:var(--muted)">${t.optionType.toUpperCase()} $${t.strike} ${t.expiration}</small>` 
+            : '';
+          
+          return `<tr>
+            <td><span class="bot-name">${t.botName}</span>${typeBadge}</td>
+            <td><strong>${t.symbol}</strong>${optionDetails}</td>
+            <td class="trade-${t.action === 'buy' ? 'buy' : 'sell'}">${t.action.toUpperCase()}</td>
+            <td>${t.quantity}</td>
+            <td>$${Number(t.price).toFixed(2)}</td>
+            <td class="${pnlClass}">${pnlText}</td>
+            <td><span class="badge-${t.status === 'filled' || t.status === 'open' ? 'long' : 'short'}">${t.status}</span></td>
+            <td class="time-ago">${timeAgo}</td>
+          </tr>`;
+        }).join('');
+        
+        container.innerHTML = `<table class="all-trades-table">
+          <thead>
+            <tr>
+              <th>Bot Name</th>
+              <th>Symbol</th>
+              <th>Action</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>P&L</th>
+              <th>Status</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+        
+      } catch (err) {
+        console.error('[loadAllTrades] Error:', err);
+        container.innerHTML = '<div class="empty-state">Error loading trades.</div>';
+      }
+    }
+
+    function timeSince(date) {
+      const seconds = Math.floor((new Date() - date) / 1000);
+      if (seconds < 60) return 'just now';
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      return `${days}d ago`;
     }
 
     async function loadBots() {
@@ -1229,6 +1374,7 @@
 
       await loadBots();
       await loadOptionsBots();
+      await loadAllTrades();
     }
 
     async function signOut() {
