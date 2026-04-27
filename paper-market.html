@@ -63,6 +63,11 @@
     .chart-price.pos { color: var(--accent); }
     .chart-price.neg { color: var(--red); }
 
+    .chart-search-bar { display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0; }
+    .chart-search-input { flex:1;background:#1a1a1a;border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:0.95rem;font-weight:700;padding:7px 12px;border-radius:7px;outline:none;text-transform:uppercase; }
+    .chart-search-input:focus { border-color:var(--accent); }
+    .chart-search-btn { background:var(--accent);color:#000;font-weight:700;font-size:0.85rem;padding:7px 16px;border:none;border-radius:7px;cursor:pointer;font-family:inherit; }
+    .chart-search-btn:hover { background:var(--accent-dim); }
     #tv-chart { flex: 1; min-height: 0; }
 
     /* Trades table below chart */
@@ -187,6 +192,10 @@
 
           <!-- Chart -->
           <div class="chart-area">
+            <div class="chart-search-bar">
+              <input id="chart-symbol-search" class="chart-search-input" placeholder="Search symbol… (e.g. SPY)" autocomplete="off" />
+              <button onclick="applySymbolSearch()" class="chart-search-btn">Go</button>
+            </div>
             <div id="tv-chart"></div>
           </div>
 
@@ -312,16 +321,35 @@
         backgroundColor: '#0a0a0a',
         gridColor: 'rgba(255,255,255,0.03)',
       });
-      tvWidget.onChartReady(() => {
-        try { tvWidget.activeChart().onSymbolChanged().subscribe(null, syncChartSymbol); } catch(e) {}
-        // Fallback poll — sync symbol every second
-        setInterval(() => {
-          try {
-            const raw = tvWidget.activeChart().symbol().replace(/^.*:/,'').toUpperCase();
+      // Listen for symbol change messages from TradingView iframe
+      window.addEventListener('message', (e) => {
+        try {
+          const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+          // TradingView posts various message shapes — check common ones
+          const sym =
+            d?.name === 'tv-widget-symbol' ? d.data :
+            d?.symbol_info?.name ? d.symbol_info.name :
+            d?.symbol ? d.symbol :
+            d?.data?.symbol ? d.data.symbol :
+            null;
+          if (sym) {
+            const raw = String(sym).replace(/^.*:/,'').replace(/[^A-Z0-9]/gi,'').toUpperCase();
             if (raw && raw !== currentSymbol) syncChartSymbol({ ticker: raw, name: raw });
-          } catch(e) {}
-        }, 1000);
+          }
+        } catch(e) {}
       });
+    }
+
+    function applySymbolSearch() {
+      const inp = document.getElementById('chart-symbol-search');
+      const val = inp.value.trim().toUpperCase();
+      if (!val) return;
+      inp.value = val;
+      currentSymbol = val;
+      document.getElementById('order-symbol').value = val;
+      initChart(val, currentInterval);
+      startPricePoll(val);
+      updateSummary();
     }
 
     function navigateToSymbol(symbol) {
@@ -341,6 +369,9 @@
 
     // ── Symbol search ────────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', () => {
+      const searchInp = document.getElementById('chart-symbol-search');
+      if (searchInp) searchInp.addEventListener('keydown', e => { if (e.key === 'Enter') applySymbolSearch(); });
+
       const inp = document.getElementById('symbol-input');
       if (inp) {
         inp.addEventListener('keydown', e => {
