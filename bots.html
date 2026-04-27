@@ -1032,7 +1032,7 @@
                     <button type="button" class="dir-pill ${scanMode==='scan_all'?'active':''}" id="scan-scan_all-${s.id}" onclick="setScanMode('${s.id}','scan_all')">All Markets</button>
                     <button type="button" class="dir-pill ${scanMode==='scan_futures'?'active':''}" id="scan-scan_futures-${s.id}" onclick="setScanMode('${s.id}','scan_futures')">Top Futures</button>
                   </div>
-                  <div id="scan-hint-${s.id}" style="font-size:0.7rem;color:#555;text-align:right;">${scanMode==='single'?'Uses the symbol below':scanMode==='scan_stocks'?'50 top US stocks':scanMode==='scan_crypto'?'20 top crypto':scanMode==='scan_futures'?'20 top futures (overnight)':'50 stocks + 20 crypto'}</div>
+                  <div id="scan-hint-${s.id}" style="font-size:0.7rem;color:#555;text-align:right;">${scanMode==='single'?'Uses the symbol below':scanMode==='scan_stocks'?'50 top US stocks':scanMode==='scan_crypto'?'20 top crypto':scanMode==='scan_futures'?'20 top futures (overnight)':'50 stocks + 20 crypto + 20 futures'}</div>
                 </div>
                 <input type="hidden" id="scanmode-${s.id}" value="${scanMode}" data-multiple="true" />
               </div>
@@ -1178,7 +1178,7 @@
       if (symRow) symRow.style.display = currentModes.includes('single') ? 'flex' : 'none';
       
       // Update hint
-      const hints = { single: 'Uses the symbol below', scan_stocks: '50 top US stocks', scan_crypto: '20 top crypto', scan_all: '50 stocks + 20 crypto', scan_futures: '20 top futures (overnight)' };
+      const hints = { single: 'Uses the symbol below', scan_stocks: '50 top US stocks', scan_crypto: '20 top crypto', scan_all: '50 stocks + 20 crypto + 20 futures', scan_futures: '20 top futures (overnight)' };
       const hint = document.getElementById('scan-hint-' + systemId);
       if (hint) {
         const hintTexts = currentModes.map(m => hints[m]).filter(Boolean);

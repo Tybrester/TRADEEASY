@@ -553,7 +553,6 @@ Deno.serve(async (req) => {
       'ARB-USD',   // ~$150M+ daily
       'SUI-USD',   // ~$500M+ daily
     ];
-    const SCAN_ALL = [...SCAN_STOCKS, ...SCAN_CRYPTO];
 
     // Top 20 Futures (liquid, trade overnight)
     const SCAN_FUTURES = [
@@ -578,6 +577,7 @@ Deno.serve(async (req) => {
       'ZS=F',    // Soybeans
       'ZL=F',    // Soybean Oil
     ];
+    const SCAN_ALL = [...SCAN_STOCKS, ...SCAN_CRYPTO, ...SCAN_FUTURES];
 
     // ── Per-symbol processing helper ─────────────────────────────────────────
     async function processSymbol(bot: Record<string,unknown>, sym: string, settings: BotSettings): Promise<object> {
