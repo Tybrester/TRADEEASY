@@ -236,6 +236,7 @@ async function fetchCandles(symbol: string, interval = '1h', bars = 150): Promis
     '5m':  { multiplier: 5,  timespan: 'minute', days: 10  },
     '15m': { multiplier: 15, timespan: 'minute', days: 20  },
     '30m': { multiplier: 30, timespan: 'minute', days: 30  },
+    '45m': { multiplier: 45, timespan: 'minute', days: 45  },
     '1h':  { multiplier: 1,  timespan: 'hour',   days: 60  },
     '2h':  { multiplier: 2,  timespan: 'hour',   days: 120 },
     '4h':  { multiplier: 4,  timespan: 'hour',   days: 180 },
