@@ -133,6 +133,7 @@
       transition: background 0.15s, color 0.15s;
       position: relative;
       border: none;
+      border-left: 3px solid transparent;
       background: none;
       font-family: inherit;
       width: 100%;
@@ -144,18 +145,11 @@
 
     .sidebar-item.active {
       background: rgba(0,230,118,0.08);
-      color: var(--accent);
+      color: var(--accent); border-left-color: var(--accent);
       font-weight: 600;
     }
 
-    .sidebar-item.active::before {
-      content: '';
-      position: absolute;
-      left: 0; top: 0; bottom: 0;
-      width: 3px;
-      background: var(--accent);
-      border-radius: 0 2px 2px 0;
-    }
+    
 
     .sidebar-arrow { margin-left: auto; font-size: 0.75rem; color: #444; }
 
