@@ -214,7 +214,6 @@
           <th>Email</th>
           <th>Systems</th>
           <th>Last Active</th>
-          <th>Actions</th>
         </tr></thead>
         <tbody>
           ${users.map(u => {
@@ -223,10 +222,6 @@
               <td style="font-size:0.85rem;" title="${u.user_id}">${u.email || u.user_id.slice(0,8) + '…'}</td>
               <td>${u.systems}</td>
               <td style="color:#555;">${dt}</td>
-              <td>
-                <button class="action-btn" onclick="resetBalance('${u.user_id}')">Reset Balance</button>
-                <button class="action-btn danger" onclick="deleteUserData('${u.user_id}')">Clear Data</button>
-              </td>
             </tr>`;
           }).join('')}
         </tbody>
