@@ -520,7 +520,7 @@
             const closeBtn = isOpen ? `<button class="pos-close" onclick="event.stopPropagation();closePosition('${r.id}','${r.action}',${r.quantity},${r.price})">Close</button>` : '';
             return `<tr style="cursor:pointer;" onclick="navigateToSymbol('${r.symbol}')" title="View ${r.symbol} on chart">
               <td style="color:#555;">${timeStr}</td>
-              <td style="font-weight:700;color:var(--accent);text-decoration:underline;text-underline-offset:3px;">${r.symbol}</td>
+              <td style="font-weight:700;">${r.symbol}</td>
               <td><span class="tbl-side ${r.action}">${r.action.toUpperCase()}</span></td>
               <td>${r.quantity}</td>
               <td>$${Number(r.price).toFixed(2)}</td>
