@@ -995,7 +995,7 @@
             <td>$${Number(t.price).toFixed(2)}</td>
             <td class="${pnlClass}">${pnlText}<span style="font-size:0.75rem;opacity:0.7;">${pnlPercentText}</span></td>
             <td>${statusBadge}</td>
-            <td class="time-ago">${timeAgo}</td>
+            <td class="time-ago">${timeAgo}<br><span style="font-size:0.7rem;opacity:0.6;">${new Date(t.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></td>
           </tr>`;
         }).join('');
         
