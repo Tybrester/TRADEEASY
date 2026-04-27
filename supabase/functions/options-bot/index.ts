@@ -390,6 +390,7 @@ Deno.serve(async (req) => {
 
     const results: object[] = [];
     const R = 0.05; // risk-free rate
+    const now = new Date();
 
     const SCAN_STOCKS = [
       'AAPL','MSFT','AMZN','NVDA','TSLA','GOOG','GOOGL','META','NFLX','BRK-B',
@@ -403,6 +404,17 @@ Deno.serve(async (req) => {
       'CVS','TMO','MDT','ISRG','F','GM',
     ];
     for (const bot of bots) {
+      // Check if bot should run based on run_interval_min
+      const runIntervalMin = (bot.run_interval_min as number) ?? 15;
+      const lastRunAt = bot.last_run_at ? new Date(bot.last_run_at as string) : null;
+      const minutesSinceLastRun = lastRunAt ? (now.getTime() - lastRunAt.getTime()) / (1000 * 60) : Infinity;
+      
+      if (minutesSinceLastRun < runIntervalMin) {
+        console.log(`[OptionsBot] Skipping "${bot.name}" - ran ${minutesSinceLastRun.toFixed(1)}m ago, interval=${runIntervalMin}m`);
+        continue;
+      }
+      
+      console.log(`[OptionsBot] Running "${bot.name}" | interval=${runIntervalMin}m`);
       const settings: BotSettings = {
         atrLength:      bot.bot_atr_length     ?? 10,
         atrMultiplier:  bot.bot_atr_multiplier ?? 3.0,
@@ -546,6 +558,9 @@ Deno.serve(async (req) => {
       } catch (err) {
         results.push({ bot_id: bot.id, status: 'error', error: String(err) });
       }
+      
+      // Update last_run_at after successful processing
+      await supabase.from('options_bots').update({ last_run_at: now.toISOString() }).eq('id', bot.id);
     }
 
     console.log(`Processed ${results.length} results:`, results);
