@@ -183,15 +183,20 @@
             <a href="https://www.interactivebrokers.com" target="_blank" class="broker-connect">Connect</a>
           </div>
 
-          <div class="broker-card">
+          <div class="broker-card" id="alpaca-card">
             <div class="broker-logo">Alpaca</div>
-            <div class="broker-desc">Commission-free stock and crypto trading built for developers and algo traders.</div>
+            <div class="broker-desc">Commission-free stock trading built for developers and algo traders. Connect your API keys to enable live stock bot trading.</div>
             <div class="broker-tags">
               <span class="broker-tag">Stocks</span>
               <span class="broker-tag">Crypto</span>
               <span class="broker-tag">API</span>
             </div>
-            <a href="https://alpaca.markets" target="_blank" class="broker-connect">Connect</a>
+            <div id="alpaca-status" style="display:none;" class="broker-status">✓ Connected</div>
+            <div id="alpaca-account-display" style="display:none;font-size:0.78rem;color:#555;margin-top:2px;"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="broker-connect" id="alpaca-connect-btn" onclick="openAlpacaModal()">Connect Alpaca</button>
+              <button id="alpaca-disconnect-btn" onclick="disconnectAlpaca()" style="display:none;background:transparent;border:1px solid var(--red);color:var(--red);font-size:0.82rem;font-weight:700;padding:8px 16px;border-radius:7px;cursor:pointer;font-family:inherit;">Disconnect</button>
+            </div>
           </div>
 
           <div class="broker-card">
@@ -251,6 +256,39 @@
           Contact: <a href="mailto:BoofCapital@gmail.com" style="color:var(--muted);text-decoration:none;">BoofCapital@gmail.com</a>
         </div>
       </main>
+    </div>
+  </div>
+
+  <!-- ALPACA MODAL -->
+  <div class="modal-overlay" id="alpaca-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Connect Alpaca</div>
+        <button class="modal-close" onclick="closeAlpacaModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-group">
+          <label>API Key ID</label>
+          <input type="text" id="alpaca-key" placeholder="PKXXXXXXXXXXXXXXXXXX" autocomplete="off" />
+        </div>
+        <div class="field-group">
+          <label>Secret Key</label>
+          <input type="password" id="alpaca-secret" placeholder="Your Alpaca secret key" autocomplete="off" />
+        </div>
+        <div class="field-group">
+          <label>Environment</label>
+          <select id="alpaca-env" style="width:100%;background:#111;border:1px solid #2a2a2a;color:var(--text);font-size:0.85rem;padding:9px 12px;border-radius:6px;outline:none;font-family:inherit;">
+            <option value="paper">Paper Trading (alpaca paper)</option>
+            <option value="live">Live Trading (real money)</option>
+          </select>
+        </div>
+        <div class="field-hint">Your API keys are stored encrypted. Get your keys at <a href="https://app.alpaca.markets" target="_blank" style="color:var(--accent);">app.alpaca.markets</a> under API Keys.</div>
+        <div id="alpaca-error" style="display:none;color:var(--red);font-size:0.82rem;margin-top:4px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="closeAlpacaModal()">Cancel</button>
+        <button class="btn-save" id="alpaca-save-btn" onclick="saveAlpacaCredentials()">Connect</button>
+      </div>
     </div>
   </div>
 
@@ -461,6 +499,80 @@
       }
     }
 
+    function openAlpacaModal() {
+      document.getElementById('alpaca-key').value = '';
+      document.getElementById('alpaca-secret').value = '';
+      document.getElementById('alpaca-error').style.display = 'none';
+      document.getElementById('alpaca-modal').classList.add('open');
+    }
+
+    function closeAlpacaModal() {
+      document.getElementById('alpaca-modal').classList.remove('open');
+    }
+
+    async function saveAlpacaCredentials() {
+      const errEl = document.getElementById('alpaca-error');
+      const btn   = document.getElementById('alpaca-save-btn');
+      errEl.style.display = 'none';
+      const apiKey = document.getElementById('alpaca-key').value.trim();
+      const secret = document.getElementById('alpaca-secret').value.trim();
+      const env    = document.getElementById('alpaca-env').value;
+      if (!apiKey || !secret) { errEl.textContent = 'Both API Key and Secret are required.'; errEl.style.display = 'block'; return; }
+
+      btn.textContent = 'Verifying...'; btn.disabled = true;
+      try {
+        // Test the keys against Alpaca's account endpoint
+        const baseUrl = env === 'live' ? 'https://api.alpaca.markets' : 'https://paper-api.alpaca.markets';
+        const testRes = await fetch(`${baseUrl}/v2/account`, {
+          headers: { 'APCA-API-KEY-ID': apiKey, 'APCA-API-SECRET-KEY': secret }
+        });
+        if (!testRes.ok) throw new Error('Invalid API keys — could not authenticate with Alpaca.');
+        const acct = await testRes.json();
+
+        // Save to broker_credentials
+        await sbClient.from('broker_credentials').upsert({
+          user_id: currentUser.id,
+          broker: 'alpaca',
+          credentials: { api_key: apiKey, secret_key: secret, env, account_number: acct.account_number }
+        }, { onConflict: 'user_id,broker' });
+
+        applyAlpacaUI(true, apiKey, env);
+        closeAlpacaModal();
+      } catch(e) {
+        errEl.textContent = e.message || 'Could not connect. Check your keys.';
+        errEl.style.display = 'block';
+      } finally {
+        btn.textContent = 'Connect'; btn.disabled = false;
+      }
+    }
+
+    async function disconnectAlpaca() {
+      await sbClient.from('broker_credentials').delete().eq('user_id', currentUser.id).eq('broker', 'alpaca');
+      applyAlpacaUI(false);
+    }
+
+    function applyAlpacaUI(connected, apiKey = '', env = 'paper') {
+      const card    = document.getElementById('alpaca-card');
+      const status  = document.getElementById('alpaca-status');
+      const acctEl  = document.getElementById('alpaca-account-display');
+      const connBtn = document.getElementById('alpaca-connect-btn');
+      const discBtn = document.getElementById('alpaca-disconnect-btn');
+      if (connected) {
+        card.classList.add('broker-connected');
+        status.style.display = 'block';
+        acctEl.style.display = 'block';
+        acctEl.textContent = apiKey.substring(0, 8) + '...' + (env === 'live' ? ' · Live' : ' · Paper');
+        connBtn.textContent = 'Edit Keys';
+        discBtn.style.display = 'block';
+      } else {
+        card.classList.remove('broker-connected');
+        status.style.display = 'none';
+        acctEl.style.display = 'none';
+        connBtn.textContent = 'Connect Alpaca';
+        discBtn.style.display = 'none';
+      }
+    }
+
     async function init() {
       const { data: { session } } = await sbClient.auth.getSession();
       if (!session) { window.location.href = 'signin.html'; return; }
@@ -479,6 +591,10 @@
       } else {
         console.log('[Brokers] No credentials found');
       }
+
+      // Check if Alpaca already connected
+      const { data: alpacaCreds } = await sbClient.from('broker_credentials').select('credentials').eq('user_id', currentUser.id).eq('broker', 'alpaca').maybeSingle();
+      if (alpacaCreds) applyAlpacaUI(true, alpacaCreds.credentials.api_key, alpacaCreds.credentials.env);
 
       // Check if paper trading already enabled
       const paperEnabled = localStorage.getItem('paper_trading_enabled') === 'true';

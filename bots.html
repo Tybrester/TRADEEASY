@@ -775,12 +775,13 @@
               <div class="auto-settings-row">
                 <span>Broker</span>
                 <select class="auto-input" id="brk-${s.id}" style="width:140px;" onchange="updateBrokerTag('${s.id}', this.value)">
-                  <option value="paper" ${!brokerIsTasty?'selected':''}>Paper Trading</option>
-                  <option value="tastytrade" ${brokerIsTasty?'selected':''}>Tastytrade (Live)</option>
+                  <option value="paper" ${!s.broker||s.broker==='paper'?'selected':''}>Paper Trading</option>
+                  <option value="alpaca" ${s.broker==='alpaca'?'selected':''}>Alpaca (Live)</option>
+                  <option value="tastytrade" ${s.broker==='tastytrade'?'selected':''}>Tastytrade (Live)</option>
                 </select>
               </div>
-              <div id="broker-warn-${s.id}" style="font-size:0.72rem;color:#ff7043;display:${brokerIsTasty?'flex':'none'};align-items:center;gap:6px;background:rgba(255,112,67,0.08);border:1px solid rgba(255,112,67,0.2);border-radius:6px;padding:8px 10px;">
-                <span>Live trading enabled — real orders will be placed on Tastytrade</span>
+              <div id="broker-warn-${s.id}" style="font-size:0.72rem;color:#ff7043;display:${s.broker&&s.broker!=='paper'?'flex':'none'};align-items:center;gap:6px;background:rgba(255,112,67,0.08);border:1px solid rgba(255,112,67,0.2);border-radius:6px;padding:8px 10px;">
+                <span>Live trading enabled — real orders will be placed on ${s.broker==='alpaca'?'Alpaca':'Tastytrade'}</span>
               </div>
               <div style="display:flex;gap:8px;align-items:center;">
                 <button class="save-btn" onclick="saveAutoSettings('${s.id}')">Save Settings</button>
@@ -836,7 +837,11 @@
     function updateBrokerTag(systemId, broker) {
       refreshBrokerTag(systemId, broker);
       const warn = document.getElementById('broker-warn-' + systemId);
-      if (warn) warn.style.display = broker === 'tastytrade' ? 'flex' : 'none';
+      if (warn) {
+        warn.style.display = (broker === 'tastytrade' || broker === 'alpaca') ? 'flex' : 'none';
+        const span = warn.querySelector('span');
+        if (span) span.textContent = `Live trading enabled — real orders will be placed on ${broker === 'alpaca' ? 'Alpaca' : 'Tastytrade'}`;
+      }
     }
 
     function setScanMode(systemId, mode) {

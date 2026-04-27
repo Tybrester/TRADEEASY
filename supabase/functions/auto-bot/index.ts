@@ -502,6 +502,30 @@ Deno.serve(async (req) => {
             tradeStatus = 'failed';
             console.error('[AutoBot] Tastytrade error:', brokerError);
           }
+        } else if (system.broker === 'alpaca') {
+          try {
+            const alpacaRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/alpaca-order`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              },
+              body: JSON.stringify({
+                user_id: system.user_id,
+                symbol: sym,
+                side: signal === 'buy' ? 'buy' : 'sell',
+                notional: settings.dollarAmount,
+              }),
+            });
+            const alpacaJson = await alpacaRes.json();
+            if (!alpacaRes.ok || alpacaJson.error) throw new Error(alpacaJson.error || 'Alpaca order failed');
+            orderId = alpacaJson.order_id;
+            tradeStatus = 'filled';
+          } catch (e) {
+            brokerError = String(e);
+            tradeStatus = 'failed';
+            console.error('[AutoBot] Alpaca error:', brokerError);
+          }
         } else {
           // Paper trading: update virtual balance
           const tradeValue = quantity * price;
