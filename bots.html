@@ -449,7 +449,13 @@
 
     async function loadOptionsBots() {
       const container = document.getElementById('options-bots-container');
-      const { data: bots } = await sbClient.from('options_bots').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false });
+      console.log('[loadOptionsBots] currentUserId:', currentUserId);
+      const { data: bots, error } = await sbClient.from('options_bots').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false });
+      console.log('[loadOptionsBots] bots:', bots?.length, 'error:', error);
+      if (error) {
+        container.innerHTML = `<div class="empty-state" style="border-color:#2a2000;"><div>Error loading options bots</div><div style="margin-top:8px;font-size:0.82rem;">${error.message}</div></div>`;
+        return;
+      }
       if (!bots || bots.length === 0) {
         container.innerHTML = `<div class="empty-state" style="border-color:#2a2000;"><div>No options bots yet.</div><div style="margin-top:8px;font-size:0.82rem;">Click "+ New Options Bot" to create one.</div></div>`;
         return;
