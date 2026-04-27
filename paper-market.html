@@ -162,14 +162,16 @@
 
   <div id="app">
     <nav>
-      <a href="dashboard.html" class="logo">Boof<span>Capital</span></a>
+      <a href="dashboard.html" class="logo">Boof<span style="color:var(--accent);">Capital</span></a>
       <div class="nav-right">
         <div class="user-dropdown" id="user-dropdown">
           <button class="user-dropdown-toggle" id="user-email-toggle">
             <span id="user-email"></span>
           </button>
           <div class="user-dropdown-menu">
-            <button class="user-dropdown-item red" onclick="signOut()">🚪 Sign Out</button>
+            <button class="user-dropdown-item red" onclick="signOut()">
+              <span>🚪</span> Sign Out
+            </button>
           </div>
         </div>
       </div>
