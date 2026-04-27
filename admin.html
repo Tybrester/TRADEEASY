@@ -203,19 +203,16 @@
       container.innerHTML = `<table class="users-table">
         <thead><tr>
           <th>User ID</th>
-          <th>Paper Balance</th>
           <th>Systems</th>
           <th>Last Active</th>
           <th>Actions</th>
         </tr></thead>
         <tbody>
           ${users.map(u => {
-            const bal = Number(u.balance ?? 100000).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
             const dt = u.updated_at ? new Date(u.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
             const shortId = u.user_id.slice(0, 8) + '…';
             return `<tr>
               <td style="font-family:monospace;font-size:0.8rem;color:#666;" title="${u.user_id}">${shortId}</td>
-              <td style="font-weight:700;">${bal}</td>
               <td>${u.systems}</td>
               <td style="color:#555;">${dt}</td>
               <td>
