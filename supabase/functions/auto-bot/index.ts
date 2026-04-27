@@ -438,7 +438,7 @@ Deno.serve(async (req) => {
     if (!systemId) return new Response(JSON.stringify({ error: 'system_id required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     const { data: sys } = await supabaseGET.from('systems').select('paper_balance').eq('id', systemId).single();
-    const cash = Number(sys?.paper_balance ?? 150000);
+    const cash = Number(sys?.paper_balance ?? 100000);
 
     // Fetch open (filled, no pnl) trades
     const { data: openTrades } = await supabaseGET.from('trades').select('*').eq('system_id', systemId).eq('status', 'filled').is('pnl', null);
@@ -626,7 +626,7 @@ Deno.serve(async (req) => {
           // Paper trading: update virtual balance
           const tradeValue = quantity * price;
           const { data: sysRow } = await supabase.from('systems').select('paper_balance').eq('id', system.id as string).single();
-          const currentBalance = Number(sysRow?.paper_balance ?? 150000);
+          const currentBalance = Number(sysRow?.paper_balance ?? 100000);
           const newBalance = signal === 'buy'
             ? currentBalance - tradeValue
             : currentBalance + tradeValue;

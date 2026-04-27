@@ -419,7 +419,7 @@
         if (data.total != null) {
           el.textContent = '$' + Number(data.total).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           if (pctEl) {
-            const pct = ((data.total - 150000) / 150000) * 100;
+            const pct = ((data.total - 100000) / 100000) * 100;
             pctEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
             pctEl.style.color = pct >= 0 ? 'var(--accent)' : 'var(--red)';
           }
@@ -439,7 +439,7 @@
         if (data.total != null) {
           el.textContent = '$' + Number(data.total).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           if (pctEl) {
-            const pct = ((data.total - 150000) / 150000) * 100;
+            const pct = ((data.total - 100000) / 100000) * 100;
             pctEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
             pctEl.style.color = pct >= 0 ? 'var(--accent)' : 'var(--red)';
           }
@@ -459,7 +459,7 @@
       grid.className = 'bots-grid';
       bots.forEach(b => {
         const isRunning = b.enabled && b.auto_submit;
-        const paperBalance = Number(b.paper_balance ?? 150000);
+        const paperBalance = Number(b.paper_balance ?? 100000);
         const expiryLabel = b.bot_expiry_type === '0dte' ? '0DTE' : b.bot_expiry_type === 'weekly' ? 'Weekly' : 'Monthly';
         const otmLabel = b.bot_otm_strikes === 0 ? 'ATM' : `${b.bot_otm_strikes} Strike${b.bot_otm_strikes > 1 ? 's' : ''} OTM`;
         const autoStatus = isRunning ? 'Auto-trading options · checks every hour' : 'Options bot stopped';
@@ -671,10 +671,10 @@
     }
 
     async function resetOptionsPaperBalance(botId) {
-      if (!confirm('Reset options paper balance back to $150,000?')) return;
-      await sbClient.from('options_bots').update({ paper_balance: 150000, paper_balance_start: 150000 }).eq('id', botId);
+      if (!confirm('Reset options paper balance back to $100,000?')) return;
+      await sbClient.from('options_bots').update({ paper_balance: 100000, paper_balance_start: 100000 }).eq('id', botId);
       const el = document.getElementById('opt-paper-bal-' + botId);
-      if (el) el.textContent = '$150,000.00';
+      if (el) el.textContent = '$100,000.00';
     }
 
     function openCreateModal(id) {
@@ -736,8 +736,8 @@
         bot_trade_direction: 'both',
         bot_scan_mode: 'single',
         bot_signal: signal,
-        paper_balance: 150000,
-        paper_balance_start: 150000,
+        paper_balance: 100000,
+        paper_balance_start: 100000,
       });
       if (error) { alert('Error: ' + error.message); return; }
       await loadBots();
@@ -795,7 +795,7 @@
         const isScan = scanMode !== 'single';
 
         const autoStatus = isRunning ? 'Auto-trading · checks every hour' : 'Auto mode — bot stopped';
-        const paperBalance = Number(s.paper_balance ?? 150000);
+        const paperBalance = Number(s.paper_balance ?? 100000);
 
         const card = document.createElement('div');
         card.className = 'bot-card' + (isRunning ? ' running' : ' stopped');
@@ -827,7 +827,7 @@
                 <span id="paper-pct-${s.id}" style="font-size:0.82rem;font-weight:700;"></span>
               </div>
             </div>
-            <button class="reset-btn" onclick="resetPaperBalance('${s.id}')">Reset to $150k</button>
+            <button class="reset-btn" onclick="resetPaperBalance('${s.id}')">Reset to $100k</button>
           </div>` : ''}
 
           <!-- Master on/off toggle -->
@@ -1030,10 +1030,10 @@
 
 
     async function resetPaperBalance(systemId) {
-      if (!confirm('Reset paper balance back to $150,000?')) return;
-      await sbClient.from('systems').update({ paper_balance: 150000, paper_balance_start: 150000 }).eq('id', systemId);
+      if (!confirm('Reset paper balance back to $100,000?')) return;
+      await sbClient.from('systems').update({ paper_balance: 100000, paper_balance_start: 100000 }).eq('id', systemId);
       const balEl = document.getElementById('paper-bal-' + systemId);
-      if (balEl) balEl.textContent = '$150,000.00';
+      if (balEl) balEl.textContent = '$100,000.00';
     }
 
     async function toggleBot(systemId, on) {
