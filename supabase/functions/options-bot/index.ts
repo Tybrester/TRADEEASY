@@ -1033,7 +1033,8 @@ Deno.serve(async (req) => {
               
               const pctChange = ((optionPrice - open.premium_per_contract) / open.premium_per_contract) * 100;
               const shouldTP = pctChange >= settings.takeProfitPct;
-              const shouldSL = pctChange <= -settings.stopLossPct;
+              const slThreshold = settings.stopLossPct < 0 ? settings.stopLossPct : -Math.abs(settings.stopLossPct);
+              const shouldSL = pctChange <= slThreshold;
               
               // EOD exit: 0DTE options must close before market close (3:45pm ET cutoff)
               const is0DTE = open.expiration_date === now.toISOString().split('T')[0];
