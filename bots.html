@@ -760,7 +760,6 @@
           statsEl.innerHTML = `
             <div><span style="color:#666;">Realized</span> <strong style="color:${rColor};">${realizedPnl >= 0 ? '+' : ''}$${realizedPnl.toFixed(2)}</strong></div>
             <div><span style="color:#666;">Unrealized</span> <strong style="color:${uColor};">${unrealizedPnl >= 0 ? '+' : ''}$${unrealizedPnl.toFixed(2)}</strong></div>
-            <div><span style="color:#666;">Trades</span> <strong style="color:#e0e0e0;">${totalClosed} closed · ${openCount} open</strong></div>
             <div><span style="color:#666;">Win Rate</span> <strong style="color:${Number(winRate) >= 50 ? 'var(--accent)' : 'var(--red)'};">${winRate}%</strong></div>
           `;
         }
