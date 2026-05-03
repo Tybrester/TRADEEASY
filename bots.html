@@ -833,7 +833,7 @@
     async function loadOptionsBots() {
       const container = document.getElementById('options-bots-container');
       console.log('[loadOptionsBots] currentUserId:', currentUserId);
-      const { data: bots, error } = await sbClient.from('options_bots').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false });
+      const { data: bots, error } = await sbClient.from('options_bots').select('*, options_trades(*)').eq('user_id', currentUserId).order('created_at', { ascending: false });
       console.log('[loadOptionsBots] bots:', bots?.length, 'error:', error);
       if (error) {
         container.innerHTML = `<div class="empty-state" style="border-color:#2a2000;"><div>Error loading options bots</div><div style="margin-top:8px;font-size:0.82rem;">${error.message}</div></div>`;
@@ -984,6 +984,12 @@
               <div class="run-result" id="opt-run-result-${b.id}"></div>
             </div>
             </div>
+          </div>
+
+          <!-- Recent Trades -->
+          <div style="background:#0a0a0a;border-radius:8px;padding:12px;margin-top:12px;border:1px solid #1a1a1a;">
+            <div style="font-size:0.8rem;font-weight:600;color:#888;margin-bottom:8px;">Recent Trades</div>
+            ${formatRecentTrades(b.options_trades, 'options')}
           </div>
 
           <!-- Activity Button -->
@@ -1874,13 +1880,39 @@
       return `${days}d ago`;
     }
 
+    function formatRecentTrades(trades, type = 'stock') {
+      if (!trades || trades.length === 0) return '<div style="font-size:0.75rem;color:#666;padding:8px 0;">No recent trades</div>';
+      
+      const recent = trades.slice(0, 5);
+      return recent.map(t => {
+        const isProfit = (t.pnl || 0) > 0;
+        const isLoss = (t.pnl || 0) < 0;
+        const pnlColor = isProfit ? '#00ff88' : isLoss ? '#ff4444' : '#888';
+        const status = t.status || 'unknown';
+        const symbol = t.symbol || (type === 'stock' ? 'N/A' : t.option_symbol || 'N/A');
+        const pnlText = t.pnl !== null && t.pnl !== undefined ? `$${Number(t.pnl).toFixed(2)}` : '-';
+        const action = t.action || t.side || '?';
+        
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222;font-size:0.8rem;">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span style="color:${action === 'buy' ? '#00ff88' : '#ff4444'};font-weight:600;">${action.toUpperCase()}</span>
+              <span style="color:#ccc;">${symbol}</span>
+              <span style="color:#666;font-size:0.7rem;">${timeSince(new Date(t.created_at || t.filled_at))}</span>
+            </div>
+            <span style="color:${pnlColor};font-weight:600;">${pnlText}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
     async function loadBots() {
       const container = document.getElementById('bots-container');
       console.log('[loadBots] currentUserId:', currentUserId);
 
       const { data: stockBots, error } = await sbClient
         .from('stock_bots')
-        .select('*')
+        .select('*, trades(*)')
         .eq('user_id', currentUserId)
         .order('created_at', { ascending: true });
 
@@ -2105,8 +2137,14 @@
             </div>
           </div>
 
+          <!-- Recent Trades -->
+          <div style="background:#0a0a0a;border-radius:8px;padding:12px;margin-top:12px;border:1px solid #1a1a1a;">
+            <div style="font-size:0.8rem;font-weight:600;color:#888;margin-bottom:8px;">Recent Trades</div>
+            ${formatRecentTrades(s.trades, 'stock')}
+          </div>
+
           <!-- Activity Button -->
-          <div>
+          <div style="margin-top:12px;">
             <button class="activity-toggle" onclick="openBotActivityModal('${s.id}', '${s.name}', 'stock')">View Activity</button>
           </div>
 
