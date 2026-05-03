@@ -1750,6 +1750,11 @@
             ? '<span class="badge-long">OPEN</span>' 
             : '<span class="badge-short">CLOSED</span>';
           
+          // Close button for open trades
+          const closeButton = (t.status === 'open' || t.status === 'filled')
+            ? `<button onclick="closeTrade('${t.id}', '${t.botType}', '${t.symbol}')" style="background:var(--red);color:#fff;border:none;padding:4px 10px;border-radius:4px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Close this trade">Close</button>`
+            : '-';
+          
           // Fix options display: signal 'sell' + put = BUY PUT, signal 'buy' + call = BUY CALL
           const isOptions = t.botType === 'options';
           const actionDisplay = isOptions 
@@ -1772,6 +1777,7 @@
             <td class="${pnlClass}">${pnlText}<span style="font-size:0.75rem;color:#bbb;">${pnlPercentText}</span></td>
             <td>${statusBadge}</td>
             <td class="time-ago">${timeAgo}<br><span style="font-size:0.7rem;color:#aaa;">${new Date(t.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></td>
+            <td>${closeButton}</td>
           </tr>`;
         }).join('');
         
@@ -1810,6 +1816,7 @@
               <th onclick="sortTrades('pnl')" style="${thStyle}">P&L${arrow('pnl')}</th>
               <th onclick="sortTrades('status')" style="${thStyle}">Status${arrow('status')}</th>
               <th onclick="sortTrades('createdAt')" style="${thStyle}">Time${arrow('createdAt')}</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -1819,6 +1826,91 @@
       } catch (err) {
         console.error('[loadAllTrades] Error:', err);
         container.innerHTML = '<div class="empty-state">Error loading trades.</div>';
+      }
+    }
+
+    // Close a trade manually
+    async function closeTrade(tradeId, botType, symbol) {
+      if (!confirm(`Close this ${symbol} trade?`)) return;
+      
+      try {
+        console.log(`[CloseTrade] Closing ${botType} trade ${tradeId}`);
+        
+        // Get current live price
+        const livePrices = await fetchLivePrices([symbol]);
+        const currentPrice = livePrices[symbol] || 0;
+        
+        if (!currentPrice) {
+          alert('Could not get current price. Try again in a moment.');
+          return;
+        }
+        
+        // Get trade details
+        const table = botType === 'stock' ? 'trades' : 'options_trades';
+        const { data: trade, error: fetchError } = await sbClient.from(table).select('*').eq('id', tradeId).single();
+        
+        if (fetchError || !trade) {
+          console.error('[CloseTrade] Error fetching trade:', fetchError);
+          alert('Error fetching trade details');
+          return;
+        }
+        
+        // Calculate P&L
+        let pnl = 0;
+        if (botType === 'stock') {
+          const entryPrice = Number(trade.price);
+          const qty = Number(trade.quantity);
+          pnl = trade.action === 'buy' ? (currentPrice - entryPrice) * qty : (entryPrice - currentPrice) * qty;
+        } else {
+          // Options - use delta approximation
+          const contracts = Number(trade.contracts) || 1;
+          const entryPrice = Number(trade.premium_per_contract) || Number(trade.price) || 0;
+          const delta = trade.option_type === 'call' ? 0.5 : -0.5;
+          const underlyingChange = currentPrice - (Number(trade.strike) || entryPrice);
+          pnl = delta * underlyingChange * contracts * 100;
+        }
+        
+        // Update trade to closed status
+        const { error: updateError } = await sbClient.from(table).update({
+          status: 'closed',
+          closed_at: new Date().toISOString(),
+          exit_price: currentPrice,
+          pnl: pnl,
+          close_reason: 'manual'
+        }).eq('id', tradeId);
+        
+        if (updateError) {
+          console.error('[CloseTrade] Error updating trade:', updateError);
+          alert('Error closing trade: ' + updateError.message);
+          return;
+        }
+        
+        // Update bot paper balance if paper trading
+        const { data: bot } = await sbClient.from(botType === 'stock' ? 'stock_bots' : 'options_bots')
+          .select('paper_balance, broker')
+          .eq('id', trade.bot_id)
+          .single();
+        
+        if (bot && bot.broker === 'paper') {
+          const newBalance = (bot.paper_balance || 100000) + pnl;
+          await sbClient.from(botType === 'stock' ? 'stock_bots' : 'options_bots')
+            .update({ paper_balance: newBalance })
+            .eq('id', trade.bot_id);
+        }
+        
+        console.log(`[CloseTrade] Closed ${symbol} trade with P&L: $${pnl.toFixed(2)}`);
+        alert(`Closed ${symbol} trade! P&L: $${pnl.toFixed(2)}`);
+        
+        // Refresh trades display
+        loadAllTrades(allTradesPage);
+        
+        // Refresh bot cards
+        loadBots();
+        loadOptionsBots();
+        
+      } catch (err) {
+        console.error('[CloseTrade] Error:', err);
+        alert('Error closing trade: ' + err.message);
       }
     }
 
