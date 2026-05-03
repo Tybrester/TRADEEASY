@@ -658,12 +658,21 @@ function generateSignalBoof30(candles: Candle[], tradeDirection = 'both'): Signa
 interface Candle { time: number; open: number; high: number; low: number; close: number; }
 
 async function fetchCandles(symbol: string, interval = '1h', bars = 150, userId?: string): Promise<Candle[]> {
-  // Check if it's a crypto symbol
+  // Check if it's a crypto or futures symbol (both use Yahoo Finance)
   const isCrypto = symbol.includes('-USD') || symbol.includes('/USD');
+  const isFutures = symbol.includes('=F');
+  const useYahoo = isCrypto || isFutures;
   
-  if (isCrypto) {
+  // Fix renamed/delisted Yahoo tickers
+  const tickerFixMap: Record<string, string> = {
+    'MATIC-USD': 'POL-USD',  // MATIC renamed to POL
+  };
+  
+  if (useYahoo) {
     // Fetch REAL candle data from Yahoo Finance
     try {
+      const yahooSymbol = tickerFixMap[symbol.toUpperCase()] || symbol;
+      
       // Map interval to Yahoo Finance format
       const yahooIntervalMap: Record<string, string> = {
         '1m': '1m', '2m': '2m', '5m': '5m', '15m': '15m', '30m': '30m',
@@ -678,8 +687,8 @@ async function fetchCandles(symbol: string, interval = '1h', bars = 150, userId?
       };
       const range = rangeMap[yahooInterval] || '1mo';
       
-      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${yahooInterval}&range=${range}`;
-      console.log(`[AutoBot] Fetching Yahoo Finance candles for ${symbol} (${yahooInterval}, ${range})`);
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=${yahooInterval}&range=${range}`;
+      console.log(`[AutoBot] Fetching Yahoo Finance candles for ${yahooSymbol} (${yahooInterval}, ${range})`);
       
       const yahooRes = await fetch(yahooUrl, {
         headers: { 'User-Agent': 'Mozilla/5.0' }
@@ -708,18 +717,19 @@ async function fetchCandles(symbol: string, interval = '1h', bars = 150, userId?
           
           // Return last N bars
           const trimmed = candles.slice(-bars);
-          console.log(`[AutoBot] Yahoo Finance ${symbol}: ${trimmed.length} real candles, latest close=$${trimmed[trimmed.length-1]?.close?.toFixed(2)}`);
-          return trimmed;
+          if (trimmed.length > 0) {
+            console.log(`[AutoBot] Yahoo Finance ${symbol}: ${trimmed.length} real candles, latest close=$${trimmed[trimmed.length-1]?.close?.toFixed(2)}`);
+            return trimmed;
+          }
         }
       }
       
-      // If Yahoo fails, log and throw
-      const errText = await yahooRes.text().catch(() => 'unknown');
-      console.warn(`[AutoBot] Yahoo Finance failed for ${symbol} (${yahooRes.status}): ${errText.substring(0, 200)}`);
-      throw new Error(`Yahoo Finance failed for ${symbol}: ${yahooRes.status}`);
+      // If Yahoo fails or returns empty data, skip symbol gracefully
+      console.warn(`[AutoBot] Yahoo Finance: no data for ${symbol}, skipping`);
+      throw new Error(`No candle data available for ${symbol}`);
       
     } catch (err) {
-      console.error(`[AutoBot] Crypto candle fetch error for ${symbol}:`, err);
+      console.error(`[AutoBot] Yahoo candle fetch error for ${symbol}:`, err);
       throw err;
     }
   }
