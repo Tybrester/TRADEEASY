@@ -2671,10 +2671,21 @@
 
 
     async function resetPaperBalance(systemId) {
-      if (!confirm('Reset paper balance back to $100,000?')) return;
+      if (!confirm('Reset paper balance to $100,000 and clear ALL trades for this bot?')) return;
+      // Delete all trades for this bot
+      const { error: delError } = await sbClient.from('trades').delete().eq('bot_id', systemId);
+      if (delError) console.error('[Reset] Error deleting trades:', delError);
+      // Reset balance
       await sbClient.from('stock_bots').update({ paper_balance: 100000, paper_balance_start: 100000 }).eq('id', systemId);
       const balEl = document.getElementById('paper-bal-' + systemId);
       if (balEl) balEl.textContent = '$100,000.00';
+      const pctEl = document.getElementById('paper-pct-' + systemId);
+      if (pctEl) pctEl.textContent = '+0.00%';
+      const statsEl = document.getElementById('pnl-stats-' + systemId);
+      if (statsEl) statsEl.innerHTML = '';
+      // Refresh trades list and bot card
+      loadBotTrades(systemId);
+      loadAllTrades(1);
     }
 
     async function closeStockPosition(botId, symbol) {
