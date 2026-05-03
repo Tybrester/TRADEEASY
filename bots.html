@@ -1584,7 +1584,6 @@
         const { data: stockTrades } = await sbClient.from('trades')
           .select('*')
           .eq('user_id', currentUserId)
-          .in('source', ['auto-bot'])
           .order('created_at', { ascending: false })
           .limit(100);
         
