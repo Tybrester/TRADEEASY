@@ -1148,18 +1148,24 @@ Deno.serve(async (req) => {
         const candles = await fetchCandles(sym, settings.interval, 150, bot.user_id as string);
         if (candles.length < 60) return { bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Not enough candle data' };
 
-        // Check database for REAL open trade on this symbol
+        // Check database for REAL open trade on this symbol (across ALL bots for this user)
         const { data: realOpenTrade } = await supabase.from('trades')
-          .select('id, action').eq('bot_id', bot.id as string).eq('symbol', sym)
+          .select('id, action, bot_id').eq('user_id', bot.user_id as string).eq('symbol', sym)
           .eq('source', 'auto-bot').eq('status', 'filled').is('pnl', null)
           .limit(1).maybeSingle();
         const hasRealPosition = !!realOpenTrade;
+        const isOwnPosition = realOpenTrade?.bot_id === bot.id;
         
-        // Cooldown: don't re-enter if a trade was recently closed on this symbol
+        // Skip if another bot already has an open position on this symbol
+        if (hasRealPosition && !isOwnPosition) {
+          return { bot_id: bot.id, symbol: sym, status: 'skipped', reason: `Another bot already has open ${sym} position` };
+        }
+        
+        // Cooldown: don't re-enter if a trade was recently closed on this symbol (any bot, same user)
         const cooldownMinutes = Math.max(Number(settings.interval?.replace(/[^\d]/g, '')) || 5, 5);
         const cooldownAgo = new Date(Date.now() - cooldownMinutes * 60 * 1000).toISOString();
         const { data: recentlyClosed } = await supabase.from('trades')
-          .select('id').eq('bot_id', bot.id as string).eq('symbol', sym)
+          .select('id').eq('user_id', bot.user_id as string).eq('symbol', sym)
           .eq('source', 'auto-bot').eq('status', 'closed')
           .gte('closed_at', cooldownAgo)
           .limit(1).maybeSingle();
