@@ -851,7 +851,9 @@
         const paperBalance = Number(b.paper_balance ?? 100000);
         const expiryLabel = b.bot_expiry_type === '0dte' ? '0DTE' : b.bot_expiry_type === 'weekly' ? 'Weekly' : 'Monthly';
         const otmLabel = b.bot_otm_strikes === 0 ? 'ATM' : `${b.bot_otm_strikes} Strike${b.bot_otm_strikes > 1 ? 's' : ''} OTM`;
-        const autoStatus = isRunning ? 'Auto-trading options · checks every hour' : 'Options bot stopped';
+        const runInt = b.run_interval_min || 60;
+        const intervalText = runInt < 60 ? `${runInt}m` : `${Math.floor(runInt/60)}h`;
+        const autoStatus = isRunning ? `Auto-trading options · checks every ${intervalText}` : 'Options bot stopped';
         const card = document.createElement('div');
         card.className = 'bot-card' + (isRunning ? ' running' : ' stopped');
         card.id = 'optcard-' + b.id;
@@ -1089,7 +1091,9 @@
       const card = document.getElementById('optcard-' + botId);
       const lock = document.getElementById('opt-settings-lock-' + botId);
       if (badge) { badge.className = 'status-badge ' + (on ? 'running' : 'stopped'); badge.textContent = on ? 'Running' : 'Stopped'; }
-      if (detail) detail.textContent = on ? 'Auto-trading options · checks every hour' : 'Options bot stopped';
+      const runIntMin = document.getElementById('orunint-' + botId)?.value || 60;
+      const intText = runIntMin < 60 ? `${runIntMin}m` : `${Math.floor(runIntMin/60)}h`;
+      if (detail) detail.textContent = on ? `Auto-trading options · checks every ${intText}` : 'Options bot stopped';
       if (card) { card.classList.toggle('running', on); card.classList.toggle('stopped', !on); card.style.borderColor = ''; card.style.boxShadow = ''; }
       if (lock) lock.classList.toggle('hidden', !on);
     }
@@ -2079,7 +2083,9 @@
         const scanMode = s.bot_scan_mode || 'single';
         const isScan = scanMode !== 'single';
 
-        const autoStatus = isRunning ? 'Auto-trading · checks every hour' : 'Auto mode — bot stopped';
+        const runInt = s.run_interval_min || 60;
+        const intervalText = runInt < 60 ? `${runInt}m` : `${Math.floor(runInt/60)}h`;
+        const autoStatus = isRunning ? `Auto-trading · checks every ${intervalText}` : 'Auto mode — bot stopped';
         const paperBalance = Number(s.paper_balance ?? 100000);
 
         const card = document.createElement('div');
@@ -2500,7 +2506,9 @@
         badge.className = 'status-badge ' + (isRunning ? 'running' : 'stopped');
         badge.textContent = isRunning ? 'Running' : 'Stopped';
       }
-      if (detail) detail.textContent = isRunning ? 'Auto-trading · checks every hour' : 'Auto mode — bot stopped';
+      const runInt = document.getElementById('runint-' + systemId)?.value || 60;
+      const intText = runInt < 60 ? `${runInt}m` : `${Math.floor(runInt/60)}h`;
+      if (detail) detail.textContent = isRunning ? `Auto-trading · checks every ${intText}` : 'Auto mode — bot stopped';
       if (card) { card.classList.toggle('running', isRunning); card.classList.toggle('stopped', !isRunning); }
       const lock = document.getElementById('settings-lock-' + systemId);
       if (lock) lock.classList.toggle('hidden', !isRunning);
