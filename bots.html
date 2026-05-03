@@ -1644,14 +1644,23 @@
         // Sort by created_at descending
         allTrades.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-        // Check for new trades and play ding
+        // Check for new trades and play ding + browser notification
         const currentTradeCount = allTrades.length;
         if (currentTradeCount > previousTradeCount && previousTradeCount > 0) {
+          // Play sound
           try {
             tradeDingAudio?.play();
           } catch (e) {
             // Audio blocked by browser policy, ignore
           }
+          
+          // Browser notification for new trade
+          const newTrades = allTrades.slice(0, currentTradeCount - previousTradeCount);
+          newTrades.forEach(trade => {
+            if (trade.status === 'filled' || trade.status === 'open') {
+              showTradeNotification(trade);
+            }
+          });
         }
         previousTradeCount = currentTradeCount;
 
@@ -2016,6 +2025,55 @@
       const days = Math.floor(hours / 24);
       return `${days}d ago`;
     }
+
+    // Request browser notification permission
+    async function requestNotificationPermission() {
+      if (!('Notification' in window)) {
+        console.log('[Notifications] Browser notifications not supported');
+        return;
+      }
+      
+      if (Notification.permission === 'granted') {
+        console.log('[Notifications] Already granted');
+        return;
+      }
+      
+      if (Notification.permission !== 'denied') {
+        const permission = await Notification.requestPermission();
+        console.log('[Notifications] Permission:', permission);
+      }
+    }
+
+    // Show trade notification
+    function showTradeNotification(trade) {
+      if (!('Notification' in window) || Notification.permission !== 'granted') {
+        return;
+      }
+      
+      const type = trade.botType === 'options' ? 'Options' : 'Stock';
+      const symbol = trade.symbol || trade.option_symbol || 'Unknown';
+      const action = trade.action?.toUpperCase() || 'TRADE';
+      const price = trade.price ? `$${Number(trade.price).toFixed(2)}` : '';
+      
+      const notification = new Notification(`🚀 ${type} Trade Executed!`, {
+        body: `${action} ${symbol} ${price}`,
+        icon: 'https://cdn-icons-png.flaticon.com/512/1067/1067357.png',
+        badge: 'https://cdn-icons-png.flaticon.com/512/1067/1067357.png',
+        tag: `trade-${trade.id}`,
+        requireInteraction: false,
+        silent: false
+      });
+      
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+      
+      console.log(`[Notifications] Sent: ${action} ${symbol}`);
+    }
+
+    // Request notification permission on page load
+    requestNotificationPermission();
 
     function formatRecentTrades(trades, type = 'stock') {
       if (!trades || trades.length === 0) return '<div style="font-size:0.75rem;color:#666;padding:8px 0;">No recent trades</div>';
