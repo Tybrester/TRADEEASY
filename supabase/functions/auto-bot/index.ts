@@ -1298,7 +1298,7 @@ Deno.serve(async (req) => {
           
           // Check Take Profit / Stop Loss thresholds
           const tpPct = Number(bot.take_profit_pct) || 0;
-          const slPct = Number(bot.stop_loss_pct) || 0;
+          const slPct = Number(bot.stop_loss_pct) || 0; // stored as negative, e.g. -20
           
           if (tpPct > 0 && pnlPct >= tpPct) {
             // Take profit hit
@@ -1312,15 +1312,15 @@ Deno.serve(async (req) => {
             return { bot_id: bot.id, symbol: sym, status: 'tp_closed', reason: `Take Profit ${tpPct}% hit (${pnlPct.toFixed(2)}%)`, pnl };
           }
           
-          if (slPct > 0 && pnlPct <= -slPct) {
-            // Stop loss hit
+          if (slPct < 0 && pnlPct <= slPct) {
+            // Stop loss hit (slPct is negative, e.g. -20 means close at -20%)
             await supabase.from('trades').update({
               status: 'closed',
               exit_price: price,
               pnl: pnl,
               closed_at: new Date().toISOString(),
             }).eq('id', openTrade.id);
-            console.log(`[AutoBot] SL HIT ${sym} | ${pnlPct.toFixed(2)}% <= -${slPct}% | P&L: $${pnl.toFixed(2)}`);
+            console.log(`[AutoBot] SL HIT ${sym} | ${pnlPct.toFixed(2)}% <= ${slPct}% | P&L: $${pnl.toFixed(2)}`);
             return { bot_id: bot.id, symbol: sym, status: 'sl_closed', reason: `Stop Loss ${slPct}% hit (${pnlPct.toFixed(2)}%)`, pnl };
           }
           
