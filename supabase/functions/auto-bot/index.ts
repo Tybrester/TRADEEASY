@@ -1547,6 +1547,24 @@ Deno.serve(async (req) => {
           created_at: new Date().toISOString(),
         }).select().single();
 
+        // Post-insert duplicate cleanup: if multiple open positions exist for this user+symbol, keep only the oldest
+        if (trade?.id) {
+          const { data: allOpen } = await supabase.from('trades')
+            .select('id, created_at').eq('user_id', bot.user_id as string).eq('symbol', sym)
+            .eq('source', 'auto-bot').eq('status', 'filled').is('pnl', null)
+            .order('created_at', { ascending: true });
+          if (allOpen && allOpen.length > 1) {
+            // Keep the first (oldest), delete the rest
+            const dupeIds = allOpen.slice(1).map(t => t.id);
+            console.log(`[AutoBot] CLEANING ${dupeIds.length} duplicate(s) for ${sym}: keeping ${allOpen[0].id}, removing ${dupeIds.join(', ')}`);
+            await supabase.from('trades').delete().in('id', dupeIds);
+            // If our trade was a dupe, return early
+            if (dupeIds.includes(trade.id)) {
+              return { bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Duplicate cleaned post-insert' };
+            }
+          }
+        }
+
         await supabase.from('stock_bot_logs').insert({ bot_id: bot.id, user_id: bot.user_id, symbol: sym, signal, price, trend, ema, adx, reason, trade_id: trade?.id || null, created_at: new Date().toISOString() });
 
         // Trigger options bot ONLY after stock order is FILLED (not pending)
