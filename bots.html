@@ -3232,8 +3232,11 @@
         isUnrealized = true;
       }
       
+      const tradeValue = entryPrice * qty;
+      const pnlPct = (pnlValue != null && tradeValue > 0) ? (pnlValue / tradeValue) * 100 : 0;
+      const pnlPctText = pnlValue != null ? ` <span style="font-size:0.75rem;opacity:0.8;">(${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</span>` : '';
       const pnlHtml = pnlValue != null
-        ? `<span class="${pnlValue >= 0 ? 'pnl-pos' : 'pnl-neg'} ${isUnrealized ? 'pnl-unrealized' : ''}">${pnlValue >= 0 ? '+' : ''}$${pnlValue.toFixed(2)}${isUnrealized ? '*' : ''}</span>`
+        ? `<span class="${pnlValue >= 0 ? 'pnl-pos' : 'pnl-neg'} ${isUnrealized ? 'pnl-unrealized' : ''}">${pnlValue >= 0 ? '+' : ''}$${pnlValue.toFixed(2)}${isUnrealized ? '*' : ''}${pnlPctText}</span>`
         : '—';
         
       return `<tr>
