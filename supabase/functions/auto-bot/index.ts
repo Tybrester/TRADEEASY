@@ -1591,24 +1591,21 @@ Deno.serve(async (req) => {
 
       try {
         if (scanStocks) {
-          for (let i = 0; i < SCAN_STOCKS.length; i += 10) {
-            const batch = SCAN_STOCKS.slice(i, i + 10);
-            const batchResults = await Promise.all(batch.map(sym => processSymbol(bot, sym, settings)));
-            results.push(...batchResults);
+          for (const sym of SCAN_STOCKS) {
+            const result = await processSymbol(bot, sym, settings);
+            results.push(result);
           }
         }
         if (scanCrypto) {
-          for (let i = 0; i < SCAN_CRYPTO.length; i += 10) {
-            const batch = SCAN_CRYPTO.slice(i, i + 10);
-            const batchResults = await Promise.all(batch.map(sym => processSymbol(bot, sym, settings)));
-            results.push(...batchResults);
+          for (const sym of SCAN_CRYPTO) {
+            const result = await processSymbol(bot, sym, settings);
+            results.push(result);
           }
         }
         if (scanFutures) {
-          for (let i = 0; i < SCAN_FUTURES.length; i += 10) {
-            const batch = SCAN_FUTURES.slice(i, i + 10);
-            const batchResults = await Promise.all(batch.map(sym => processSymbol(bot, sym, settings)));
-            results.push(...batchResults);
+          for (const sym of SCAN_FUTURES) {
+            const result = await processSymbol(bot, sym, settings);
+            results.push(result);
           }
         }
         
