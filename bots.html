@@ -1005,8 +1005,8 @@
                   <option value="boof30" ${b.bot_signal==='boof30'?'selected':''}>Boof 3.0 (KMeans Regime Detection)</option>
                 </select>
               </div>
-              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="otp-${b.id}" type="number" value="${b.take_profit_pct||100}" min="10" max="500" title="Close trade at this % profit"/></div>
-              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||50}" min="5" max="100" title="Close trade at this % loss"/></div>
+              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="otp-${b.id}" type="number" value="${b.take_profit_pct||100}" min="1" max="500" step="1" style="width:80px;" title="Close trade when profit hits this %"/></div>
+              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||-50}" min="-100" max="0" step="1" style="width:80px;" title="Close trade when P&L drops to this % (e.g. -20)"/></div>
               <div class="auto-settings-row"><span>Broker</span>
                 <select class="auto-input" id="obrk-${b.id}" style="width:160px;" onchange="updateOptionsBrokerTag('${b.id}', this.value)">
                   <option value="paper" ${!b.broker||b.broker==='paper'?'selected':''}>Paper Trading</option>
@@ -1097,7 +1097,7 @@
       const manualStrike = parseFloat(document.getElementById('ostrike-' + botId)?.value) || null;
       const scanMode = document.getElementById('oscan-' + botId)?.value || 'single';
       const tp = parseFloat(document.getElementById('otp-' + botId)?.value) || 100;
-      const sl = Math.abs(parseFloat(document.getElementById('osl-' + botId)?.value) || 20);
+      const sl = parseFloat(document.getElementById('osl-' + botId)?.value) || -50;
       const broker = document.getElementById('obrk-' + botId)?.value || 'paper';
       const botSignal = document.getElementById('osig-' + botId)?.value || 'supertrend';
       const otm = parseInt(document.getElementById('ootm-' + botId)?.value) || 1;
