@@ -941,7 +941,7 @@
                 <select class="auto-input wide" id="oscan-${b.id}" onchange="toggleOptScanMode('${b.id}', this.value)">
                   <option value="single" ${!b.bot_scan_mode||b.bot_scan_mode==='single'?'selected':''}>Single Symbol</option>
                   <option value="scan_stocks" ${b.bot_scan_mode==='scan_stocks'?'selected':''}>Top Stocks</option>
-                  <option value="scan_etfs" ${b.bot_bot_scan_mode==='scan_etfs'?'selected':''}>ETFs (QQQ, SPY, etc.)</option>
+                  <option value="scan_etfs" ${b.bot_scan_mode==='scan_etfs'?'selected':''}>ETFs (QQQ, SPY, etc.)</option>
                   <option value="scan_top10" ${b.bot_scan_mode==='scan_top10'?'selected':''}>Top 10 (TSLA, NVDA, etc.)</option>
                   <option value="scan_top50" ${b.bot_scan_mode==='scan_top50'?'selected':''}>Top 50 Volatility</option>
                   <option value="scan_futures" ${b.bot_scan_mode==='scan_futures'?'selected':''}>Top Futures (Overnight)</option>
@@ -1055,7 +1055,9 @@
       const dir = ['both','long','short'].find(d => document.getElementById(`odir-${d}-${botId}`)?.classList.contains('active')) || 'both';
       const strikeMode = ['budget','manual'].find(m => document.getElementById(`osm-${m}-${botId}`)?.classList.contains('active')) || 'budget';
       const manualStrike = parseFloat(document.getElementById('ostrike-' + botId)?.value) || null;
-      const scanMode = document.getElementById('oscan-' + botId)?.value || 'single';
+      const scanModeEl = document.getElementById('oscan-' + botId);
+      const scanMode = scanModeEl?.value || 'single';
+      console.log(`[SaveOptions] Bot ${botId} - Scan dropdown value: "${scanModeEl?.value}", using: "${scanMode}"`);
       const tp = parseFloat(document.getElementById('otp-' + botId)?.value) || 50;
       const sl = parseFloat(document.getElementById('osl-' + botId)?.value) || -20;
       const broker = document.getElementById('obrk-' + botId)?.value || 'paper';
@@ -1069,10 +1071,14 @@
         if (span) span.textContent = `Live options trading — real orders will be placed on ${broker === 'alpaca' ? 'Alpaca' : 'Tastytrade'}`;
       }
       const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_option_type: optionType, bot_interval: int, run_interval_min: runInt, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, broker, bot_signal: botSignal, updated_at: new Date().toISOString() }).eq('id', botId);
-      if (error) console.error('[SaveOptions] Error:', error);
-      else console.log('[SaveOptions] Success');
       const r = document.getElementById('opt-run-result-' + botId);
-      if (r) { r.textContent = '✓ Settings saved ' + new Date().toLocaleTimeString(); r.className = 'run-result green'; setTimeout(() => { r.textContent=''; r.className='run-result'; }, 3000); }
+      if (error) {
+        console.error('[SaveOptions] Error:', error);
+        if (r) { r.textContent = '❌ Save failed: ' + error.message; r.className = 'run-result red'; }
+      } else {
+        console.log('[SaveOptions] Success - scanMode saved as:', scanMode);
+        if (r) { r.textContent = '✓ Settings saved ' + new Date().toLocaleTimeString(); r.className = 'run-result green'; setTimeout(() => { r.textContent=''; r.className='run-result'; }, 3000); }
+      }
     }
 
     async function toggleOptionsBot(botId, on) {
