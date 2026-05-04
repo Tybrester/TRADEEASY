@@ -1541,20 +1541,25 @@ Deno.serve(async (req) => {
             
             // Check if any options bot scans this symbol AND has matching interval
             const stockInterval = bot.bot_interval || '1h';
+            console.log(`[AutoBot] Checking ${optsBots?.length || 0} options bots for symbol ${sym}, stock interval=${stockInterval}`);
+            
+            let matchedBot = null;
             const scansSymbol = optsBots?.some(ob => {
-              // Only sync if intervals match (e.g., 5min stock → 5min options)
               const optsInterval = ob.bot_interval || '1h';
-              if (optsInterval !== stockInterval) {
-                console.log(`[AutoBot] Skipping options bot "${ob.id}" - interval mismatch (stock=${stockInterval}, options=${optsInterval})`);
-                return false;
+              const symbolMatch = ob.bot_scan_mode === 'single' ? ob.bot_symbol === sym :
+                                 ob.bot_scan_mode === 'scan_stocks' ? ['AAPL','MSFT','AMZN','NVDA','TSLA','GOOG','GOOGL','META','NFLX','BRK-B','JPM','BAC','WFC','V','MA','PG','KO','PFE','UNH','HD','INTC','CSCO','ADBE','CRM','ORCL','AMD','QCOM','TXN','IBM','AVGO','XOM','CVX','BA','CAT','MMM','GE','HON','LMT','NOC','DE','C','GS','MS','AXP','BLK','SCHW','BK','SPGI','ICE','MRK','ABBV','AMGN','BMY','LLY','GILD','JNJ','REGN','VRTX','BIIB','WMT','COST','TGT','LOW','MCD','SBUX','NKE','BKNG','SNAP','UBER','LYFT','SPOT','ZM','DOCU','PINS','ROKU','SHOP','CVS','TMO','MDT','ISRG','F','GM','SNOW','CRWD','NET','DDOG','MDB','OKTA','SPLK','FSLR','ENPH','SEDG','DKNG','CHPT','LCID','RIVN','HOOD','SOFI','AI','PLTR','ASML','MU','LRCX','KLAC','AMAT','MRVL','NXPI','CDNS','SNPS','ANET','FTNT','PANW','GME','AMC','BBBY','EXPR','KOSS','NAKD','SNDL','TLRY','ACB','CGC','QQQ','SPY','VOO','IVV','VTI','VUG','QQQM','SCHG','XLK','VGT','SMH','TQQQ'].includes(sym) :
+                                 ob.bot_scan_mode === 'scan_etfs' ? ['QQQ','SPY','VOO','IVV','VTI','VUG','QQQM','SCHG','XLK','VGT','SMH','TQQQ'].includes(sym) :
+                                 ob.bot_scan_mode === 'scan_top10' ? ['SMCI','TSLA','NVDA','COIN','PLTR','AMD','MRNA','MSTY','ENPH','VKTX','CCL'].includes(sym) :
+                                 false;
+              
+              const intervalMatch = optsInterval === stockInterval;
+              
+              console.log(`[AutoBot] Options bot "${ob.id.slice(0,8)}" | mode=${ob.bot_scan_mode} | symbol=${ob.bot_symbol} | optsInterval=${optsInterval} | symbolMatch=${symbolMatch} | intervalMatch=${intervalMatch}`);
+              
+              if (symbolMatch && intervalMatch) {
+                matchedBot = ob;
+                return true;
               }
-              if (ob.bot_scan_mode === 'single') return ob.bot_symbol === sym;
-              if (ob.bot_scan_mode === 'scan_stocks') {
-                const SCAN_STOCKS = ['AAPL','MSFT','AMZN','NVDA','TSLA','GOOG','GOOGL','META','NFLX','BRK-B','JPM','BAC','WFC','V','MA','PG','KO','PFE','UNH','HD','INTC','CSCO','ADBE','CRM','ORCL','AMD','QCOM','TXN','IBM','AVGO','XOM','CVX','BA','CAT','MMM','GE','HON','LMT','NOC','DE','C','GS','MS','AXP','BLK','SCHW','BK','SPGI','ICE','MRK','ABBV','AMGN','BMY','LLY','GILD','JNJ','REGN','VRTX','BIIB','WMT','COST','TGT','LOW','MCD','SBUX','NKE','BKNG','SNAP','UBER','LYFT','SPOT','ZM','DOCU','PINS','ROKU','SHOP','CVS','TMO','MDT','ISRG','F','GM','SNOW','CRWD','NET','DDOG','MDB','OKTA','SPLK','FSLR','ENPH','SEDG','DKNG','CHPT','LCID','RIVN','HOOD','SOFI','AI','PLTR','ASML','MU','LRCX','KLAC','AMAT','MRVL','NXPI','CDNS','SNPS','ANET','FTNT','PANW','GME','AMC','BBBY','EXPR','KOSS','NAKD','SNDL','TLRY','ACB','CGC','QQQ','SPY','VOO','IVV','VTI','VUG','QQQM','SCHG','XLK','VGT','SMH','TQQQ'];
-                return SCAN_STOCKS.includes(sym);
-              }
-              if (ob.bot_scan_mode === 'scan_etfs') return ['QQQ','SPY','VOO','IVV','VTI','VUG','QQQM','SCHG','XLK','VGT','SMH','TQQQ'].includes(sym);
-              if (ob.bot_scan_mode === 'scan_top10') return ['SMCI','TSLA','NVDA','COIN','PLTR','AMD','MRNA','MSTY','ENPH','VKTX','CCL'].includes(sym);
               return false;
             });
             
