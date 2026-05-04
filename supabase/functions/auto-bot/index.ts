@@ -850,20 +850,21 @@ function generateSignal(candles: Candle[], settings: BotSettings): SignalResult 
 
   // Replay state to track position
   let inLong = false;
+  let inShort = false;
   for (let j = 50; j < i; j++) {
     const longCond = closes[j] > emaArr[j] && closes[j] > supertrend[j] && adx[j] > adxThreshold;
     const shortCond = closes[j] < emaArr[j] && closes[j] < supertrend[j] && adx[j] > adxThreshold;
-    if (longCond && !inLong) inLong = true;
-    else if (shortCond && inLong) inLong = false;
+    if (longCond && !inLong) { inLong = true; inShort = false; }
+    else if (shortCond && !inShort) { inShort = true; inLong = false; }
   }
 
   let signal: 'buy' | 'sell' | 'none' = 'none';
-  let reason = `close=${curClose.toFixed(2)}, ema50=${curEma?.toFixed(2)}, supertrend=${curSupertrend?.toFixed(2)}, adx=${curAdx?.toFixed(1)}, inLong=${inLong}`;
+  let reason = `close=${curClose.toFixed(2)}, ema50=${curEma?.toFixed(2)}, supertrend=${curSupertrend?.toFixed(2)}, adx=${curAdx?.toFixed(1)}, inLong=${inLong}, inShort=${inShort}`;
 
   if (!inLong && longOK) {
     signal = 'buy';
     reason = `Boof 1.0 BUY. ${reason}`;
-  } else if (inLong && shortOK) {
+  } else if (!inShort && shortOK) {
     signal = 'sell';
     reason = `Boof 1.0 SELL. ${reason}`;
   }
@@ -1225,6 +1226,9 @@ Deno.serve(async (req) => {
             if (curAdx > 25 && curClose > curEma && curClose > curSt && (tradeDirection === 'both' || tradeDirection === 'long')) {
               signal = 'buy';
               reason = `Boof 1.0 BUY (no real position, adx=${curAdx.toFixed(1)}). ${reason}`;
+            } else if (curAdx > 25 && curClose < curEma && curClose < curSt && (tradeDirection === 'both' || tradeDirection === 'short')) {
+              signal = 'sell';
+              reason = `Boof 1.0 SELL (no real position, adx=${curAdx.toFixed(1)}). ${reason}`;
             }
           }
           if (signal !== 'none') {
