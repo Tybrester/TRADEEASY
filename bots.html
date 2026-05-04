@@ -553,13 +553,9 @@
         </select>
         <div id="expiry-hint" style="margin-top:6px;font-size:0.75rem;color:#888;">Weekly recommended for most strategies</div>
       </div>
-      <div style="background:#1a1a1a;border-radius:8px;padding:12px;margin-bottom:15px;">
-        <div style="font-size:0.75rem;color:#888;margin-bottom:4px;">Paired Options Bot Preview:</div>
-        <div style="font-size:0.85rem;color:#00d4ff;" id="options-preview">Will create: "[Name] Options" with 5m interval</div>
-      </div>
       <div class="create-bot-actions">
         <button class="create-bot-cancel" onclick="closeCreateModal('create-stock-modal')">Cancel</button>
-        <button class="create-bot-submit" onclick="submitCreateStockBot()">Create Bot + Options Pair</button>
+        <button class="create-bot-submit" onclick="submitCreateStockBot()">Create Stock Bot</button>
       </div>
     </div>
   </div>
@@ -867,7 +863,7 @@
         return;
       }
       if (!bots || bots.length === 0) {
-        container.innerHTML = `<div class="empty-state" style="border-color:#2a2000;"><div>No options bots yet.</div><div style="margin-top:8px;font-size:0.82rem;">Create a Stock Bot to auto-generate a paired Options Bot.</div></div>`;
+        container.innerHTML = `<div class="empty-state" style="border-color:#2a2000;"><div>No options bots yet.</div><div style="margin-top:8px;font-size:0.82rem;">Click "+ New Options Bot" to create one.</div></div>`;
         return;
       }
       container.innerHTML = '';
@@ -1209,14 +1205,6 @@
         if (expiryHint) expiryHint.textContent = styleExpiry[style].hint;
       }
       
-      // Update options preview
-      const preview = document.getElementById('options-preview');
-      const expiry = expirySelect?.value || 'weekly';
-      if (preview) {
-        const modeText = scanMode === 'single' ? 'single symbol' : scanMode.replace('scan_', '') + ' scan';
-        preview.textContent = `Will create: "${name} Options" with ${intervals[style]} interval, ${expiry} expiry (${modeText})`;
-      }
-      
       // Update style description
       const descriptions = {
         hyper: { 
@@ -1343,23 +1331,7 @@
         element.onclick = () => editBotName(id, newName, type);
       }
       
-      // If stock bot was renamed, update paired options bot name too
-      if (type === 'stock') {
-        const oldOptionsName = currentName + ' Options';
-        const newOptionsName = newName + ' Options';
-        const { data: optionsBot } = await sbClient.from('options_bots')
-          .select('id')
-          .eq('user_id', currentUserId)
-          .eq('name', oldOptionsName)
-          .maybeSingle();
-        
-        if (optionsBot?.id) {
-          await sbClient.from('options_bots').update({ name: newOptionsName }).eq('id', optionsBot.id);
-          console.log(`[EditName] Renamed paired options bot to "${newOptionsName}"`);
-          // Refresh options bots to show new name
-          await loadOptionsBots();
-        }
-      }
+      // Note: Options bots are independent - no paired rename
       
       console.log('[EditName] Successfully renamed bot to:', newName);
     }
@@ -1421,34 +1393,7 @@
       if (error) { console.error('[CreateStockBot] Error:', error); alert('Error: ' + error.message); return; }
       console.log('[CreateStockBot] Created:', data?.[0]?.id);
       
-      // Auto-create paired options bot with matching settings
-      const stockBot = data?.[0];
-      if (stockBot) {
-        const optionsName = name + ' Options';
-        console.log(`[CreateStockBot] Auto-creating paired options bot: ${optionsName} | ${interval} | broker=${broker} | signal=${signal}`);
-        const { error: optError } = await sbClient.from('options_bots').insert({
-          user_id: currentUserId,
-          name: optionsName,
-          enabled: false,
-          auto_submit: false,
-          broker: broker,  // Match stock bot broker!
-          bot_symbol: symbol,
-          bot_dollar_amount: dollarAmount,
-          bot_interval: '1m',  // Options bot defaults to 1-minute
-          run_interval_min: 1,
-          bot_signal: signal,  // Match stock bot signal!
-          bot_expiry_type: expiryType,
-          bot_otm_strikes: 0,
-          bot_scan_mode: 'single',
-          paper_balance: 100000,
-          paper_balance_start: 100000,
-        });
-        if (optError) {
-          console.error('[CreateStockBot] Failed to create options bot:', optError);
-        } else {
-          console.log('[CreateStockBot] Paired options bot created successfully');
-        }
-      }
+      // Note: Options bots are now created independently - no auto-creation
       
       await loadBots();
       await loadOptionsBots();
@@ -2833,29 +2778,7 @@
       await sbClient.from('stock_bots').update({ enabled: on, auto_submit: on }).eq('id', systemId);
       refreshStatusBadge(systemId, on);
       
-      // Find and toggle paired options bot
-      try {
-        const { data: stockBot } = await sbClient.from('stock_bots').select('name').eq('id', systemId).single();
-        if (stockBot?.name) {
-          const optionsBotName = stockBot.name + ' Options';
-          const { data: optionsBot } = await sbClient.from('options_bots')
-            .select('id')
-            .eq('user_id', currentUserId)
-            .eq('name', optionsBotName)
-            .maybeSingle();
-          
-          if (optionsBot?.id) {
-            console.log(`[ToggleAuto] ${on ? 'Enabling' : 'Disabling'} paired options bot: ${optionsBotName}`);
-            await sbClient.from('options_bots').update({ enabled: on, auto_submit: on }).eq('id', optionsBot.id);
-            // Refresh options bot UI if function exists
-            if (typeof refreshOptionsStatus === 'function') {
-              refreshOptionsStatus(optionsBot.id, on);
-            }
-          }
-        }
-      } catch (e) {
-        console.log('[ToggleAuto] Could not toggle paired options bot:', e);
-      }
+      // Note: Options bots are independent - no paired toggle
     }
 
     function actTimeStr(d) {

@@ -1223,6 +1223,11 @@ Deno.serve(async (req) => {
               if (settings.strikeMode === 'manual' && settings.manualStrike && settings.manualStrike > 0) {
                 strike = settings.manualStrike;
                 premium = blackScholes(price, strike, T, R, sigma, optionType);
+              } else if (settings.expiryType === '0dte') {
+                // 0DTE: Pick ATM strike, disregard delta (gamma is king on expiration day)
+                strike = Math.round(price / strikeInterval) * strikeInterval;
+                premium = blackScholes(price, strike, T, R, sigma, optionType);
+                console.log(`[OptionsBot] 0DTE ATM strike: ${optionType} ${strike} | premium=$${premium.toFixed(2)} | spot=${price.toFixed(2)}`);
               } else {
                 // Smart strike selection: target ~0.30 delta for best risk/reward
                 // 0.30 delta = ~30% chance ITM, good leverage with reasonable probability
