@@ -666,6 +666,51 @@ function pickStrike(spotPrice: number, otmStrikes: number, optionType: 'call' | 
   return atm - otmStrikes * strikeInterval;
 }
 
+// Smart strike selection: target ~0.30 delta for best risk/reward
+function pickSmartStrike(
+  spotPrice: number, optionType: 'call' | 'put', T: number, sigma: number,
+  strikeInterval: number, budget: number, targetDelta = 0.30
+): { strike: number; premium: number; delta: number } {
+  const atm = Math.round(spotPrice / strikeInterval) * strikeInterval;
+  const R = 0.05;
+  
+  // Scan strikes from 10 ITM to 10 OTM
+  let bestStrike = atm;
+  let bestPremium = blackScholes(spotPrice, atm, T, R, sigma, optionType);
+  let bestDelta = 0.5; // ATM delta is ~0.5
+  let bestDeltaDiff = Math.abs(0.5 - targetDelta);
+  
+  for (let offset = -10; offset <= 10; offset++) {
+    const s = atm + offset * strikeInterval;
+    if (s <= 0) continue;
+    
+    const p = blackScholes(spotPrice, s, T, R, sigma, optionType);
+    if (p <= 0.01) continue;
+    
+    // Approximate delta using Black-Scholes
+    const d1 = (Math.log(spotPrice / s) + (R + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+    let delta: number;
+    if (optionType === 'call') {
+      delta = normCDF(d1);
+    } else {
+      delta = Math.abs(normCDF(d1) - 1); // Put delta as positive number
+    }
+    
+    const deltaDiff = Math.abs(delta - targetDelta);
+    const affordable = p * 100 <= budget;
+    
+    // Pick strike closest to target delta that's within budget
+    if (affordable && deltaDiff < bestDeltaDiff) {
+      bestStrike = s;
+      bestPremium = p;
+      bestDelta = delta;
+      bestDeltaDiff = deltaDiff;
+    }
+  }
+  
+  return { strike: bestStrike, premium: bestPremium, delta: bestDelta };
+}
+
 // ─────────────────────────────────────────────
 // SETTINGS INTERFACE
 // ─────────────────────────────────────────────
@@ -1217,23 +1262,14 @@ Deno.serve(async (req) => {
                 strike = settings.manualStrike;
                 premium = blackScholes(price, strike, T, R, sigma, optionType);
               } else {
-                const atmStrike = Math.round(price / strikeInterval) * strikeInterval;
-                let bestStrike = atmStrike;
-                let bestPremium = blackScholes(price, atmStrike, T, R, sigma, optionType);
-                // If quantity is specified, don't filter by budget - just find best strike
+                // Smart strike selection: target ~0.30 delta for best risk/reward
+                // 0.30 delta = ~30% chance ITM, good leverage with reasonable probability
                 const hasQuantity = bot.bot_quantity && bot.bot_quantity > 0;
-                for (let offset = -5; offset <= 5; offset++) {
-                  const s = atmStrike + offset * strikeInterval;
-                  if (s <= 0) continue;
-                  const p = blackScholes(price, s, T, R, sigma, optionType);
-                  // When quantity is set, ignore budget constraint and pick best premium
-                  // Otherwise, only consider strikes within budget
-                  const withinBudget = hasQuantity || p * 100 <= settings.dollarAmount;
-                  if (withinBudget && p > bestPremium) {
-                    bestStrike = s; bestPremium = p;
-                  }
-                }
-                strike = bestStrike; premium = bestPremium;
+                const budgetForStrike = hasQuantity ? Infinity : settings.dollarAmount;
+                const smartPick = pickSmartStrike(price, optionType, T, sigma, strikeInterval, budgetForStrike, 0.30);
+                strike = smartPick.strike;
+                premium = smartPick.premium;
+                console.log(`[OptionsBot] Smart strike: ${optionType} ${strike} | delta=${smartPick.delta.toFixed(2)} | premium=$${premium.toFixed(2)} | spot=${price.toFixed(2)}`);
               }
 
               if (premium <= 0.01) { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Premium too low' }); return; }

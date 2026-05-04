@@ -998,8 +998,8 @@
                   <option value="boof30" ${b.bot_signal==='boof30'?'selected':''}>Boof 3.0 (KMeans Regime Detection)</option>
                 </select>
               </div>
-              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="otp-${b.id}" type="number" value="${b.take_profit_pct||100}" min="1" max="500" step="1" style="width:80px;" title="Close trade when profit hits this %"/></div>
-              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||-50}" min="-100" max="0" step="1" style="width:80px;" title="Close trade when P&L drops to this % (e.g. -20)"/></div>
+              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="otp-${b.id}" type="number" value="${b.take_profit_pct||50}" min="1" max="500" step="1" style="width:80px;" title="Close trade when profit hits this %"/></div>
+              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||-20}" min="-100" max="0" step="1" style="width:80px;" title="Close trade when P&L drops to this % (e.g. -20)"/></div>
               <div class="auto-settings-row"><span>Broker</span>
                 <select class="auto-input" id="obrk-${b.id}" style="width:160px;" onchange="updateOptionsBrokerTag('${b.id}', this.value)">
                   <option value="paper" ${!b.broker||b.broker==='paper'?'selected':''}>Paper Trading</option>
@@ -1067,8 +1067,8 @@
       const strikeMode = ['budget','manual'].find(m => document.getElementById(`osm-${m}-${botId}`)?.classList.contains('active')) || 'budget';
       const manualStrike = parseFloat(document.getElementById('ostrike-' + botId)?.value) || null;
       const scanMode = document.getElementById('oscan-' + botId)?.value || 'single';
-      const tp = parseFloat(document.getElementById('otp-' + botId)?.value) || 100;
-      const sl = parseFloat(document.getElementById('osl-' + botId)?.value) || -50;
+      const tp = parseFloat(document.getElementById('otp-' + botId)?.value) || 50;
+      const sl = parseFloat(document.getElementById('osl-' + botId)?.value) || -20;
       const broker = document.getElementById('obrk-' + botId)?.value || 'paper';
       const botSignal = document.getElementById('osig-' + botId)?.value || 'supertrend';
       const otm = parseInt(document.getElementById('ootm-' + botId)?.value) || 1;
@@ -1373,28 +1373,11 @@
     async function deleteBot(id, name) {
       if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
       
-      // Step 1: Delete bot trades first (foreign key constraint)
-      const { error: tradesError } = await sbClient.from('trades').delete().eq('bot_id', id);
-      if (tradesError) {
-        alert('Failed to delete bot trades: ' + tradesError.message);
-        console.error('Failed to delete trades:', tradesError);
-        return;
-      }
-      
-      // Step 2: Delete bot logs (foreign key constraint)
-      const { error: logError } = await sbClient.from('stock_bot_logs').delete().eq('bot_id', id);
-      if (logError) {
-        alert('Failed to delete bot logs: ' + logError.message);
-        console.error('Failed to delete logs:', logError);
-        return;
-      }
-      
-      // Step 3: Delete bot
-      const { error } = await sbClient.from('stock_bots').delete().eq('id', id);
-      
+      // Use RPC function (SECURITY DEFINER) to cascade delete all related records
+      const { error } = await sbClient.rpc('delete_bot_cascade', { bot_uuid: id });
       if (error) {
-        alert('Failed to delete bot: ' + error.message);
         console.error('Delete bot error:', error);
+        alert('Failed to delete bot: ' + error.message);
         return;
       }
       
@@ -1457,8 +1440,8 @@
           broker: broker,  // Match stock bot broker!
           bot_symbol: symbol,
           bot_dollar_amount: dollarAmount,
-          bot_interval: interval,  // Match stock bot interval exactly!
-          run_interval_min: runIntervalMin,
+          bot_interval: '1m',  // Options bot defaults to 1-minute
+          run_interval_min: 1,
           bot_signal: signal,  // Match stock bot signal!
           bot_expiry_type: expiryType,
           bot_otm_strikes: 0,
@@ -2386,8 +2369,8 @@
                 </select>
                 <span style="font-size:0.7rem;color:#555;">Convert to market if not filled</span>
               </div>
-              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="tp-${s.id}" type="number" value="${s.take_profit_pct||5}" min="0.5" max="100" step="0.5" style="width:80px;" title="Close trade when profit hits this %"/></div>
-              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="sl-${s.id}" type="number" value="${s.stop_loss_pct||-3}" min="-50" max="0" step="0.5" style="width:80px;" title="Close trade when P&L drops to this % (e.g. -20)"/></div>
+              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="tp-${s.id}" type="number" value="${s.take_profit_pct||50}" min="0.5" max="100" step="0.5" style="width:80px;" title="Close trade when profit hits this %"/></div>
+              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="sl-${s.id}" type="number" value="${s.stop_loss_pct||-20}" min="-50" max="0" step="0.5" style="width:80px;" title="Close trade when P&L drops to this % (e.g. -20)"/></div>
               <div class="run-result" id="run-result-${s.id}"></div>
             </div>
             </div>
@@ -2435,8 +2418,8 @@
       const limitOffsetPct = parseFloat(document.getElementById('limit-offset-' + systemId)?.value) || 0.5;
       const limitDrawdownPct = parseFloat(document.getElementById('limit-drawdown-' + systemId)?.value) || 2.0;
       const limitTimeMin = parseInt(document.getElementById('limit-time-' + systemId)?.value) || 2;
-      const takeProfitPct = parseFloat(document.getElementById('tp-' + systemId)?.value) || 5;
-      const stopLossPct = parseFloat(document.getElementById('sl-' + systemId)?.value) || -3;
+      const takeProfitPct = parseFloat(document.getElementById('tp-' + systemId)?.value) || 50;
+      const stopLossPct = parseFloat(document.getElementById('sl-' + systemId)?.value) || -20;
       console.log(`[SaveAuto] System ${systemId}: sym=${symbol}, int=${interval}, runInt=${runIntervalMin}min, dir=${botTradeDir}, signal=${botSignal}, stocks=${scanStocks}, crypto=${scanCrypto}, futures=${scanFutures}, $=${dollarAmount}, limit=${useLimitOrders}, offset=${limitOffsetPct}, tp=${takeProfitPct}%, sl=${stopLossPct}%`);
       const { error } = await sbClient.from('stock_bots').update({
         bot_symbol: symbol,
