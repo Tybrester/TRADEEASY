@@ -130,6 +130,91 @@ function calcDMI(
   return { plusDI, minusDI, adx };
 }
 
+// ─────────────────────────────────────────────
+// FUTURES P&L CALCULATION (Real contract specs)
+// ─────────────────────────────────────────────
+
+function getFuturesMultiplier(symbol: string): number {
+  // Contract multipliers for major futures ($ per point)
+  const multipliers: Record<string, number> = {
+    'ES=F': 50,      // E-mini S&P 500: $50 per point
+    'NQ=F': 20,      // E-mini NASDAQ: $20 per point
+    'YM=F': 5,       // E-mini Dow: $5 per point
+    'RTY=F': 50,     // E-mini Russell 2000: $50 per point
+    'CL=F': 1000,    // Crude Oil: 1000 barrels, $1 = $1000
+    'GC=F': 100,     // Gold: 100 oz, $1 = $100
+    'SI=F': 5000,    // Silver: 5000 oz, $0.01 = $50, but priced in cents so $1 = $50... actually simpler: 5000 * $0.01 = $50 per $0.01 move. Let me use actual dollar value.
+    'HG=F': 25000,   // Copper: 25,000 lbs, $0.01 = $250, but priced differently
+    'NG=F': 10000,   // Natural Gas: 10,000 MMBtu, $0.001 = $10
+    'ZN=F': 1000,    // 10-Year T-Note: $1000 per point
+    'ZB=F': 1000,    // 30-Year T-Bond: $1000 per point
+    'ZF=F': 1000,    // 5-Year T-Note: $1000 per point
+    '6E=F': 125000,  // Euro FX: 125,000 EUR, $0.0001 = $12.50
+    '6J=F': 12500000, // Japanese Yen: 12.5M YEN, $0.0001 = $12.50 (but priced as 0.01 yen = $12.50)
+    '6B=F': 62500,   // British Pound: 62,500 GBP, $0.0001 = $6.25
+    '6C=F': 100000,  // Canadian Dollar: 100,000 CAD, $0.0001 = $10
+    '6A=F': 100000,  // Australian Dollar: 100,000 AUD, $0.0001 = $10
+    'ZW=F': 5000,    // Wheat: 5,000 bushels, $0.01 = $50
+    'ZC=F': 5000,    // Corn: 5,000 bushels, $0.01 = $50
+    'ZS=F': 5000,    // Soybeans: 5,000 bushels, $0.01 = $50
+    'ZL=F': 60000,   // Soybean Oil: 60,000 lbs, $0.01 = $600
+  };
+  return multipliers[symbol] || 1; // Default to 1 (like stocks) if unknown
+}
+
+function getFuturesTickValue(symbol: string): { tickSize: number; tickValue: number } {
+  // Tick size and value for realistic P&L
+  const specs: Record<string, { tickSize: number; tickValue: number }> = {
+    'ES=F': { tickSize: 0.25, tickValue: 12.50 },      // 0.25 point = $12.50
+    'NQ=F': { tickSize: 0.25, tickValue: 5.00 },       // 0.25 point = $5.00
+    'YM=F': { tickSize: 1, tickValue: 5.00 },          // 1 point = $5.00
+    'RTY=F': { tickSize: 0.1, tickValue: 5.00 },       // 0.1 point = $5.00
+    'CL=F': { tickSize: 0.01, tickValue: 10.00 },      // $0.01 = $10
+    'GC=F': { tickSize: 0.1, tickValue: 10.00 },       // $0.10 = $10
+    'SI=F': { tickSize: 0.005, tickValue: 25.00 },     // $0.005 = $25
+    'HG=F': { tickSize: 0.0005, tickValue: 12.50 },    // $0.0005 = $12.50
+    'NG=F': { tickSize: 0.001, tickValue: 10.00 },     // $0.001 = $10
+    'ZN=F': { tickSize: 0.015625, tickValue: 15.625 }, // 1/64 = $15.625
+    'ZB=F': { tickSize: 0.03125, tickValue: 31.25 },   // 1/32 = $31.25
+    'ZF=F': { tickSize: 0.0078125, tickValue: 7.8125 },// 1/128 = $7.8125
+    '6E=F': { tickSize: 0.0001, tickValue: 12.50 },    // $0.0001 = $12.50
+    '6J=F': { tickSize: 0.000001, tickValue: 12.50 },  // $0.000001 (actually 0.01 yen but displayed differently)
+    '6B=F': { tickSize: 0.0001, tickValue: 6.25 },     // $0.0001 = $6.25
+    '6C=F': { tickSize: 0.0001, tickValue: 10.00 },    // $0.0001 = $10
+    '6A=F': { tickSize: 0.0001, tickValue: 10.00 },    // $0.0001 = $10
+    'ZW=F': { tickSize: 0.25, tickValue: 12.50 },      // $0.0025 = $12.50
+    'ZC=F': { tickSize: 0.25, tickValue: 12.50 },      // $0.0025 = $12.50
+    'ZS=F': { tickSize: 0.25, tickValue: 12.50 },      // $0.0025 = $12.50
+    'ZL=F': { tickSize: 0.01, tickValue: 600.00 },     // $0.01 = $600
+  };
+  return specs[symbol] || { tickSize: 0.01, tickValue: 1 }; // Default to stock-like
+}
+
+function calcFuturesPnL(symbol: string, entryPrice: number, exitPrice: number, qty: number, action: 'buy' | 'sell'): number {
+  if (!symbol.includes('=F')) {
+    // Not a futures symbol - use stock calculation
+    return action === 'buy'
+      ? (exitPrice - entryPrice) * qty
+      : (entryPrice - exitPrice) * qty;
+  }
+
+  // Calculate point difference
+  const pointDiff = action === 'buy'
+    ? exitPrice - entryPrice
+    : entryPrice - exitPrice;
+
+  // Get contract specs
+  const multiplier = getFuturesMultiplier(symbol);
+  const { tickSize, tickValue } = getFuturesTickValue(symbol);
+
+  // Calculate P&L: (point difference / tick size) * tick value * quantity
+  // This gives realistic futures P&L based on actual contract specifications
+  const ticks = pointDiff / tickSize;
+  const pnl = ticks * tickValue * qty;
+
+  return pnl;
+}
+
 function calcRSI(closes: number[], period: number): number[] {
   const rsi: number[] = new Array(closes.length).fill(NaN);
   if (closes.length < period + 1) return rsi;
@@ -1252,9 +1337,8 @@ Deno.serve(async (req) => {
         if (openTrade) {
           const entryPrice = Number(openTrade.entry_price || openTrade.price);
           const qty = Number(openTrade.quantity);
-          const pnl = openTrade.action === 'buy'
-            ? (price - entryPrice) * qty
-            : (entryPrice - price) * qty;
+          // Use realistic futures P&L calculation with contract specs
+          const pnl = calcFuturesPnL(sym, entryPrice, price, qty, openTrade.action as 'buy' | 'sell');
           const pnlPct = entryPrice > 0 ? ((openTrade.action === 'buy' ? (price - entryPrice) : (entryPrice - price)) / entryPrice) * 100 : 0;
           
           // Check Take Profit / Stop Loss thresholds
