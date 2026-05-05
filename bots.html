@@ -402,7 +402,9 @@
             <div style="display:flex;gap:8px;">
               <button class="new-options-btn" onclick="toggleAllBots(false)" style="background:#331111;border-color:#ff4444;color:#ff4444;" onmouseover="this.style.background='#ff4444';this.style.color='#fff'" onmouseout="this.style.background='#331111';this.style.color='#ff4444'">Stop All</button>
               <button class="new-options-btn" onclick="toggleAllBots(true)" style="background:#113311;border-color:#00e676;color:#00e676;" onmouseover="this.style.background='#00e676';this.style.color='#000'" onmouseout="this.style.background='#113311';this.style.color='#00e676'">Start All</button>
-              <button class="new-options-btn" onclick="promptNewStockBot()">+ New Stock Bot</button>
+              <button onclick="promptNewStockBot()" style="background:rgba(0,230,118,0.07);border:1px solid rgba(0,230,118,0.25);color:#b2f5d4;font-size:0.82rem;font-weight:600;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;transition:all 0.15s;" onmouseover="this.style.background='rgba(0,230,118,0.14)'" onmouseout="this.style.background='rgba(0,230,118,0.07)'">+ New Stock Bot</button>
+              <button onclick="promptNewOptionsBot()" style="background:rgba(0,230,118,0.07);border:1px solid rgba(0,230,118,0.25);color:#b2f5d4;font-size:0.82rem;font-weight:600;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;transition:all 0.15s;" onmouseover="this.style.background='rgba(0,230,118,0.14)'" onmouseout="this.style.background='rgba(0,230,118,0.07)'">+ New Options Bot</button>
+              <button onclick="clearAllBotTrades()" style="background:#1a1a1a;border:1px solid #333;color:#666;font-size:0.82rem;font-weight:600;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;transition:all 0.15s;" onmouseover="this.style.borderColor='#ff7043';this.style.color='#ff7043'" onmouseout="this.style.borderColor='#333';this.style.color='#666'">Clear All Bot Trades</button>
             </div>
           </div>
           <div id="bots-container">
@@ -476,10 +478,10 @@
       <div class="create-bot-field">
         <label>Trading Style (Auto-sets intervals)</label>
         <select id="new-stock-style" onchange="updateNewBotPreview()">
-          <option value="hyper">Hyper Scalper (1m/1m)</option>
-          <option value="scalper" selected>Scalper (5m/5m)</option>
-          <option value="swing">Swing (15m/15m)</option>
-          <option value="position">Position (1h/1h)</option>
+          <option value="hyper">Hyper Scalper (1m candles)</option>
+          <option value="scalper" selected>Scalper (5m candles)</option>
+          <option value="swing">Swing (15m candles)</option>
+          <option value="position">Position (1h candles)</option>
           <option value="custom">Custom (Manual)</option>
         </select>
         <div id="style-description" style="margin-top:8px;padding:10px;background:#1a1a1a;border-radius:6px;border:1px solid #333;font-size:0.8rem;color:#aaa;">
@@ -595,62 +597,6 @@
     const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserId = null;
-
-    // ─────────────────────────────────────────────
-    // FUTURES P&L CALCULATION (Real contract specs)
-    // ─────────────────────────────────────────────
-    function getFuturesTickValue(symbol) {
-      const specs = {
-        'ES=F': { tickSize: 0.25, tickValue: 12.50 },      // E-mini S&P 500
-        'NQ=F': { tickSize: 0.25, tickValue: 5.00 },       // E-mini NASDAQ
-        'YM=F': { tickSize: 1, tickValue: 5.00 },          // E-mini Dow
-        'RTY=F': { tickSize: 0.1, tickValue: 5.00 },       // E-mini Russell 2000
-        'CL=F': { tickSize: 0.01, tickValue: 10.00 },      // Crude Oil
-        'GC=F': { tickSize: 0.1, tickValue: 10.00 },        // Gold
-        'SI=F': { tickSize: 0.005, tickValue: 25.00 },     // Silver
-        'HG=F': { tickSize: 0.0005, tickValue: 12.50 },    // Copper
-        'NG=F': { tickSize: 0.001, tickValue: 10.00 },     // Natural Gas
-        'ZN=F': { tickSize: 0.015625, tickValue: 15.625 }, // 10-Year T-Note
-        'ZB=F': { tickSize: 0.03125, tickValue: 31.25 },   // 30-Year T-Bond
-        'ZF=F': { tickSize: 0.0078125, tickValue: 7.8125 },// 5-Year T-Note
-        '6E=F': { tickSize: 0.0001, tickValue: 12.50 },    // Euro FX
-        '6J=F': { tickSize: 0.000001, tickValue: 12.50 },  // Japanese Yen
-        '6B=F': { tickSize: 0.0001, tickValue: 6.25 },     // British Pound
-        '6C=F': { tickSize: 0.0001, tickValue: 10.00 },    // Canadian Dollar
-        '6A=F': { tickSize: 0.0001, tickValue: 10.00 },    // Australian Dollar
-        'ZW=F': { tickSize: 0.25, tickValue: 12.50 },      // Wheat
-        'ZC=F': { tickSize: 0.25, tickValue: 12.50 },      // Corn
-        'ZS=F': { tickSize: 0.25, tickValue: 12.50 },      // Soybeans
-        'ZL=F': { tickSize: 0.01, tickValue: 600.00 },     // Soybean Oil
-      };
-      return specs[symbol] || { tickSize: 0.01, tickValue: 1 }; // Default to stock-like
-    }
-
-    function calcFuturesPnL(symbol, entryPrice, exitPrice, qty, action) {
-      if (!symbol.includes('=F')) {
-        // Not a futures symbol - use stock calculation
-        return action === 'buy'
-          ? (exitPrice - entryPrice) * qty
-          : (entryPrice - exitPrice) * qty;
-      }
-
-      // Calculate point difference
-      const pointDiff = action === 'buy'
-        ? exitPrice - entryPrice
-        : entryPrice - exitPrice;
-
-      // Get contract specs
-      const { tickSize, tickValue } = getFuturesTickValue(symbol);
-
-      // Calculate P&L: (point difference / tick size) * tick value * quantity
-      const ticks = pointDiff / tickSize;
-      const pnl = ticks * tickValue * qty;
-
-      return pnl;
-    }
-
-    // Auto-refresh interval for real-time P&L updates
-    let pnlRefreshInterval = null;
 
     async function toggleSystemField(id, field, value) {
       await sbClient.from('stock_bots').update({ [field]: value }).eq('id', id);
@@ -771,9 +717,8 @@
           if (livePrice) {
             const entryPrice = Number(trade.price);
             const qty = Number(trade.quantity);
-            // Use realistic futures P&L calculation with contract specs
-            const tradePnl = calcFuturesPnL(trade.symbol, entryPrice, livePrice, qty, trade.action);
-            unrealizedPnl += tradePnl;
+            const direction = trade.action === 'buy' ? 1 : -1;
+            unrealizedPnl += direction * (livePrice - entryPrice) * qty;
           }
         }
         
@@ -807,7 +752,6 @@
           statsEl.innerHTML = `
             <div><span style="color:#666;">Realized</span> <strong style="color:${rColor};">${realizedPnl >= 0 ? '+' : ''}$${realizedPnl.toFixed(2)}</strong></div>
             <div><span style="color:#666;">Unrealized</span> <strong style="color:${uColor};">${unrealizedPnl >= 0 ? '+' : ''}$${unrealizedPnl.toFixed(2)}</strong></div>
-            <div><span style="color:#666;">Win Rate</span> <strong style="color:${Number(winRate) >= 50 ? 'var(--accent)' : 'var(--red)'};">${winRate}%</strong></div>
           `;
         }
       } catch (_) {}
@@ -933,7 +877,7 @@
         const otmLabel = b.bot_otm_strikes === 0 ? 'ATM' : `${b.bot_otm_strikes} Strike${b.bot_otm_strikes > 1 ? 's' : ''} OTM`;
         const runInt = b.run_interval_min || 60;
         const intervalText = runInt < 60 ? `${runInt}m` : `${Math.floor(runInt/60)}h`;
-        const autoStatus = isRunning ? `Auto-trading options · checks every ${intervalText}` : 'Options bot stopped';
+        const autoStatus = isRunning ? 'Running' : 'Stopped';
         const card = document.createElement('div');
         card.className = 'bot-card' + (isRunning ? ' running' : ' stopped');
         card.id = 'optcard-' + b.id;
@@ -965,7 +909,7 @@
                 <span id="opt-paper-pct-${b.id}" style="font-size:0.82rem;font-weight:700;"></span>
               </div>
             </div>
-            <button class="reset-btn" onclick="resetOptionsPaperBalance('${b.id}')">Reset to $150k</button>
+            <button class="reset-btn" onclick="resetOptionsPaperBalance('${b.id}')">Reset to $100k</button>
           </div>
 
           <!-- Master toggle -->
@@ -973,7 +917,6 @@
             <div class="big-toggle-wrap">
               <div>
                 <div class="big-toggle-label">Bot Active</div>
-                <div class="big-toggle-sub" id="opt-status-text-${b.id}">${autoStatus}</div>
               </div>
               <label class="big-toggle-switch">
                 <input type="checkbox" id="opt-master-${b.id}" ${isRunning ? 'checked' : ''} onchange="toggleOptionsBot('${b.id}', this.checked)"/>
@@ -986,9 +929,6 @@
           <div id="opt-auto-settings-${b.id}">
             <div class="section-label">Auto Bot Settings</div>
             <div class="settings-lock-wrap">
-            <div id="opt-settings-lock-${b.id}" class="settings-lock-overlay ${isRunning ? '' : 'hidden'}">
-              <div class="settings-lock-msg">Turn off the bot to<br/><span>edit settings</span></div>
-            </div>
             <div class="auto-settings">
               <div class="auto-settings-row"><span>Scan Mode</span>
                 <select class="auto-input wide" id="oscan-${b.id}" onchange="toggleOptScanMode('${b.id}', this.value)">
@@ -1053,7 +993,7 @@
               <div id="obrk-warn-${b.id}" style="font-size:0.72rem;color:#ff7043;display:${b.broker==='tastytrade'||b.broker==='alpaca'?'flex':'none'};align-items:center;gap:6px;background:rgba(255,112,67,0.08);border:1px solid rgba(255,112,67,0.2);border-radius:6px;padding:8px 10px;">
                 <span>Live options trading — real orders will be placed on ${b.broker==='alpaca'?'Alpaca':'Tastytrade'}</span>
               </div>
-              <button onclick="saveOptionsSettings('${b.id}')" style="margin-top:10px;width:100%;padding:8px;background:linear-gradient(135deg,#00d4ff,#00ff88);color:#000;font-weight:600;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-size:0.85rem;">Save Settings</button>
+              <button onclick="saveOptionsSettings('${b.id}')" style="margin-top:10px;width:100%;padding:8px;background:rgba(0,230,118,0.07);border:1px solid rgba(0,230,118,0.25);color:#b2f5d4;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;font-size:0.85rem;transition:all 0.15s;" onmouseover="this.style.background='rgba(0,230,118,0.14)'" onmouseout="this.style.background='rgba(0,230,118,0.07)'">Save Settings</button>
               <div class="run-result" id="opt-run-result-${b.id}"></div>
             </div>
             </div>
@@ -1130,7 +1070,29 @@
         if (r) { r.textContent = '❌ Save failed: ' + error.message; r.className = 'run-result red'; }
       } else {
         console.log('[SaveOptions] Success - scanMode saved as:', scanMode);
-        if (r) { r.textContent = '✓ Settings saved ' + new Date().toLocaleTimeString(); r.className = 'run-result green'; setTimeout(() => { r.textContent=''; r.className='run-result'; }, 3000); }
+        if (r) { r.textContent = '✓ Saved — checking open positions...'; r.className = 'run-result green'; }
+        // Instantly check open positions against new TP/SL thresholds
+        try {
+          const { data: session } = await sbClient.auth.getSession();
+          const token = session?.session?.access_token;
+          const tpslRes = await fetch(`${SUPABASE_URL}/functions/v1/options-bot`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'check_tpsl', bot_id: botId, take_profit_pct: tp, stop_loss_pct: sl })
+          });
+          const tpslJson = await tpslRes.json();
+          const closedCount = tpslJson.closed?.length || 0;
+          if (r) {
+            r.textContent = closedCount > 0
+              ? `✓ Saved · Closed ${closedCount} position${closedCount > 1 ? 's' : ''} at new threshold`
+              : `✓ Settings saved ${new Date().toLocaleTimeString()}`;
+            setTimeout(() => { r.textContent=''; r.className='run-result'; }, 4000);
+          }
+          if (closedCount > 0) { loadOptionsBots(); loadAllTrades(allTradesPage); }
+        } catch (tpslErr) {
+          console.error('[SaveOptions] TP/SL instant check failed:', tpslErr);
+          if (r) { r.textContent = '✓ Settings saved ' + new Date().toLocaleTimeString(); setTimeout(() => { r.textContent=''; r.className='run-result'; }, 3000); }
+        }
       }
     }
 
@@ -1141,13 +1103,20 @@
       const badge = document.getElementById('opt-status-badge-' + botId);
       const detail = document.getElementById('opt-status-text-' + botId);
       const card = document.getElementById('optcard-' + botId);
-      const lock = document.getElementById('opt-settings-lock-' + botId);
       if (badge) { badge.className = 'status-badge ' + (on ? 'running' : 'stopped'); badge.textContent = on ? 'Running' : 'Stopped'; }
       const runIntMin = document.getElementById('orunint-' + botId)?.value || 60;
       const intText = runIntMin < 60 ? `${runIntMin}m` : `${Math.floor(runIntMin/60)}h`;
-      if (detail) detail.textContent = on ? `Auto-trading options · checks every ${intText}` : 'Options bot stopped';
+      if (detail) detail.textContent = on ? 'Running' : 'Stopped';
       if (card) { card.classList.toggle('running', on); card.classList.toggle('stopped', !on); card.style.borderColor = ''; card.style.boxShadow = ''; }
-      if (lock) lock.classList.toggle('hidden', !on);
+    }
+
+    async function clearAllBotTrades() {
+      if (!confirm('Delete ALL trades from every bot? This cannot be undone.')) return;
+      await Promise.all([
+        sbClient.from('options_trades').delete().eq('user_id', currentUserId),
+        sbClient.from('trades').delete().eq('user_id', currentUserId).eq('source', 'auto-bot'),
+      ]);
+      await Promise.all([loadBots(), loadOptionsBots()]);
     }
 
     async function resetOptionsPaperBalance(botId) {
@@ -1275,7 +1244,7 @@
         scalper: { 
           title: 'Scalper Settings:', 
           candle: '5 minute charts', 
-          scan: 'Every 5 minutes', 
+          scan: 'Every 1 minute', 
           trend: '1-hour EMA',
           expiry: '0DTE or Weekly',
           best: 'Quick intraday moves'
@@ -1283,7 +1252,7 @@
         swing: { 
           title: 'Swing Settings:', 
           candle: '15 minute charts', 
-          scan: 'Every 15 minutes', 
+          scan: 'Every 1 minute', 
           trend: '4-hour EMA',
           expiry: 'Weekly (1-7 days)',
           best: 'Medium-term swings'
@@ -1291,7 +1260,7 @@
         position: { 
           title: 'Position Settings:', 
           candle: '1 hour charts', 
-          scan: 'Every 60 minutes', 
+          scan: 'Every 1 minute', 
           trend: 'Daily EMA',
           expiry: 'Monthly (30+ days)',
           best: 'Long-term trends'
@@ -1344,9 +1313,9 @@
       } else {
         const styleIntervals = {
           hyper: { candle: '1m', scan: 1, trend: '1h' },
-          scalper: { candle: '5m', scan: 5, trend: '1h' },
-          swing: { candle: '15m', scan: 15, trend: '4h' },
-          position: { candle: '1h', scan: 60, trend: '1d' }
+          scalper: { candle: '5m', scan: 1, trend: '1h' },
+          swing: { candle: '15m', scan: 1, trend: '4h' },
+          position: { candle: '1h', scan: 1, trend: '1d' }
         };
         const settings = styleIntervals[style] || styleIntervals.scalper;
         candle = settings.candle;
@@ -1930,19 +1899,31 @@
           return;
         }
         
-        // Calculate P&L
+        // For options: use edge function for accurate Black-Scholes exit pricing
+        if (botType === 'options') {
+          const { data: session } = await sbClient.auth.getSession();
+          const token = session?.session?.access_token;
+          const closeRes = await fetch(`${SUPABASE_URL}/functions/v1/options-bot`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'close_trade', trade_id: tradeId })
+          });
+          const closeJson = await closeRes.json();
+          if (!closeRes.ok || closeJson.error) throw new Error(closeJson.error || 'Close failed');
+          console.log(`[CloseTrade] Closed options ${symbol} via edge fn: P&L $${closeJson.pnl}`);
+          alert(`Closed ${symbol}! P&L: $${closeJson.pnl}`);
+          loadAllTrades(allTradesPage);
+          loadBots();
+          loadOptionsBots();
+          return;
+        }
+
+        // Calculate P&L (stocks)
         let pnl = 0;
         if (botType === 'stock') {
           const entryPrice = Number(trade.price);
           const qty = Number(trade.quantity);
           pnl = trade.action === 'buy' ? (currentPrice - entryPrice) * qty : (entryPrice - currentPrice) * qty;
-        } else {
-          // Options - use delta approximation
-          const contracts = Number(trade.contracts) || 1;
-          const entryPrice = Number(trade.premium_per_contract) || Number(trade.price) || 0;
-          const delta = trade.option_type === 'call' ? 0.5 : -0.5;
-          const underlyingChange = currentPrice - (Number(trade.strike) || entryPrice);
-          pnl = delta * underlyingChange * contracts * 100;
         }
         
         // Update trade to closed status
@@ -2171,7 +2152,7 @@
 
         const runInt = s.run_interval_min || 60;
         const intervalText = runInt < 60 ? `${runInt}m` : `${Math.floor(runInt/60)}h`;
-        const autoStatus = isRunning ? `Auto-trading · checks every ${intervalText}` : 'Auto mode — bot stopped';
+        const autoStatus = isRunning ? 'Running' : 'Stopped';
         const paperBalance = Number(s.paper_balance ?? 100000);
 
         const card = document.createElement('div');
@@ -2191,8 +2172,6 @@
               </div>
               <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center;">
                 <span class="bot-broker-tag ${brokerClass}" id="broker-tag-${s.id}">${brokerLabel}</span>
-                <span class="indicator-badge">Auto</span>
-                <span style="font-size:0.72rem;color:#555;" id="status-detail-${s.id}">${autoStatus}</span>
               </div>
             </div>
           </div>
@@ -2217,7 +2196,6 @@
             <div class="big-toggle-wrap">
               <div>
                 <div class="big-toggle-label">Bot Active</div>
-                <div class="big-toggle-sub" id="status-text-${s.id}">${autoStatus}</div>
               </div>
               <label class="big-toggle-switch">
                 <input type="checkbox" id="master-${s.id}" ${isRunning ? 'checked' : ''} onchange="toggleBot('${s.id}', this.checked)"/>
@@ -2230,9 +2208,6 @@
           <div id="auto-settings-${s.id}">
             <div class="section-label">Auto Bot Settings</div>
             <div class="settings-lock-wrap">
-            <div id="settings-lock-${s.id}" class="settings-lock-overlay ${isRunning ? '' : 'hidden'}">
-              <div class="settings-lock-msg">Turn off the bot to<br/><span>edit settings</span></div>
-            </div>
             <div class="auto-settings">
               <!-- Scan Markets -->
               <div class="auto-settings-row" style="align-items:flex-start;">
@@ -2244,13 +2219,6 @@
                     <button type="button" class="dir-pill ${s.scan_futures?'active':''}" id="scan-futures-${s.id}" data-enabled="${s.scan_futures?'true':'false'}" onclick="toggleScanMarket('${s.id}','futures')">Futures (24/7)</button>
                   </div>
                   <div style="font-size:0.7rem;color:#555;text-align:right;">Select one or more markets to scan</div>
-                  <!-- Data Source Indicator -->
-                  <div style="font-size:0.65rem;color:#888;text-align:right;margin-top:4px;">
-                    ${s.scan_stocks ? '<span style="color:#00d4ff;">● Alpaca</span> ' : ''}
-                    ${s.scan_crypto ? '<span style="color:#ff9500;">● Yahoo Finance</span> ' : ''}
-                    ${s.scan_futures ? '<span style="color:#00d4ff;">● Alpaca</span> ' : ''}
-                    ${!s.scan_stocks && !s.scan_crypto && !s.scan_futures ? '<span style="color:#666;">● No data source</span>' : ''}
-                  </div>
                 </div>
               </div>
               <!-- Symbol (hidden in scan mode) -->
@@ -2266,10 +2234,10 @@
                 <span>Trading Style</span>
                 <select class="auto-input" id="style-${s.id}" style="width:180px;" onchange="applyTradingStyle('${s.id}', this.value)">
                   <option value="custom" ${!s.trading_style||s.trading_style==='custom'?'selected':''}>Custom</option>
-                  <option value="hyper" ${s.trading_style==='hyper'?'selected':''}>Hyper Scalper (1m/1m)</option>
-                  <option value="scalper" ${s.trading_style==='scalper'?'selected':''}>Scalper (5m/5m)</option>
-                  <option value="swing" ${s.trading_style==='swing'?'selected':''}>Swing (15m/15m)</option>
-                  <option value="position" ${s.trading_style==='position'?'selected':''}>Position (1h/1h)</option>
+                  <option value="hyper" ${s.trading_style==='hyper'?'selected':''}>Hyper Scalper (1m candles)</option>
+                  <option value="scalper" ${s.trading_style==='scalper'?'selected':''}>Scalper (5m candles)</option>
+                  <option value="swing" ${s.trading_style==='swing'?'selected':''}>Swing (15m candles)</option>
+                  <option value="position" ${s.trading_style==='position'?'selected':''}>Position (1h candles)</option>
                 </select>
                 <span style="font-size:0.7rem;color:#555;">Auto-sets intervals</span>
               </div>
@@ -2367,7 +2335,7 @@
               </div>
               <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="tp-${s.id}" type="number" value="${s.take_profit_pct||50}" min="0.5" max="100" step="0.5" style="width:80px;" title="Close trade when profit hits this %"/></div>
               <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="sl-${s.id}" type="number" value="${s.stop_loss_pct||-20}" min="-50" max="0" step="0.5" style="width:80px;" title="Close trade when P&L drops to this % (e.g. -20)"/></div>
-              <button onclick="saveAutoSettings('${s.id}')" style="margin-top:10px;width:100%;padding:8px;background:linear-gradient(135deg,#00d4ff,#00ff88);color:#000;font-weight:600;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-size:0.85rem;">Save Settings</button>
+              <button onclick="saveAutoSettings('${s.id}')" style="margin-top:10px;width:100%;padding:8px;background:rgba(0,230,118,0.07);border:1px solid rgba(0,230,118,0.25);color:#b2f5d4;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;font-size:0.85rem;transition:all 0.15s;" onmouseover="this.style.background='rgba(0,230,118,0.14)'" onmouseout="this.style.background='rgba(0,230,118,0.07)'">Save Settings</button>
               <div class="run-result" id="run-result-${s.id}"></div>
             </div>
             </div>
@@ -2394,27 +2362,6 @@
         if (s.broker !== 'tastytrade') refreshStockBalance(s.id);
         loadBotTrades(s.id);
       });
-
-      // Start auto-refresh for real-time P&L updates (every 5 seconds)
-      startPnlAutoRefresh();
-    }
-
-    // Start auto-refresh interval for P&L updates
-    function startPnlAutoRefresh() {
-      // Clear existing interval if any
-      if (pnlRefreshInterval) {
-        clearInterval(pnlRefreshInterval);
-      }
-      // Refresh every 5 seconds
-      pnlRefreshInterval = setInterval(() => {
-        // Refresh all stock bot balances
-        const stockBotIds = [...document.querySelectorAll('[id^="paper-bal-"]')].map(el => el.id.replace('paper-bal-', ''));
-        stockBotIds.forEach(id => refreshStockBalance(id));
-        // Refresh all options bot balances
-        const optBotIds = [...document.querySelectorAll('[id^="opt-paper-bal-"]')].map(el => el.id.replace('opt-paper-bal-', ''));
-        optBotIds.forEach(id => refreshOptBalance(id));
-      }, 5000);
-      console.log('[P&L] Auto-refresh started (every 5 seconds)');
     }
 
 
@@ -2481,9 +2428,9 @@
       
       const presets = {
         hyper: { candle: '1m', scan: '1', trend: '1h' },
-        scalper: { candle: '5m', scan: '5', trend: '1h' },
-        swing: { candle: '15m', scan: '15', trend: '4h' },
-        position: { candle: '1h', scan: '60', trend: '1d' }
+        scalper: { candle: '5m', scan: '1', trend: '1h' },
+        swing: { candle: '15m', scan: '1', trend: '4h' },
+        position: { candle: '1h', scan: '1', trend: '1d' }
       };
       
       if (presets[style]) {
@@ -2575,10 +2522,8 @@
       }
       const runInt = document.getElementById('runint-' + systemId)?.value || 60;
       const intText = runInt < 60 ? `${runInt}m` : `${Math.floor(runInt/60)}h`;
-      if (detail) detail.textContent = isRunning ? `Auto-trading · checks every ${intText}` : 'Auto mode — bot stopped';
+      if (detail) detail.textContent = isRunning ? 'Running' : 'Stopped';
       if (card) { card.classList.toggle('running', isRunning); card.classList.toggle('stopped', !isRunning); }
-      const lock = document.getElementById('settings-lock-' + systemId);
-      if (lock) lock.classList.toggle('hidden', !isRunning);
     }
 
     function refreshBrokerTag(systemId, broker) {
@@ -3117,13 +3062,6 @@
       await sbClient.auth.signOut();
       window.location.href = 'index.html';
     }
-
-    // Clean up auto-refresh interval when leaving page
-    window.addEventListener('beforeunload', () => {
-      if (pnlRefreshInterval) {
-        clearInterval(pnlRefreshInterval);
-      }
-    });
 
     init();
   </script>

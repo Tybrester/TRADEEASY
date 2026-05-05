@@ -644,10 +644,12 @@
 
       // Options Bot Stats
       optionsBots.forEach(bot => {
-        const trades = bot.options_trades || [];
+        const allTrades = bot.options_trades || [];
+        const trades = allTrades.filter(t => t.status === 'closed');
+        const openCount = allTrades.filter(t => t.status === 'open').length;
         const totalTrades = trades.length;
-        const pnl = trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
-        const wins = trades.filter(t => (t.pnl || 0) > 0).length;
+        const pnl = trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
+        const wins = trades.filter(t => (Number(t.pnl) || 0) > 0).length;
         const winRate = totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(1) : 0;
         
         botStatsHtml += `
@@ -657,7 +659,7 @@
                 <span style="font-size:1.1rem;font-weight:600;color:#e0e0e0;">${bot.name}</span>
                 <span style="background:#ffd70022;color:#ffd700;padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:600;">Options</span>
               </div>
-              <span style="font-size:0.85rem;color:#888;">${bot.bot_expiry_type || 'weekly'} · ${bot.bot_otm_strikes || 1} OTM</span>
+              <span style="font-size:0.85rem;color:#888;">${bot.bot_expiry_type || 'weekly'} · ${bot.bot_signal || 'supertrend'}${openCount > 0 ? ` · <span style="color:#00e676">${openCount} open</span>` : ''}</span>
             </div>
             <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);">
               <div class="stat-card" style="padding:15px;">

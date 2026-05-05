@@ -539,36 +539,23 @@ function calcHistoricalVolatility(closes: number[], period = 20): number {
 }
 
 // ─────────────────────────────────────────────
-// REAL OPTION PRICE FETCHING (via Tradier or fallback)
+// OPTION PRICE via Yahoo underlying + Black-Scholes (free, no API key)
 // ─────────────────────────────────────────────
 
 async function fetchRealOptionPrice(symbol: string, strike: number, expiration: string, optionType: string): Promise<number> {
   try {
-    // Build Tradier option symbol format: SPY241231C00580000
+    const candles = await fetchCandles(symbol, '1h', 60);
+    if (!candles.length) return 0;
+    const spotPrice = candles[candles.length - 1].close;
+    const sigma = calcHistoricalVolatility(candles.map(c => c.close));
     const expDate = new Date(expiration);
-    const yy = String(expDate.getFullYear()).slice(-2);
-    const mm = String(expDate.getMonth() + 1).padStart(2, '0');
-    const dd = String(expDate.getDate()).padStart(2, '0');
-    const strikeCents = Math.round(strike * 1000);
-    const optSymbol = `${symbol}${yy}${mm}${dd}${optionType.toUpperCase().charAt(0)}${String(strikeCents).padStart(8, '0')}`;
-    
-    // Call our get-option-price edge function
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://isanhutzyctcjygjhzbn.supabase.co';
-    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || '';
-    
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/get-option-price?symbol=${encodeURIComponent(optSymbol)}`, {
-      headers: { 
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (!res.ok) throw new Error(`Edge function error: ${res.status}`);
-    
-    const data = await res.json();
-    return data?.price || 0;
+    const T = Math.max(0, (expDate.getTime() - Date.now()) / (365 * 24 * 60 * 60 * 1000));
+    const R = 0.05;
+    const price = blackScholes(spotPrice, strike, T, R, sigma, optionType as 'call' | 'put');
+    console.log(`[OptionsBot] Yahoo BS price for ${symbol} ${optionType} $${strike} exp ${expiration}: $${price.toFixed(4)} (spot=$${spotPrice.toFixed(2)}, sigma=${(sigma*100).toFixed(1)}%, T=${T.toFixed(3)}yr)`);
+    return price;
   } catch (err) {
-    console.log('[OptionsBot] Failed to fetch real option price:', err);
+    console.log('[OptionsBot] fetchRealOptionPrice (Yahoo+BS) failed:', err);
     return 0;
   }
 }
@@ -852,15 +839,108 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Parse body once for all POST handlers
+  let _parsedBody: any = null;
+  if (req.method === 'POST') {
+    _parsedBody = await req.json().catch(() => ({}));
+  }
+
+  // ── INSTANT ACTIONS (POST with action field) ──
+  if (req.method === 'POST') {
+    const body = _parsedBody;
+    const action = body.action;
+
+    // Instant TP/SL check: called immediately when user saves new thresholds
+    if (action === 'check_tpsl') {
+      const botId = body.bot_id;
+      if (!botId) return new Response(JSON.stringify({ error: 'bot_id required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      const { data: bot } = await supabase.from('options_bots').select('*').eq('id', botId).single();
+      if (!bot) return new Response(JSON.stringify({ error: 'Bot not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      const takeProfitPct = Number(body.take_profit_pct ?? bot.take_profit_pct ?? 100);
+      const stopLossPct   = Number(body.stop_loss_pct  ?? bot.stop_loss_pct  ?? 20);
+      const interval      = bot.bot_interval ?? '1h';
+      const R = 0.05;
+      const closed: object[] = [];
+
+      const { data: openTrades } = await supabase.from('options_trades').select('*').eq('bot_id', botId).eq('status', 'open');
+      for (const open of (openTrades || [])) {
+        try {
+          let optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type);
+          if (!optionPrice || optionPrice <= 0) {
+            const candles = await fetchCandles(open.symbol, interval, 60);
+            if (!candles.length) continue;
+            const spotPrice = candles[candles.length - 1].close;
+            const sigma = calcHistoricalVolatility(candles.map((c: any) => c.close));
+            const expDate = new Date(open.expiration_date);
+            const T = Math.max(0, (expDate.getTime() - Date.now()) / (365 * 24 * 60 * 60 * 1000));
+            optionPrice = blackScholes(spotPrice, open.strike, T, R, sigma, open.option_type);
+          }
+          const pctChange = ((optionPrice - open.premium_per_contract) / open.premium_per_contract) * 100;
+          const slThreshold = stopLossPct < 0 ? stopLossPct : -Math.abs(stopLossPct);
+          if (pctChange >= takeProfitPct || pctChange <= slThreshold) {
+            const pnl = (optionPrice - open.premium_per_contract) * open.contracts * 100;
+            await supabase.from('options_trades').update({ status: 'closed', exit_price: optionPrice, pnl, closed_at: new Date().toISOString() }).eq('id', open.id);
+            if (bot.broker === 'paper') {
+              const { data: bRow } = await supabase.from('options_bots').select('paper_balance').eq('id', botId).single();
+              const bal = Number(bRow?.paper_balance ?? 100000);
+              await supabase.from('options_bots').update({ paper_balance: bal + Number(open.total_cost) + pnl }).eq('id', botId);
+            }
+            closed.push({ id: open.id, symbol: open.symbol, pct_change: pctChange.toFixed(1) + '%', pnl: pnl.toFixed(2), reason: pctChange >= takeProfitPct ? 'take_profit' : 'stop_loss' });
+          }
+        } catch (_) {}
+      }
+      return new Response(JSON.stringify({ checked: (openTrades || []).length, closed }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Instant manual close: called when user clicks "Close Now" on a specific trade
+    if (action === 'close_trade') {
+      const tradeId = body.trade_id;
+      if (!tradeId) return new Response(JSON.stringify({ error: 'trade_id required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      const { data: open } = await supabase.from('options_trades').select('*').eq('id', tradeId).single();
+      if (!open) return new Response(JSON.stringify({ error: 'Trade not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      const { data: bot } = await supabase.from('options_bots').select('*').eq('id', open.bot_id).single();
+      const interval = bot?.bot_interval ?? '1h';
+      const R = 0.05;
+
+      let optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type);
+      if (!optionPrice || optionPrice <= 0) {
+        const candles = await fetchCandles(open.symbol, interval, 60);
+        if (candles.length) {
+          const spotPrice = candles[candles.length - 1].close;
+          const sigma = calcHistoricalVolatility(candles.map((c: any) => c.close));
+          const expDate = new Date(open.expiration_date);
+          const T = Math.max(0, (expDate.getTime() - Date.now()) / (365 * 24 * 60 * 60 * 1000));
+          optionPrice = blackScholes(spotPrice, open.strike, T, R, sigma, open.option_type);
+        }
+      }
+      if (!optionPrice || optionPrice <= 0) optionPrice = Number(open.premium_per_contract);
+
+      const pnl = (optionPrice - open.premium_per_contract) * open.contracts * 100;
+      await supabase.from('options_trades').update({ status: 'closed', exit_price: optionPrice, pnl, closed_at: new Date().toISOString() }).eq('id', tradeId);
+
+      if (bot && bot.broker === 'paper') {
+        const bal = Number(bot.paper_balance ?? 100000);
+        await supabase.from('options_bots').update({ paper_balance: bal + Number(open.total_cost) + pnl }).eq('id', open.bot_id);
+      }
+      return new Response(JSON.stringify({ success: true, symbol: open.symbol, exit_price: optionPrice, pnl: pnl.toFixed(2) }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+  }
+
   try {
     let targetBotId: string | null = null;
     let targetUserId: string | null = null;
+    let forceRun = false;
 
     // INDEPENDENT MODE: Options bot runs on its own schedule via cron
     // No sync trigger from stock bot - generates its own signals
     if (req.method === 'POST') {
       const authHeader = req.headers.get('Authorization');
-      const body = await req.json().catch(() => ({}));
+      const body = _parsedBody || {};
       const cronSecret = body.cron_secret;
       const validCron  = cronSecret === Deno.env.get('CRON_SECRET');
       if (!validCron && authHeader) {
@@ -870,9 +950,11 @@ Deno.serve(async (req) => {
       }
       targetBotId = body.bot_id || null;
       targetUserId = targetUserId || body.user_id || null;
+      forceRun = body.force === true;
     }
 
-    let query = supabase.from('options_bots').select('*').eq('enabled', true).eq('auto_submit', true);
+    let query = supabase.from('options_bots').select('*');
+    if (!forceRun) query = query.eq('enabled', true).eq('auto_submit', true);
     if (targetBotId)  query = query.eq('id', targetBotId);
     if (targetUserId) query = query.eq('user_id', targetUserId);
 
@@ -966,13 +1048,13 @@ Deno.serve(async (req) => {
       const lastRunAt = bot.last_run_at ? new Date(bot.last_run_at as string) : null;
       const minutesSinceLastRun = lastRunAt ? (now.getTime() - lastRunAt.getTime()) / (1000 * 60) : Infinity;
       
-      if (minutesSinceLastRun < runIntervalMin) {
+      if (!forceRun && minutesSinceLastRun < runIntervalMin) {
         console.log(`[OptionsBot] Skipping "${bot.name}" - ran ${minutesSinceLastRun.toFixed(1)}m ago, interval=${runIntervalMin}m`);
         continue;
       }
       
       // Options only trade during market hours (skip after hours)
-      if (!isOptionsMarketHours) {
+      if (!forceRun && !isOptionsMarketHours) {
         console.log(`[OptionsBot] Skipping "${bot.name}" - options markets closed (ET=${etHour}:${etMinute})`);
         continue;
       }
@@ -981,7 +1063,7 @@ Deno.serve(async (req) => {
       // 0DTE options stop trading 2 hours before market close (4:00 PM ET)
       const expiryType = bot.bot_expiry_type ?? 'weekly';
       const isAfter2PM_ET = etHour >= 14; // 2:00 PM ET or later
-      if (expiryType === '0dte' && isAfter2PM_ET) {
+      if (!forceRun && expiryType === '0dte' && isAfter2PM_ET) {
         console.log(`[OptionsBot] Skipping "${bot.name}" - 0DTE cutoff reached (after 2:00 PM ET, 2 hours before close)`);
         continue;
       }

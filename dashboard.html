@@ -392,6 +392,14 @@
     .positions-table tr:hover td { background: rgba(255,255,255,0.02); }
 
     .empty-positions { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 48px 24px; text-align: center; color: var(--muted); font-size: 0.9rem; }
+
+    .bot-overview-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 24px 24px; display:flex; flex-direction:column; gap:14px; text-decoration:none; color:inherit; transition: border-color 0.15s; cursor:pointer; }
+    .bot-overview-card:hover { border-color: #333; }
+    .bot-overview-card.running { border-color: rgba(0,230,118,0.3); }
+    .bot-overview-card.stopped { border-color: var(--border); }
+    .bot-overview-bal { font-size: 1.5rem; font-weight: 900; letter-spacing: -0.03em; color: var(--accent); }
+    .bot-overview-pct { font-size: 0.82rem; font-weight: 700; margin-left: 8px; }
+    .bot-overview-row { display:flex; justify-content:space-between; font-size:0.75rem; color:var(--muted); }
   </style>
 </head>
 <body>
@@ -489,6 +497,11 @@
           <div class="value green" id="stat-winrate">—</div>
           <div class="sub" id="stat-winrate-sub">Start trading to track</div>
         </div>
+      </div>
+
+      <div class="section-title">Bots</div>
+      <div id="bots-overview" style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:32px;">
+        <div style="color:#444;font-size:0.85rem;">Loading bots...</div>
       </div>
 
       <div class="section-title">Open Positions</div>
@@ -759,8 +772,56 @@
       window.refreshStats = refreshStats;
 
       await refreshStats();
+      await loadBotsOverview();
       setInterval(refreshStats, 30000);
-      document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshStats(); });
+      setInterval(loadBotsOverview, 5000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) { refreshStats(); loadBotsOverview(); } });
+
+      async function loadBotsOverview() {
+        const container = document.getElementById('bots-overview');
+        if (!container) return;
+
+        const [{ data: stockBots }, { data: optionsBots }] = await Promise.all([
+          sbClient.from('stock_bots').select('id,name,enabled,auto_submit,paper_balance_start,broker,trades(pnl,status)').eq('user_id', user.id).order('created_at', { ascending: false }),
+          sbClient.from('options_bots').select('id,name,enabled,auto_submit,paper_balance_start,broker,options_trades(pnl,status)').eq('user_id', user.id).order('created_at', { ascending: false }),
+        ]);
+
+        const allBots = [
+          ...(stockBots || []).map(b => ({ ...b, type: 'Stock', closedTrades: (b.trades || []).filter(t => t.status === 'closed') })),
+          ...(optionsBots || []).map(b => ({ ...b, type: 'Options', closedTrades: (b.options_trades || []).filter(t => t.status === 'closed') })),
+        ];
+
+        if (allBots.length === 0) {
+          container.innerHTML = `<div style="color:#444;font-size:0.85rem;padding:20px 0;">No bots yet. <a href="bots.html" style="color:var(--accent);text-decoration:none;">Create one →</a></div>`;
+          return;
+        }
+
+        container.innerHTML = allBots.map(b => {
+          const isRunning = b.enabled && b.auto_submit;
+          const start = Number(b.paper_balance_start || 100000);
+          const realizedPnl = b.closedTrades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
+          const balance = start + realizedPnl;
+          const pct = start > 0 ? ((realizedPnl / start) * 100) : 0;
+          const pnlColor = realizedPnl >= 0 ? 'var(--accent)' : 'var(--red)';
+          const pctStr = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+          const pnlStr = (realizedPnl >= 0 ? '+$' : '-$') + Math.abs(realizedPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const brokerLabel = b.broker === 'tastytrade' ? 'Tastytrade' : b.broker === 'alpaca' ? 'Alpaca' : 'Paper';
+          return `<a href="bots.html" class="bot-overview-card ${isRunning ? 'running' : 'stopped'}">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div style="font-size:0.9rem;font-weight:900;color:var(--text);">${b.name}</div>
+              <span style="font-size:0.68rem;font-weight:700;padding:3px 8px;border-radius:20px;background:${isRunning ? 'rgba(0,230,118,0.12)' : 'rgba(255,255,255,0.05)'};color:${isRunning ? 'var(--accent)' : '#555'};"><br>${isRunning ? '● Running' : '○ Stopped'}</span>
+            </div>
+            <div style="display:flex;align-items:baseline;">
+              <span class="bot-overview-bal">$${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span class="bot-overview-pct" style="color:${pnlColor};">${pctStr}</span>
+            </div>
+            <div class="bot-overview-row">
+              <span style="color:${pnlColor};font-size:0.88rem;font-weight:700;">${pnlStr}</span>
+              <span style="background:rgba(255,255,255,0.04);padding:2px 7px;border-radius:4px;font-size:0.68rem;">${b.type} · ${brokerLabel}</span>
+            </div>
+          </a>`;
+        }).join('');
+      }
 
       // Contact footer
       const footer = document.createElement('div');
