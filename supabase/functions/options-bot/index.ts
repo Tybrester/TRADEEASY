@@ -1385,6 +1385,19 @@ Deno.serve(async (req) => {
         continue;
       }
       
+      // 5-minute cooldown after bot is enabled or page refreshes
+      if (!forceRun && bot.enabled_at) {
+        const enabledAt = new Date(bot.enabled_at);
+        const msSinceEnabled = now.getTime() - enabledAt.getTime();
+        const cooldownMs = 5 * 60 * 1000;
+        if (msSinceEnabled < cooldownMs) {
+          const secsLeft = Math.ceil((cooldownMs - msSinceEnabled) / 1000);
+          console.log(`[OptionsBot] "${bot.name}" cooldown — ${secsLeft}s remaining before first entry`);
+          results.push({ bot_id: bot.id, symbol: bot.bot_symbol, status: 'skipped', reason: `Cooldown: ${secsLeft}s after enable` });
+          continue;
+        }
+      }
+
       // 0DTE cutoff: Don't trade 0DTE after 2:00 PM ET (12:00 PM MT)
       // 0DTE options stop trading 2 hours before market close (4:00 PM ET)
       const expiryType = bot.bot_expiry_type ?? 'weekly';

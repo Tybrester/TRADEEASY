@@ -1227,7 +1227,7 @@
     async function toggleOptionsBot(botId, on) {
       console.log(`[ToggleOptions] Bot ${botId} → ${on ? 'ON' : 'OFF'}`);
       if (on) { console.log('[ToggleOptions] Auto-saving before enable...'); await saveOptionsSettings(botId); }
-      await sbClient.from('options_bots').update({ enabled: on, auto_submit: on }).eq('id', botId);
+      await sbClient.from('options_bots').update({ enabled: on, auto_submit: on, enabled_at: on ? new Date().toISOString() : null }).eq('id', botId);
       const badge = document.getElementById('opt-status-badge-' + botId);
       const detail = document.getElementById('opt-status-text-' + botId);
       const card = document.getElementById('optcard-' + botId);
@@ -1308,7 +1308,7 @@
             // When turning on, save settings first (like individual toggle does)
             await saveOptionsSettings(bot.id);
           }
-          await sbClient.from('options_bots').update({ enabled: on, auto_submit: on }).eq('id', bot.id);
+          await sbClient.from('options_bots').update({ enabled: on, auto_submit: on, enabled_at: on ? new Date().toISOString() : null }).eq('id', bot.id);
         }
       }
       
