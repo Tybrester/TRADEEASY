@@ -1579,12 +1579,22 @@ Deno.serve(async (req) => {
               reason = sigResult.reason;
 
               // Block entries on candles that formed before the bot was enabled/reset
-              if (!forceRun && bot.enabled_at && signal !== 'none') {
-                const enabledAt = new Date(bot.enabled_at).getTime();
-                const sigCandleTime = candles[candles.length - 2].time * 1000; // candle time is in seconds
-                if (sigCandleTime < enabledAt) {
-                  console.log(`[OptionsBot] "${bot.name}" SKIP ${sym} — signal candle at ${new Date(sigCandleTime).toISOString()} is before enabled_at ${new Date(enabledAt).toISOString()}`);
-                  results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Waiting for first signal after enable' });
+              // OR before the market open delay window — whichever is later
+              if (!forceRun && signal !== 'none') {
+                const sigCandleTime = candles[candles.length - 2].time * 1000;
+                const enabledAtMs = bot.enabled_at ? new Date(bot.enabled_at).getTime() : 0;
+                // Compute market open + delay as a timestamp for today
+                const delayMinutes = (bot.market_open_delay_min as number) ?? 0;
+                // Build today's market open + delay as UTC ms using ET offset
+                const etOffsetMs = (now.getTime() - etDate.getTime());
+                const openEt = new Date(etDate);
+                openEt.setHours(9, 30 + delayMinutes, 0, 0);
+                const todayOpenMs = openEt.getTime() + etOffsetMs;
+                // Gate: signal candle must be newer than both enabled_at and market open+delay
+                const gateMs = Math.max(enabledAtMs, todayOpenMs);
+                if (sigCandleTime < gateMs) {
+                  console.log(`[OptionsBot] "${bot.name}" SKIP ${sym} — signal candle ${new Date(sigCandleTime).toISOString()} is before gate ${new Date(gateMs).toISOString()}`);
+                  results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Waiting for first signal after enable/delay' });
                   continue;
                 }
               }
