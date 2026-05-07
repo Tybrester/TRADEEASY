@@ -1081,8 +1081,10 @@
                 </select>
               </div>
 
-              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="otp-${b.id}" type="number" value="${b.take_profit_pct||50}" min="1" max="500" step="1" style="width:80px;" title="Close trade when profit hits this %"/></div>
-              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||-20}" min="-100" max="0" step="1" style="width:80px;" title="Close trade when P&L drops to this % (e.g. -20)"/></div>
+              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="otp-${b.id}" type="number" value="${b.take_profit_pct||50}" min="1" max="500" step="1" style="width:80px;" title="Close trade when profit hits this % of total spent"/></div>
+              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||-20}" min="-100" max="0" step="1" style="width:80px;" title="Close trade when loss hits this % of total spent (e.g. -20)"/></div>
+              <div class="auto-settings-row"><span>Max $ Profit <span style="font-size:0.68rem;color:#888;">(overrides %)</span></span><input class="auto-input" id="omxp-${b.id}" type="number" value="${b.max_profit_dollar??''}" min="1" step="1" style="width:80px;" placeholder="e.g. 50" title="Close when dollar profit reaches this amount (overrides % TP)"/></div>
+              <div class="auto-settings-row"><span>Max $ Loss <span style="font-size:0.68rem;color:#888;">(overrides %)</span></span><input class="auto-input" id="omxl-${b.id}" type="number" value="${b.max_loss_dollar??''}" min="1" step="1" style="width:80px;" placeholder="e.g. 35" title="Close when dollar loss reaches this amount (overrides % SL)"/></div>
               <div class="auto-settings-row"><span>Broker</span>
                 <select class="auto-input" id="obrk-${b.id}" style="width:160px;" onchange="updateOptionsBrokerTag('${b.id}', this.value)">
                   <option value="paper" ${!b.broker||b.broker==='paper'?'selected':''}>Paper Trading</option>
@@ -1179,6 +1181,10 @@
       console.log(`[SaveOptions] Bot ${botId} - Scan dropdown value: "${scanModeEl?.value}", using: "${scanMode}"`);
       const tp = parseFloat(document.getElementById('otp-' + botId)?.value) || 50;
       const sl = parseFloat(document.getElementById('osl-' + botId)?.value) || -20;
+      const mxpRaw = document.getElementById('omxp-' + botId)?.value;
+      const mxlRaw = document.getElementById('omxl-' + botId)?.value;
+      const maxProfitDollar = mxpRaw ? parseFloat(mxpRaw) : null;
+      const maxLossDollar   = mxlRaw ? parseFloat(mxlRaw) : null;
       const broker = document.getElementById('obrk-' + botId)?.value || 'paper';
       const botSignal = document.getElementById('osig-' + botId)?.value || 'supertrend';
       const optionType = document.getElementById('otype-' + botId)?.value || 'both';
@@ -1191,7 +1197,7 @@
         if (span) span.textContent = `Live options trading — real orders will be placed on ${broker === 'alpaca' ? 'Alpaca' : 'Tastytrade'}`;
       }
       const otmStrikes = parseInt(document.getElementById(`ootm-${botId}`)?.value ?? '0');
-      const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_option_type: optionType, bot_interval: int, run_interval_min: runInt, market_open_delay_min: startDelay, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, broker, bot_signal: botSignal, bot_otm_strikes: otmStrikes, trading_style: tradingStyle, updated_at: new Date().toISOString() }).eq('id', botId);
+      const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_option_type: optionType, bot_interval: int, run_interval_min: runInt, market_open_delay_min: startDelay, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, max_loss_dollar: maxLossDollar, max_profit_dollar: maxProfitDollar, broker, bot_signal: botSignal, bot_otm_strikes: otmStrikes, trading_style: tradingStyle, updated_at: new Date().toISOString() }).eq('id', botId);
       const r = document.getElementById('opt-run-result-' + botId);
       if (error) {
         console.error('[SaveOptions] Error:', error);
@@ -1206,7 +1212,7 @@
           const tpslRes = await fetch(`${SUPABASE_URL}/functions/v1/options-bot`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'check_tpsl', bot_id: botId, take_profit_pct: tp, stop_loss_pct: sl })
+            body: JSON.stringify({ action: 'check_tpsl', bot_id: botId, take_profit_pct: tp, stop_loss_pct: sl, max_loss_dollar: maxLossDollar, max_profit_dollar: maxProfitDollar })
           });
           const tpslJson = await tpslRes.json();
           const closedCount = tpslJson.closed?.length || 0;

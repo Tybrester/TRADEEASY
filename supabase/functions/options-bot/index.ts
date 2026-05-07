@@ -821,6 +821,7 @@ interface BotSettings {
   expiryType: string; otmStrikes: number;
   strikeMode: string; manualStrike: number | null;
   takeProfitPct: number; stopLossPct: number;
+  maxLossDollar: number | null; maxProfitDollar: number | null;
   marketOpenDelayMin: number;
   botSignal: string;
 }
@@ -1099,6 +1100,8 @@ Deno.serve(async (req) => {
 
       const takeProfitPct = Number(body.take_profit_pct ?? bot.take_profit_pct ?? 100);
       const stopLossPct   = Number(body.stop_loss_pct  ?? bot.stop_loss_pct  ?? 20);
+      const maxLossDollar  = bot.max_loss_dollar   != null ? Number(bot.max_loss_dollar)   : null;
+      const maxProfitDollar = bot.max_profit_dollar != null ? Number(bot.max_profit_dollar) : null;
       const interval      = bot.bot_interval ?? '1h';
       const R = 0.05;
       const closed: object[] = [];
@@ -1108,25 +1111,24 @@ Deno.serve(async (req) => {
         try {
           let optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, interval, bot.user_id);
           if (!optionPrice || optionPrice <= 0) {
-            const candles = await fetchCandles(open.symbol, interval, 60);
-            if (!candles.length) continue;
-            const spotPrice = candles[candles.length - 1].close;
-            const sigma = calcHistoricalVolatility(candles.map((c: any) => c.close), 20, interval);
-            const expDate = new Date(open.expiration_date);
-            const T = Math.max(0, (expDate.getTime() - Date.now()) / (365 * 24 * 60 * 60 * 1000));
-            optionPrice = blackScholes(spotPrice, open.strike, T, R, sigma, open.option_type);
+            console.log(`[check_tpsl] SKIP: no real price for ${open.symbol} $${open.strike}`);
+            continue;
           }
-          const pctChange = ((optionPrice - open.premium_per_contract) / open.premium_per_contract) * 100;
+          const totalCost = Number(open.total_cost) || (Number(open.premium_per_contract) * open.contracts * 100);
+          const currentValue = optionPrice * open.contracts * 100;
+          const pnl = currentValue - totalCost;
+          const pctChange = (pnl / totalCost) * 100;
           const slThreshold = stopLossPct < 0 ? stopLossPct : -Math.abs(stopLossPct);
-          if (pctChange >= takeProfitPct || pctChange <= slThreshold) {
-            const pnl = (optionPrice - open.premium_per_contract) * open.contracts * 100;
+          const shouldTP = maxProfitDollar != null ? pnl >= maxProfitDollar : pctChange >= takeProfitPct;
+          const shouldSL = maxLossDollar  != null ? pnl <= -Math.abs(maxLossDollar) : pctChange <= slThreshold;
+          if (shouldTP || shouldSL) {
             await supabase.from('options_trades').update({ status: 'closed', exit_price: optionPrice, pnl, closed_at: new Date().toISOString() }).eq('id', open.id);
             if (bot.broker === 'paper') {
               const { data: bRow } = await supabase.from('options_bots').select('paper_balance').eq('id', botId).single();
               const bal = Number(bRow?.paper_balance ?? 100000);
-              await supabase.from('options_bots').update({ paper_balance: bal + Number(open.total_cost) + pnl }).eq('id', botId);
+              await supabase.from('options_bots').update({ paper_balance: bal + totalCost + pnl }).eq('id', botId);
             }
-            closed.push({ id: open.id, symbol: open.symbol, pct_change: pctChange.toFixed(1) + '%', pnl: pnl.toFixed(2), reason: pctChange >= takeProfitPct ? 'take_profit' : 'stop_loss' });
+            closed.push({ id: open.id, symbol: open.symbol, pct_change: pctChange.toFixed(1) + '%', pnl: pnl.toFixed(2), reason: shouldTP ? 'take_profit' : 'stop_loss' });
           }
         } catch (_) {}
       }
@@ -1153,35 +1155,33 @@ Deno.serve(async (req) => {
       for (const open of openTrades) {
         try {
           const bot = (open as any).options_bots;
-          const takeProfitPct = Number(bot?.take_profit_pct ?? 35);
-          const stopLossPct = Number(bot?.stop_loss_pct ?? -25);
+          const takeProfitPct  = Number(bot?.take_profit_pct ?? 35);
+          const stopLossPct    = Number(bot?.stop_loss_pct ?? -25);
+          const maxLossDollar  = bot?.max_loss_dollar   != null ? Number(bot.max_loss_dollar)   : null;
+          const maxProfitDollar = bot?.max_profit_dollar != null ? Number(bot.max_profit_dollar) : null;
           const interval = bot?.bot_interval ?? '1h';
           const userId = bot?.user_id;
           
-          // Fetch real-time price
-          let optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, interval, userId);
-          const source = optionPrice > 0 ? 'tastytrade/polygon' : 'fallback-bs';
+          // Fetch real-time price — no Black-Scholes fallback
+          const optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, interval, userId);
+          const source = optionPrice > 0 ? 'tastytrade/polygon' : 'none';
           
           if (!optionPrice || optionPrice <= 0) {
-            // Fallback to Black-Scholes
-            const candles = await fetchCandles(open.symbol, interval, 60);
-            if (!candles.length) continue;
-            const spotPrice = candles[candles.length - 1].close;
-            const sigma = calcHistoricalVolatility(candles.map((c: any) => c.close), 20, interval);
-            const expDate = new Date(open.expiration_date);
-            const T = Math.max(0, (expDate.getTime() - Date.now()) / (365 * 24 * 60 * 60 * 1000));
-            optionPrice = blackScholes(spotPrice, open.strike, T, R, sigma, open.option_type);
+            console.log(`[TPSL_Daemon] SKIP: no real price for ${open.symbol} $${open.strike}`);
+            continue;
           }
-          
-          const pctChange = ((optionPrice - open.premium_per_contract) / open.premium_per_contract) * 100;
+
+          const totalCost = Number(open.total_cost) || (Number(open.premium_per_contract) * open.contracts * 100);
+          const currentValue = optionPrice * open.contracts * 100;
+          const pnl = currentValue - totalCost;
+          const pctChange = (pnl / totalCost) * 100;
           const slThreshold = stopLossPct < 0 ? stopLossPct : -Math.abs(stopLossPct);
-          const shouldTP = pctChange >= takeProfitPct;
-          const shouldSL = pctChange <= slThreshold;
+          const shouldTP = maxProfitDollar != null ? pnl >= maxProfitDollar : pctChange >= takeProfitPct;
+          const shouldSL = maxLossDollar  != null ? pnl <= -Math.abs(maxLossDollar) : pctChange <= slThreshold;
           
           console.log(`[TPSL_Daemon] ${open.symbol} ${open.option_type} $${open.strike}: current=$${optionPrice.toFixed(2)} entry=$${Number(open.premium_per_contract).toFixed(2)} pct=${pctChange.toFixed(1)}% tp=${takeProfitPct}% sl=${slThreshold}% shouldTP=${shouldTP} shouldSL=${shouldSL} source=${source}`);
           
           if (shouldTP || shouldSL) {
-            const pnl = (optionPrice - open.premium_per_contract) * open.contracts * 100;
             await supabase.from('options_trades').update({ 
               status: 'closed', 
               exit_price: optionPrice, 
@@ -1194,7 +1194,7 @@ Deno.serve(async (req) => {
             if (bot?.broker === 'paper') {
               const { data: bRow } = await supabase.from('options_bots').select('paper_balance').eq('id', open.bot_id).single();
               const bal = Number(bRow?.paper_balance ?? 100000);
-              await supabase.from('options_bots').update({ paper_balance: bal + Number(open.total_cost) + pnl }).eq('id', open.bot_id);
+              await supabase.from('options_bots').update({ paper_balance: bal + totalCost + pnl }).eq('id', open.bot_id);
             }
             
             closed.push({ 
@@ -1414,8 +1414,10 @@ Deno.serve(async (req) => {
         otmStrikes:     bot.bot_otm_strikes    ?? 1,
         strikeMode:     bot.bot_strike_mode    ?? 'budget',
         manualStrike:   bot.bot_manual_strike  ?? null,
-        takeProfitPct:  bot.take_profit_pct    ?? 40,
-        stopLossPct:    bot.stop_loss_pct      ?? 20,
+        takeProfitPct:   bot.take_profit_pct    ?? 40,
+        stopLossPct:     bot.stop_loss_pct      ?? 20,
+        maxLossDollar:   bot.max_loss_dollar    ?? null,
+        maxProfitDollar: bot.max_profit_dollar  ?? null,
         marketOpenDelayMin: bot.market_open_delay_min ?? 0,
         botSignal:      (bot.bot_signal as string) || 'supertrend',
       };
@@ -1457,18 +1459,20 @@ Deno.serve(async (req) => {
                 continue;
               }
 
-              // Sanity check exit price: must be within 90% loss max (real options don't go to zero instantly)
-              const entryPrice = Number(open.premium_per_contract);
-              const exitPct = ((optionPrice - entryPrice) / entryPrice) * 100;
-              if (exitPct < -95) {
-                console.log(`[OptionsBot] SKIP TP/SL for ${open.symbol} $${open.strike} — exit price $${optionPrice.toFixed(2)} looks wrong (${exitPct.toFixed(1)}% from entry $${entryPrice.toFixed(2)}), skipping`);
+              const totalCost = Number(open.total_cost) || (Number(open.premium_per_contract) * open.contracts * 100);
+              const currentValue = optionPrice * open.contracts * 100;
+              const pnlNow = currentValue - totalCost;
+              const pctChange = (pnlNow / totalCost) * 100;
+
+              // Sanity check: block if showing worse than -95% (likely bad price data)
+              if (pctChange < -95) {
+                console.log(`[OptionsBot] SKIP TP/SL for ${open.symbol} $${open.strike} — pct ${pctChange.toFixed(1)}% looks wrong, skipping`);
                 continue;
               }
-              
-              const pctChange = ((optionPrice - open.premium_per_contract) / open.premium_per_contract) * 100;
-              const shouldTP = pctChange >= settings.takeProfitPct;
+
               const slThreshold = settings.stopLossPct < 0 ? settings.stopLossPct : -Math.abs(settings.stopLossPct);
-              const shouldSL = pctChange <= slThreshold;
+              const shouldTP = settings.maxProfitDollar != null ? pnlNow >= settings.maxProfitDollar : pctChange >= settings.takeProfitPct;
+              const shouldSL = settings.maxLossDollar  != null ? pnlNow <= -Math.abs(settings.maxLossDollar) : pctChange <= slThreshold;
               console.log(`[OptionsBot] TP/SL ${open.symbol} ${open.option_type} $${open.strike}: current=$${optionPrice.toFixed(2)} entry=$${Number(open.premium_per_contract).toFixed(2)} pct=${pctChange.toFixed(1)}% tp=${settings.takeProfitPct}% sl=${slThreshold}% shouldTP=${shouldTP} shouldSL=${shouldSL} source=${source}`);
               
               // EOD exit: 0DTE options — force close all positions at 2:00 PM ET
@@ -1483,7 +1487,7 @@ Deno.serve(async (req) => {
               console.log(`[OptionsBot] EOD Check ${open.symbol} ${open.option_type} $${open.strike}: exp=${open.expiration_date} etDate=${etDateStr} is0DTE=${is0DTE} isAfter2PM=${isAfter2PM_ET} shouldEOD=${shouldEOD}`);
               
               if (shouldTP || shouldSL || shouldEOD) {
-                const pnl = (optionPrice - open.premium_per_contract) * open.contracts * 100;
+                const pnl = pnlNow;
                 let closeStatus = 'closed';
                 let closeOrderId = null;
                 let closeError = null;
