@@ -3100,9 +3100,12 @@
       const statusHtml = isOpen
         ? `<span style="background:rgba(255,193,7,0.12);color:#ffc107;font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:10px;">OPEN</span>`
         : `<span style="background:rgba(0,230,118,0.08);color:#555;font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:10px;">CLOSED</span>`;
-      const timeInfo = isOpen 
+      const timeInfo = isOpen
         ? `<span style="color:var(--muted);font-size:0.78rem;">Entry: ${actTimeStr(tr.created_at)}</span>`
-        : `<span style="color:var(--muted);font-size:0.78rem;">Closed: ${tr.closed_at ? actTimeStr(tr.closed_at) : '—'}<br>Entry: ${actTimeStr(tr.created_at)}</span>`;
+        : `<span style="color:var(--muted);font-size:0.78rem;line-height:1.6;">
+            <span style="color:#aaa;">In:</span> ${actTimeStr(tr.created_at)}<br>
+            <span style="color:#aaa;">Out:</span> ${tr.closed_at ? actTimeStr(tr.closed_at) : '<span style="color:#ff7043;">not recorded</span>'}
+           </span>`;
       return `<tr>
         <td style="font-weight:600;">${tr.symbol || '—'}</td>
         <td><span class="act-badge ${isCall?'act-badge-call':'act-badge-put'}">${isCall?'CALL':'PUT'}</span></td>
