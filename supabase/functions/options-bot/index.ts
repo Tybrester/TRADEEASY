@@ -1577,6 +1577,17 @@ Deno.serve(async (req) => {
               signal = sigResult.signal;
               price = sigResult.price;
               reason = sigResult.reason;
+
+              // Block entries on candles that formed before the bot was enabled/reset
+              if (!forceRun && bot.enabled_at && signal !== 'none') {
+                const enabledAt = new Date(bot.enabled_at).getTime();
+                const sigCandleTime = candles[candles.length - 2].time * 1000; // candle time is in seconds
+                if (sigCandleTime < enabledAt) {
+                  console.log(`[OptionsBot] "${bot.name}" SKIP ${sym} — signal candle at ${new Date(sigCandleTime).toISOString()} is before enabled_at ${new Date(enabledAt).toISOString()}`);
+                  results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Waiting for first signal after enable' });
+                  continue;
+                }
+              }
               
               console.log(`[OptionsBot] "${bot.name}" | ${sym} | SIGNAL: ${signal} | price=$${price.toFixed(2)} | signal_type=${botSignal} | ${reason}`);
               
