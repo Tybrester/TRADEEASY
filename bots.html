@@ -978,6 +978,7 @@
               <input type="number" id="opt-bal-input-${b.id}" placeholder="Set balance..." onkeydown="if(event.key==='Enter')setOptionsPaperBalance('${b.id}')" style="background:#111;border:1px solid #2a2a2a;color:var(--text);padding:5px 10px;border-radius:6px;font-family:inherit;font-size:0.82rem;width:130px;outline:none;flex:1;" />
               <button onclick="setOptionsPaperBalance('${b.id}')" class="reset-btn" style="white-space:nowrap;">Set</button>
               <button class="reset-btn" onclick="resetOptionsPaperBalance('${b.id}')">$100k</button>
+              <button class="reset-btn" onclick="resetOptionsBot('${b.id}')" style="border-color:#ff4444;color:#ff4444;" onmouseover="this.style.background='rgba(255,68,68,0.1)'" onmouseout="this.style.background='none'">Reset Bot</button>
             </div>
           </div>
 
@@ -1274,6 +1275,17 @@
       await sbClient.from('options_bots').update({ paper_balance: 100000, paper_balance_start: 100000 }).eq('id', botId);
       const el = document.getElementById('opt-paper-bal-' + botId);
       if (el) el.textContent = '$100,000.00';
+    }
+
+    async function resetOptionsBot(botId) {
+      if (!confirm('Reset this bot? This will delete ALL trades for this bot and reset its balance to the starting amount.')) return;
+      await sbClient.from('options_trades').delete().eq('bot_id', botId);
+      const { data: bot } = await sbClient.from('options_bots').select('paper_balance_start').eq('id', botId).single();
+      const startBal = Number(bot?.paper_balance_start ?? 100000);
+      await sbClient.from('options_bots').update({ paper_balance: startBal, enabled_at: new Date().toISOString() }).eq('id', botId);
+      await refreshOptBalance(botId);
+      await loadBotTrades(botId);
+      await loadAllTrades(allTradesPage);
     }
 
     // Toggle all bots at once (for syncing)
