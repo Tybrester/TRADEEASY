@@ -978,8 +978,8 @@
               <input type="number" id="opt-bal-input-${b.id}" placeholder="Set balance..." onkeydown="if(event.key==='Enter')setOptionsPaperBalance('${b.id}')" style="background:#111;border:1px solid #2a2a2a;color:var(--text);padding:5px 10px;border-radius:6px;font-family:inherit;font-size:0.82rem;width:130px;outline:none;flex:1;" />
               <button onclick="setOptionsPaperBalance('${b.id}')" class="reset-btn" style="white-space:nowrap;">Set</button>
               <button class="reset-btn" onclick="resetOptionsPaperBalance('${b.id}')">$100k</button>
-              <button class="reset-btn" onclick="resetOptionsBot('${b.id}')" style="border-color:#ff4444;color:#ff4444;" onmouseover="this.style.background='rgba(255,68,68,0.1)'" onmouseout="this.style.background='none'">Reset Bot</button>
             </div>
+            <button onclick="resetOptionsBot('${b.id}')" style="width:100%;margin-top:4px;background:transparent;border:1px solid #2a1a1a;color:#664444;font-size:0.72rem;font-weight:700;padding:6px 0;border-radius:6px;cursor:pointer;font-family:inherit;letter-spacing:0.04em;transition:all 0.15s;" onmouseover="this.style.borderColor='#ff4444';this.style.color='#ff4444';this.style.background='rgba(255,68,68,0.06)'" onmouseout="this.style.borderColor='#2a1a1a';this.style.color='#664444';this.style.background='transparent'">↺ Reset Bot &amp; Clear Trades</button>
           </div>
 
           <!-- Master toggle -->
