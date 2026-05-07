@@ -413,20 +413,18 @@ async function fetchPolygonSpotPrice(symbol: string): Promise<number | null> {
   return null;
 }
 
-// Known reasonable price ranges for sanity checking spot prices
-const SPOT_SANITY: Record<string, [number, number]> = {
-  'SPY':  [400, 700], 'QQQ':  [300, 600], 'IWM':  [150, 350],
-  'AAPL': [100, 400], 'MSFT': [200, 600], 'NVDA': [50,  200],
-  'TSLA': [100, 500], 'AMZN': [100, 300], 'META': [200, 800],
-  'GOOG': [100, 300], 'GOOGL':[100, 300],
-};
-
-function sanityCheckSpot(symbol: string, price: number): boolean {
-  const bounds = SPOT_SANITY[symbol];
-  if (!bounds) return price > 0 && price < 10000; // generic: just must be positive and sane
-  const ok = price >= bounds[0] && price <= bounds[1];
-  if (!ok) console.log(`[OptionsBot] SANITY FAIL: ${symbol} spot $${price} outside expected range $${bounds[0]}-$${bounds[1]}`);
-  return ok;
+// Dynamic sanity check: spot price must be within 25% of a reference price (candle close)
+// Pass referencePrice=0 to skip the cross-check (first call before candles loaded)
+function sanityCheckSpot(symbol: string, price: number, referencePrice = 0): boolean {
+  if (!price || price <= 0) return false;
+  if (referencePrice > 0) {
+    const pct = Math.abs(price - referencePrice) / referencePrice;
+    if (pct > 0.25) {
+      console.log(`[OptionsBot] SANITY FAIL: ${symbol} spot $${price.toFixed(2)} is ${(pct*100).toFixed(1)}% away from candle close $${referencePrice.toFixed(2)} — rejecting`);
+      return false;
+    }
+  }
+  return true;
 }
 
 async function fetchTastytradeSpotPrice(symbol: string, accessToken: string): Promise<number | null> {
@@ -438,7 +436,7 @@ async function fetchTastytradeSpotPrice(symbol: string, accessToken: string): Pr
     const json = await res.json();
     const quote = json?.data?.items?.[0];
     const mid = quote?.mid || ((Number(quote?.bid) + Number(quote?.ask)) / 2) || quote?.last;
-    if (mid && mid > 0 && sanityCheckSpot(symbol, mid)) {
+    if (mid && mid > 0 && sanityCheckSpot(symbol, mid, 0)) { // reference=0: no candle available here, basic check only
       console.log(`[OptionsBot] Tastytrade real-time spot ${symbol} = $${mid} (bid=$${quote?.bid} ask=$${quote?.ask})`);
       return mid;
     }
@@ -1694,13 +1692,13 @@ Deno.serve(async (req) => {
               // 2. Try Polygon (reliable, near real-time for equities)
               if (!spotPrice) {
                 spotPrice = await fetchPolygonSpotPrice(sym);
-                if (spotPrice && !sanityCheckSpot(sym, spotPrice)) spotPrice = null;
+                if (spotPrice && !sanityCheckSpot(sym, spotPrice, price)) spotPrice = null;
               }
 
               // 3. Try Alpaca if connected
               if (!spotPrice && alpacaCreds?.api_key) {
                 spotPrice = await fetchAlpacaSpotPrice(sym, alpacaCreds.api_key, alpacaCreds.secret_key);
-                if (spotPrice && !sanityCheckSpot(sym, spotPrice)) spotPrice = null;
+                if (spotPrice && !sanityCheckSpot(sym, spotPrice, price)) spotPrice = null;
               }
 
               // 4. Yahoo fallback — sanity check required
@@ -1711,7 +1709,7 @@ Deno.serve(async (req) => {
                   const json = await res.json();
                   const meta = json?.chart?.result?.[0]?.meta;
                   const p = meta?.regularMarketPrice ?? meta?.price;
-                  if (p && p > 0 && sanityCheckSpot(sym, p)) spotPrice = p;
+                  if (p && p > 0 && sanityCheckSpot(sym, p, price)) spotPrice = p;
                 } catch (_) {}
               }
 
