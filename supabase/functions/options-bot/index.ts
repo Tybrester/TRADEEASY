@@ -1447,21 +1447,22 @@ Deno.serve(async (req) => {
               const strikeCents = Math.round(open.strike * 1000);
               const optSymbol = `${open.symbol}${yy}${mm}${dd}${open.option_type.toUpperCase().charAt(0)}${String(strikeCents).padStart(8, '0')}`;
               
-              // Fetch REAL option price from Tastytrade (or fallback to Polygon)
+              // Fetch REAL option price from Tastytrade or Polygon only
+              // NEVER use Black-Scholes for TP/SL decisions — a bad estimate can cause false -99% exits
               let optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, settings.interval, bot.user_id);
-              const source = optionPrice > 0 ? 'tastytrade/polygon' : 'fallback-bs';
-              
+              const source = optionPrice > 0 ? 'tastytrade/polygon' : 'none';
+
               if (!optionPrice || optionPrice <= 0) {
-                const candles = await fetchCandles(open.symbol, settings.interval, 60);
-                if (!candles.length) continue;
-                const currentPrice = candles[candles.length - 1].close;
-                const etfs = ['SPY','QQQ','IWM','DIA','GLD','TLT','XLF','XLE','XLK','XLV','EEM','VXX'];
-                const highVol = ['TSLA','NVDA','AMD','MSTR','COIN','PLTR','GME','AMC','RIVN','LCID'];
-                const iv = etfs.includes(open.symbol) ? 0.15 : highVol.includes(open.symbol) ? 0.45 : 0.25;
-                const expParts = open.expiration_date.split('-');
-                const expDateFixed = new Date(Date.UTC(Number(expParts[0]), Number(expParts[1]) - 1, Number(expParts[2]), 20, 0, 0));
-                const T = Math.max(1 / (365 * 24 * 60), (expDateFixed.getTime() - Date.now()) / (365 * 24 * 60 * 60 * 1000));
-                optionPrice = blackScholes(currentPrice, open.strike, T, R, iv, open.option_type);
+                console.log(`[OptionsBot] SKIP TP/SL for ${open.symbol} $${open.strike} — no real price available, will retry next cycle`);
+                continue;
+              }
+
+              // Sanity check exit price: must be within 90% loss max (real options don't go to zero instantly)
+              const entryPrice = Number(open.premium_per_contract);
+              const exitPct = ((optionPrice - entryPrice) / entryPrice) * 100;
+              if (exitPct < -95) {
+                console.log(`[OptionsBot] SKIP TP/SL for ${open.symbol} $${open.strike} — exit price $${optionPrice.toFixed(2)} looks wrong (${exitPct.toFixed(1)}% from entry $${entryPrice.toFixed(2)}), skipping`);
+                continue;
               }
               
               const pctChange = ((optionPrice - open.premium_per_contract) / open.premium_per_contract) * 100;
