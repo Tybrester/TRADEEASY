@@ -740,7 +740,7 @@
         
         // Get realized P&L from closed trades
         const { data: closedTrades } = await sbClient.from('trades')
-          .select('pnl, entry_price, exit_price, price, quantity, action')
+          .select('pnl, symbol, entry_price, exit_price, price, quantity, action')
           .eq('bot_id', systemId)
           .eq('status', 'closed');
         const realizedPnl = (closedTrades || []).reduce((sum, t) => {
@@ -750,7 +750,10 @@
             const ep = Number(t.entry_price);
             const xp = Number(t.exit_price);
             const qty = Number(t.quantity);
-            pnl = t.action === 'buy' ? (xp - ep) * qty : (ep - xp) * qty;
+            const action = t.action === 'buy' ? 'buy' : 'sell';
+            pnl = (t.symbol && t.symbol.includes('=F'))
+              ? calcFuturesPnL(t.symbol, ep, xp, qty, action)
+              : (action === 'buy' ? (xp - ep) : (ep - xp)) * qty;
           }
           return sum + pnl;
         }, 0);
@@ -780,10 +783,12 @@
         for (const trade of (openTrades || [])) {
           const livePrice = livePrices[trade.symbol];
           if (livePrice) {
-            const entryPrice = Number(trade.price);
+            const entryPrice = Number(trade.entry_price || trade.price);
             const qty = Number(trade.quantity);
-            const direction = trade.action === 'buy' ? 1 : -1;
-            unrealizedPnl += direction * (livePrice - entryPrice) * qty;
+            const action = trade.action === 'buy' ? 'buy' : 'sell';
+            unrealizedPnl += (trade.symbol && trade.symbol.includes('=F'))
+              ? calcFuturesPnL(trade.symbol, entryPrice, livePrice, qty, action)
+              : (action === 'buy' ? (livePrice - entryPrice) : (entryPrice - livePrice)) * qty;
           }
         }
         
