@@ -2419,8 +2419,9 @@
             <div style="display:flex;gap:6px;align-items:center;">
               <input type="number" id="stk-bal-input-${s.id}" placeholder="Set balance..." onkeydown="if(event.key==='Enter')setStockPaperBalance('${s.id}')" style="background:#111;border:1px solid #2a2a2a;color:var(--text);padding:5px 10px;border-radius:6px;font-family:inherit;font-size:0.82rem;width:130px;outline:none;flex:1;" />
               <button onclick="setStockPaperBalance('${s.id}')" class="reset-btn" style="white-space:nowrap;">Set</button>
-              <button class="reset-btn" onclick="resetPaperBalance('${s.id}')">$100k</button>
+              <button class="reset-btn" onclick="resetStockPaperBalanceOnly('${s.id}')">$100k</button>
             </div>
+            <button onclick="resetPaperBalance('${s.id}')" style="width:100%;margin-top:4px;background:transparent;border:1px solid #2a1a1a;color:#664444;font-size:0.72rem;font-weight:700;padding:6px 0;border-radius:6px;cursor:pointer;font-family:inherit;letter-spacing:0.04em;transition:all 0.15s;" onmouseover="this.style.borderColor='#ff4444';this.style.color='#ff4444';this.style.background='rgba(255,68,68,0.06)'" onmouseout="this.style.borderColor='#2a1a1a';this.style.color='#664444';this.style.background='transparent'">↺ Reset Bot &amp; Clear Trades</button>
           </div>
           
           ` : ''}
@@ -2772,6 +2773,15 @@
       }
     }
 
+
+    async function resetStockPaperBalanceOnly(systemId) {
+      if (!confirm('Reset paper balance to $100,000?')) return;
+      await sbClient.from('stock_bots').update({ paper_balance: 100000, paper_balance_start: 100000 }).eq('id', systemId);
+      const balEl = document.getElementById('paper-bal-' + systemId);
+      if (balEl) balEl.textContent = '$100,000.00';
+      const pctEl = document.getElementById('paper-pct-' + systemId);
+      if (pctEl) { pctEl.textContent = ''; }
+    }
 
     async function resetPaperBalance(systemId) {
       if (!confirm('Reset paper balance to $100,000 and clear ALL trades for this bot?')) return;
