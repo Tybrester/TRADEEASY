@@ -3053,11 +3053,40 @@
       return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     }
 
+    const futuresTickSpecs = {
+      'ES=F':  { tickSize: 0.25,      tickValue: 12.50  },
+      'MES=F': { tickSize: 0.25,      tickValue: 1.25   },
+      'NQ=F':  { tickSize: 0.25,      tickValue: 5.00   },
+      'MNQ=F': { tickSize: 0.25,      tickValue: 0.50   },
+      'YM=F':  { tickSize: 1,         tickValue: 5.00   },
+      'MYM=F': { tickSize: 1,         tickValue: 0.50   },
+      'RTY=F': { tickSize: 0.1,       tickValue: 5.00   },
+      'M2K=F': { tickSize: 0.1,       tickValue: 0.50   },
+      'CL=F':  { tickSize: 0.01,      tickValue: 10.00  },
+      'MCL=F': { tickSize: 0.01,      tickValue: 1.00   },
+      'GC=F':  { tickSize: 0.1,       tickValue: 10.00  },
+      'MGC=F': { tickSize: 0.1,       tickValue: 1.00   },
+      'SI=F':  { tickSize: 0.005,     tickValue: 25.00  },
+      'NG=F':  { tickSize: 0.001,     tickValue: 10.00  },
+      'ZB=F':  { tickSize: 0.03125,   tickValue: 31.25  },
+      'ZN=F':  { tickSize: 0.015625,  tickValue: 15.625 },
+      '6E=F':  { tickSize: 0.0001,    tickValue: 12.50  },
+      '6B=F':  { tickSize: 0.0001,    tickValue: 6.25   },
+    };
+
+    function calcFuturesPnL(symbol, entryPrice, exitPrice, qty, action) {
+      const spec = futuresTickSpecs[symbol];
+      const pointDiff = action === 'buy' ? exitPrice - entryPrice : entryPrice - exitPrice;
+      if (!spec) return pointDiff * qty; // stock fallback
+      return (pointDiff / spec.tickSize) * spec.tickValue * qty;
+    }
+
     function actStockRow(tr, livePrices) {
       const side = tr.direction || (tr.action === 'buy' ? 'Long' : 'Short');
       const entry = tr.entry_price ?? tr.price;
       const qty = Number(tr.quantity) || 0;
       const entryPrice = Number(entry) || 0;
+      const isFutures = tr.symbol && tr.symbol.includes('=F');
       
       // Calculate P&L (realized or unrealized)
       let pnlValue = null;
@@ -3067,9 +3096,12 @@
         // Closed trade - use realized P&L
         pnlValue = Number(tr.pnl);
       } else if (livePrices && livePrices[tr.symbol]) {
-        // Open trade - calculate unrealized P&L
+        // Open trade - calculate unrealized P&L with futures multiplier if applicable
         const livePrice = livePrices[tr.symbol];
-        pnlValue = (livePrice - entryPrice) * qty;
+        const action = tr.action === 'buy' ? 'buy' : 'sell';
+        pnlValue = isFutures
+          ? calcFuturesPnL(tr.symbol, entryPrice, livePrice, qty, action)
+          : (side === 'Long' ? (livePrice - entryPrice) : (entryPrice - livePrice)) * qty;
         isUnrealized = true;
       }
       
