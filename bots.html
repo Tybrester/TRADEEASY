@@ -3080,12 +3080,8 @@
       let displayCost = Number(tr.total_cost) || (Number(tr.premium_per_contract) * Number(tr.contracts) * 100);
       if (isOpen && currentOptionPrice && currentOptionPrice > 0) {
         displayPnl = (currentOptionPrice - Number(tr.premium_per_contract)) * Number(tr.contracts) * 100;
-      } else if (isOpen && livePrice) {
-        const expDate = new Date(tr.expiration_date);
-        const dte = Math.max(0, (expDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-        const pct = dte < 1 ? 0.001 : dte <= 2 ? 0.002 : dte <= 7 ? 0.004 : 0.008;
-        const currentPremium = Math.max(0.01, livePrice * pct);
-        displayPnl = (currentPremium - Number(tr.premium_per_contract)) * Number(tr.contracts) * 100;
+      } else if (isOpen) {
+        displayPnl = null; // No real price available — don't guess
       }
       const _marketOpenLabel = (() => { const s = getNextMarketOpenTime(); return s === 'Market Open' ? '' : ` <span style="opacity:0.5;font-size:0.7em">${s}</span>`; })();
       const pnlHtml = displayPnl != null
