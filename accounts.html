@@ -186,75 +186,22 @@
       const { data: tastyCredsCheck } = await sbClient.from('broker_credentials').select('id').eq('user_id', user.id).eq('broker', 'tastytrade').maybeSingle();
       const tastyConnected = tastyInLocalStorage || tastyCredsCheck;
       
-      // Fetch Tastytrade balance if connected
+      // Fetch Tastytrade balance via OAuth refresh token
       let tastyBalance = null;
-      let tastyUsername = null;
-      let tastySessionToken = null;
-      const { data: tastyCreds } = await sbClient.from('broker_credentials').select('credentials').eq('user_id', user.id).eq('broker', 'tastytrade').maybeSingle();
+      let tastyAccountValue = null;
       
-      if (tastyCreds?.credentials) {
-        tastyUsername = tastyCreds.credentials.username;
-        
-        // Try existing session first
-        if (tastyCreds.credentials.session_token) {
-          try {
-            const balRes = await fetch('https://api.tastytrade.com/accounts', {
-              headers: { Authorization: tastyCreds.credentials.session_token }
-            });
-            if (balRes.ok) {
-              const balJson = await balRes.json();
-              if (balJson?.data?.items?.[0]?.account) {
-                const acct = balJson.data.items[0].account;
-                tastyBalance = parseFloat(acct['cash-available-to-withdraw'] || acct['cash-balance'] || 0);
-                tastySessionToken = tastyCreds.credentials.session_token;
-              }
-            }
-          } catch (e) {
-            console.log('[Accounts] Existing session expired, will re-authenticate');
+      if (tastyConnected) {
+        try {
+          const balRes = await fetch(`${SUPABASE_URL}/functions/v1/tasty-oauth?action=balance&user_id=${user.id}`, {
+            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+          });
+          const balJson = await balRes.json();
+          if (balJson.account_value) {
+            tastyAccountValue = balJson.account_value;
+            tastyBalance = balJson.balance;
           }
-        }
-        
-        // If no valid session, create new one
-        if (!tastySessionToken && tastyCreds.credentials.username && tastyCreds.credentials.password) {
-          try {
-            console.log('[Accounts] Creating new Tastytrade session');
-            const { remember_token } = tastyCreds.credentials;
-            const sessionRes = await fetch('https://api.tastytrade.com/sessions', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(
-                remember_token
-                  ? { login: tastyCreds.credentials.username, password: tastyCreds.credentials.password, 'remember-me': true, 'remember-token': remember_token }
-                  : { login: tastyCreds.credentials.username, password: tastyCreds.credentials.password, 'remember-me': true }
-              )
-            });
-            const sessionJson = await sessionRes.json();
-            tastySessionToken = sessionJson?.data?.['session-token'];
-            
-            if (tastySessionToken) {
-              // Get balance
-              const balRes = await fetch('https://api.tastytrade.com/accounts', {
-                headers: { Authorization: tastySessionToken }
-              });
-              const balJson = await balRes.json();
-              if (balJson?.data?.items?.[0]?.account) {
-                const acct = balJson.data.items[0].account;
-                tastyBalance = parseFloat(acct['cash-available-to-withdraw'] || acct['cash-balance'] || 0);
-              }
-              
-              // Store new session token
-              await sbClient.from('broker_credentials').update({
-                credentials: {
-                  ...tastyCreds.credentials,
-                  session_token: tastySessionToken,
-                  account_number: balJson?.data?.items?.[0]?.account?.['account-number'],
-                  session_created_at: new Date().toISOString()
-                }
-              }).eq('user_id', user.id).eq('broker', 'tastytrade');
-            }
-          } catch (e) {
-            console.log('[Accounts] Could not authenticate Tastytrade:', e);
-          }
+        } catch (e) {
+          console.log('[Accounts] Could not fetch Tastytrade balance:', e);
         }
       }
 
@@ -322,8 +269,23 @@
           }
         }
         
+        // Add Tastytrade with balance
+        if (tastyConnected) {
+          html += `
+            <div class="broker-account-card connected">
+              <div>
+                <div class="bac-name">Tastytrade Live</div>
+                <div class="bac-type">Live Trading · Direct API</div>
+              </div>
+              <div class="bac-balance" style="display:flex;flex-direction:column;align-items:flex-end;">
+                <div class="bac-balance-label">Account Value</div>
+                <div class="bac-balance-val">$${tastyAccountValue ? tastyAccountValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</div>
+              </div>
+            </div>`;
+        }
+        
         connectedBrokers.forEach(key => {
-          if (key === 'tastytrade') return;
+          if (key === 'tastytrade') return; // Already handled above
           const label = key.charAt(0).toUpperCase() + key.slice(1);
           html += `
             <div class="broker-account-card">

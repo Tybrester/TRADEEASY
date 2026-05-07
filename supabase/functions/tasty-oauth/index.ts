@@ -1,14 +1,32 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// TODO: Replace with your tastytrade OAuth credentials after developer approval
-const TASTY_CLIENT_ID = Deno.env.get('TASTY_CLIENT_ID') || '';
-const TASTY_CLIENT_SECRET = Deno.env.get('TASTY_CLIENT_SECRET') || '';
-const TASTY_REDIRECT_URI = Deno.env.get('TASTY_REDIRECT_URI') || 'https://your-app.com/tasty-callback.html';
-const TASTY_OAUTH_URL = 'https://api.tastytrade.com/oauth/authorize'; // Verify actual endpoint
-const TASTY_TOKEN_URL = 'https://api.tastytrade.com/oauth/token'; // Verify actual endpoint
+// Tastytrade Personal Grant flow - use refresh token to get access tokens
+const TASTY_TOKEN_URL = 'https://api.tastytrade.com/oauth/token';
+
+async function getAccessToken(refreshToken: string, clientSecret: string): Promise<{ access_token: string; expires_in: number } | null> {
+  try {
+    const res = await fetch(TASTY_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_secret: clientSecret
+      })
+    });
+    const json = await res.json();
+    if (json.error) throw new Error(json.error_description || json.error);
+    return { access_token: json.access_token, expires_in: json.expires_in || 900 };
+  } catch (err) {
+    console.error('[TastyOAuth] Token refresh failed:', err);
+    return null;
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -16,8 +34,64 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const action = url.searchParams.get('action');
 
-  // Step 1: Generate OAuth login URL
-  if (action === 'login') {
+  // Personal Grant flow: user provides refresh token directly
+  if (action === 'connect') {
+    const { user_id, refresh_token, client_secret } = await req.json();
+    
+    if (!user_id || !refresh_token || !client_secret) {
+      return new Response(JSON.stringify({ error: 'user_id, refresh_token, and client_secret required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+
+    try {
+      // Get initial access token
+      const token = await getAccessToken(refresh_token, client_secret);
+      if (!token) throw new Error('Failed to get access token');
+
+      // Get account info
+      let accountNumber = null;
+      try {
+        const acctRes = await fetch('https://api.tastytrade.com/customers/me/accounts', {
+          headers: { Authorization: `Bearer ${token.access_token}` }
+        });
+        const acctJson = await acctRes.json();
+        accountNumber = acctJson?.data?.items?.[0]?.account?.['account-number'] || null;
+      } catch (_) {}
+
+      // Save credentials (encrypt refresh token in credentials field)
+      await supabase.from('broker_credentials').upsert({
+        user_id,
+        broker: 'tastytrade',
+        access_token: token.access_token,
+        credentials: { 
+          refresh_token,
+          client_secret,
+          account_number: accountNumber,
+          expires_at: new Date(Date.now() + token.expires_in * 1000).toISOString()
+        },
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,broker' });
+
+      return new Response(JSON.stringify({ success: true, account: accountNumber }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    } catch (err: any) {
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+  }
+
+  // Refresh access token using stored refresh token
+  if (action === 'refresh') {
     const userId = url.searchParams.get('user_id');
     if (!userId) {
       return new Response(JSON.stringify({ error: 'user_id required' }), {
@@ -26,70 +100,36 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Store state in Supabase for verification
-    const state = crypto.randomUUID();
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-    await supabase.from('oauth_states').insert({ state, user_id: userId, created_at: new Date().toISOString() });
-
-    const loginUrl = `${TASTY_OAUTH_URL}?client_id=${TASTY_CLIENT_ID}&redirect_uri=${encodeURIComponent(TASTY_REDIRECT_URI)}&response_type=code&state=${state}`;
-
-    return new Response(JSON.stringify({ login_url: loginUrl }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  // Step 2: Exchange code for tokens (called from callback page)
-  if (action === 'callback') {
-    const code = url.searchParams.get('code');
-    const state = url.searchParams.get('state');
-
-    if (!code || !state) {
-      return new Response(JSON.stringify({ error: 'code and state required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
 
     try {
-      // Exchange code for tokens
-      const tokenRes = await fetch(TASTY_TOKEN_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          code,
-          redirect_uri: TASTY_REDIRECT_URI,
-          client_id: TASTY_CLIENT_ID,
-          client_secret: TASTY_CLIENT_SECRET
-        })
-      });
-
-      const tokens = await tokenRes.json();
-      if (tokens.error) throw new Error(tokens.error_description || tokens.error);
-
-      // Store tokens in Supabase
-      const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const { data: creds } = await supabase.from('broker_credentials')
+        .select('credentials')
+        .eq('user_id', userId)
+        .eq('broker', 'tastytrade')
+        .single();
       
-      // Get user_id from state
-      const { data: stateData } = await supabase.from('oauth_states').select('user_id').eq('state', state).single();
-      if (!stateData) throw new Error('Invalid state');
+      if (!creds?.credentials?.refresh_token) {
+        throw new Error('No refresh token found');
+      }
 
-      await supabase.from('broker_credentials').upsert({
-        user_id: stateData.user_id,
-        broker: 'tastytrade',
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+      const token = await getAccessToken(creds.credentials.refresh_token, creds.credentials.client_secret);
+      if (!token) throw new Error('Token refresh failed');
+
+      // Update access token
+      await supabase.from('broker_credentials').update({
+        access_token: token.access_token,
+        credentials: { ...creds.credentials, expires_at: new Date(Date.now() + token.expires_in * 1000).toISOString() },
         updated_at: new Date().toISOString()
-      }, { onConflict: 'user_id,broker' });
+      }).eq('user_id', userId).eq('broker', 'tastytrade');
 
-      // Clean up state
-      await supabase.from('oauth_states').delete().eq('state', state);
-
-      return new Response(JSON.stringify({ success: true }), {
+      return new Response(JSON.stringify({ access_token: token.access_token }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
-    } catch (err) {
+    } catch (err: any) {
       return new Response(JSON.stringify({ error: err.message }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -97,49 +137,128 @@ Deno.serve(async (req) => {
     }
   }
 
-  return new Response(JSON.stringify({ error: 'Invalid action' }), {
+  // Get account balance
+  if (action === 'balance') {
+    const userId = url.searchParams.get('user_id');
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'user_id required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+
+    try {
+      const { data: creds } = await supabase.from('broker_credentials')
+        .select('credentials')
+        .eq('user_id', userId)
+        .eq('broker', 'tastytrade')
+        .single();
+      
+      if (!creds?.credentials?.refresh_token) {
+        throw new Error('No credentials found');
+      }
+
+      // Get fresh access token
+      const token = await getAccessToken(creds.credentials.refresh_token, creds.credentials.client_secret);
+      if (!token) throw new Error('Token refresh failed');
+
+      // Fetch account balance
+      const accountNumber = creds.credentials.account_number;
+      const balanceRes = await fetch(`https://api.tastytrade.com/accounts/${accountNumber}/balance`, {
+        headers: { Authorization: `Bearer ${token.access_token}` }
+      });
+      const balanceJson = await balanceRes.json();
+
+      return new Response(JSON.stringify({ 
+        balance: balanceJson.data?.['cash-available-to-withdraw'] || balanceJson.data?.['account-value'] || 0,
+        account_value: balanceJson.data?.['account-value'] || 0,
+        buying_power: balanceJson.data?.['margin-equity'] || balanceJson.data?.['cash-available-to-withdraw'] || 0
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    } catch (err: any) {
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+  }
+
+  // Get option quote (real-time)
+  if (action === 'quote') {
+    const userId = url.searchParams.get('user_id');
+    const symbol = url.searchParams.get('symbol'); // e.g., "SPY" 
+    const optionType = url.searchParams.get('type'); // "call" or "put"
+    const strike = url.searchParams.get('strike');
+    const expiration = url.searchParams.get('expiration'); // YYYY-MM-DD
+    
+    if (!userId || !symbol || !optionType || !strike || !expiration) {
+      return new Response(JSON.stringify({ error: 'user_id, symbol, type, strike, expiration required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+
+    try {
+      const { data: creds } = await supabase.from('broker_credentials')
+        .select('credentials')
+        .eq('user_id', userId)
+        .eq('broker', 'tastytrade')
+        .single();
+      
+      if (!creds?.credentials?.refresh_token) {
+        throw new Error('No credentials found');
+      }
+
+      // Get fresh access token
+      const token = await getAccessToken(creds.credentials.refresh_token, creds.credentials.client_secret);
+      if (!token) throw new Error('Token refresh failed');
+
+      // Format option symbol for Tastytrade: SPY 240517 450 C (SPY May 17 2024 $450 Call)
+      const expDate = expiration.replace(/-/g, '').slice(2); // YYMMDD
+      const strikeNum = Number(strike);
+      const optSymbol = `${symbol} ${expDate.slice(0,2)}${expDate.slice(2,4)}${expDate.slice(4)} ${Math.floor(strikeNum)} ${optionType.toLowerCase() === 'call' ? 'C' : 'P'}`;
+      
+      // Fetch option quote from Tastytrade
+      const quoteRes = await fetch(`https://api.tastytrade.com/market-data/quotes?symbol=${encodeURIComponent(optSymbol)}`, {
+        headers: { Authorization: `Bearer ${token.access_token}` }
+      });
+      const quoteJson = await quoteRes.json();
+      
+      const quote = quoteJson.data?.items?.[0];
+      if (!quote) throw new Error('No quote returned');
+
+      return new Response(JSON.stringify({
+        bid: quote.bid || 0,
+        ask: quote.ask || 0,
+        last: quote.last || 0,
+        mid: (quote.bid + quote.ask) / 2 || quote.last || 0,
+        volume: quote.volume || 0,
+        open_interest: quote['open-interest'] || 0,
+        source: 'tastytrade'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    } catch (err: any) {
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+  }
+
+  return new Response(JSON.stringify({ error: 'Invalid action. Use: connect, refresh, balance, or quote' }), {
     status: 400,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
 });
-
-// Supabase client helper
-function createClient(url: string, key: string) {
-  return {
-    from: (table: string) => ({
-      insert: async (data: any) => {
-        await fetch(`${url}/rest/v1/${table}`, {
-          method: 'POST',
-          headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-          body: JSON.stringify(data)
-        });
-        return { data: null, error: null };
-      },
-      select: (cols: string) => ({
-        eq: (col: string, val: string) => ({
-          single: async () => {
-            const r = await fetch(`${url}/rest/v1/${table}?${col}=eq.${val}&select=${cols}`, {
-              headers: { 'apikey': key, 'Authorization': `Bearer ${key}` }
-            });
-            return { data: await r.json(), error: null };
-          }
-        }),
-        delete: async () => {
-          await fetch(`${url}/rest/v1/${table}?${col}=eq.${val}`, {
-            method: 'DELETE',
-            headers: { 'apikey': key, 'Authorization': `Bearer ${key}` }
-          });
-          return { data: null, error: null };
-        }
-      }),
-      upsert: async (data: any, opts?: any) => {
-        await fetch(`${url}/rest/v1/${table}`, {
-          method: 'POST',
-          headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
-          body: JSON.stringify(data)
-        });
-        return { data: null, error: null };
-      }
-    })
-  };
-}

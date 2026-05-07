@@ -307,25 +307,19 @@
         <button class="modal-close" onclick="closeTastyModal()">&times;</button>
       </div>
       <div class="modal-body">
-        <!-- Step 1: credentials -->
-        <div id="tasty-step-1">
-          <div class="field-group">
-            <label>Username</label>
-            <input type="text" id="tasty-username" placeholder="Your tastytrade username" autocomplete="off" />
-          </div>
-          <div class="field-group">
-            <label>Password</label>
-            <input type="password" id="tasty-password" placeholder="Your tastytrade password" autocomplete="off" />
-          </div>
-          <div class="field-hint" style="color:#555;">Your credentials are stored encrypted and only used to authenticate with the tastytrade API.</div>
+        <div class="field-group">
+          <label>Refresh Token</label>
+          <input type="text" id="tasty-refresh-token" placeholder="From my.tastytrade.com > API > OAuth Applications > Create Grant" autocomplete="off" />
         </div>
-        <!-- Step 2: MFA code -->
-        <div id="tasty-step-2" style="display:none;">
-          <div style="font-size:0.85rem;color:var(--muted);margin-bottom:14px;">tastytrade sent a verification code to your email or phone. Enter it below.</div>
-          <div class="field-group">
-            <label>Verification Code</label>
-            <input type="text" id="tasty-mfa-code" placeholder="e.g. 123456" autocomplete="off" style="letter-spacing:0.15em;font-size:1.1rem;" />
-          </div>
+        <div class="field-group">
+          <label>Client Secret</label>
+          <input type="password" id="tasty-client-secret" placeholder="From OAuth Application settings" autocomplete="off" />
+        </div>
+        <div class="field-hint" style="color:#555;">
+          1. Go to <a href="https://my.tastytrade.com" target="_blank" style="color:var(--accent);">my.tastytrade.com</a> > Manage > My Profile > API > OAuth Applications<br>
+          2. Create an OAuth app if you haven't already<br>
+          3. Click "Create Grant" to get your refresh token<br>
+          4. Copy your Client Secret from the app settings
         </div>
         <div id="tasty-error" style="display:none;color:var(--red);font-size:0.82rem;margin-top:4px;"></div>
       </div>
@@ -339,7 +333,14 @@
   <script>
     const SUPABASE_URL = 'https://isanhutzyctcjygjhzbn.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzYW5odXR6eWN0Y2p5Z2poemJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMTYzNDYsImV4cCI6MjA5MTY5MjM0Nn0.L0ATp-IriR708C2n3as_YXDgjHvtn_CWubbzPeSxRi0';
-    const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        storage: localStorage,
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    });
 
     let currentUser = null;
     let tastyMfaPending = false;
@@ -373,111 +374,78 @@
         
         if (json.login_url) {
           window.location.href = json.login_url;
+        } else if (json.error?.includes('TASTY_CLIENT_ID not configured')) {
+          alert('OAuth not configured. Using credentials instead...');
+          openTastyModal();
         } else {
-          throw new Error(json.error || 'Failed to get OAuth URL');
+          throw new Error(json.error || 'Failed to get login URL');
         }
       } catch (err) {
-        alert('OAuth not configured yet: ' + err.message);
+        alert('Using credentials instead: ' + err.message);
+        openTastyModal();
+      } finally {
         btn.textContent = 'Connect with tastytrade';
         btn.disabled = false;
       }
     }
 
     function openTastyModal() {
-      document.getElementById('tasty-username').value = '';
-      document.getElementById('tasty-password').value = '';
+      document.getElementById('tasty-refresh-token').value = '';
+      document.getElementById('tasty-client-secret').value = '';
       document.getElementById('tasty-error').style.display = 'none';
       document.getElementById('tastytrade-modal').classList.add('open');
     }
 
     function closeTastyModal() {
       document.getElementById('tastytrade-modal').classList.remove('open');
-      tastyMfaPending = false;
-      document.getElementById('tasty-step-1').style.display = 'block';
-      document.getElementById('tasty-step-2').style.display = 'none';
-      document.getElementById('tasty-save-btn').textContent = 'Connect';
     }
 
     async function saveTastyCredentials() {
       const errEl = document.getElementById('tasty-error');
-      const btn   = document.getElementById('tasty-save-btn');
+      const btn = document.getElementById('tasty-save-btn');
       errEl.style.display = 'none';
 
-      // Step 2 — submit MFA code
-      if (tastyMfaPending) {
-        const code = document.getElementById('tasty-mfa-code').value.trim();
-        if (!code) { errEl.textContent = 'Enter the verification code.'; errEl.style.display = 'block'; return; }
+      const refreshToken = document.getElementById('tasty-refresh-token').value.trim();
+      const clientSecret = document.getElementById('tasty-client-secret').value.trim();
 
-        const username = document.getElementById('tasty-username').value.trim();
-        const password = document.getElementById('tasty-password').value.trim();
-        btn.textContent = 'Verifying...'; btn.disabled = true;
-
-        try {
-          const res = await fetch(`${SUPABASE_URL}/functions/v1/tasty-auth`, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json', 
-              'apikey': SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            },
-            body: JSON.stringify({ username, password, mfa_code: code, user_id: currentUser.id })
-          });
-          const json = await res.json();
-          if (json.error) throw new Error(json.error);
-
-          localStorage.setItem('webhook_tastytrade', 'true');
-          applyTastyUI(true, username);
-          closeTastyModal();
-        } catch(e) {
-          errEl.textContent = e.message || 'Invalid code. Try again.';
-          errEl.style.display = 'block';
-        } finally {
-          btn.textContent = 'Verify'; btn.disabled = false;
-        }
+      if (!refreshToken || !clientSecret) {
+        errEl.textContent = 'Refresh token and client secret are required.';
+        errEl.style.display = 'block';
         return;
       }
 
-      // Step 1 — submit username/password
-      const username = document.getElementById('tasty-username').value.trim();
-      const password = document.getElementById('tasty-password').value.trim();
-      if (!username || !password) { errEl.textContent = 'Username and password are required.'; errEl.style.display = 'block'; return; }
-
-      btn.textContent = 'Connecting...'; btn.disabled = true;
+      btn.textContent = 'Connecting...';
+      btn.disabled = true;
 
       try {
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/tasty-auth`, {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/tasty-oauth?action=connect`, {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json', 
+          headers: {
+            'Content-Type': 'application/json',
             'apikey': SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
           },
-          body: JSON.stringify({ username, password, user_id: currentUser.id })
+          body: JSON.stringify({
+            user_id: currentUser.id,
+            refresh_token: refreshToken,
+            client_secret: clientSecret
+          })
         });
         const json = await res.json();
 
-        if (json.mfa_required) {
-          tastyMfaPending = true;
-          document.getElementById('tasty-step-1').style.display = 'none';
-          document.getElementById('tasty-step-2').style.display = 'block';
-          btn.textContent = 'Verify';
-          btn.disabled = false;
-          return;
-        }
-
-        // Handle error - either from json.error or non-ok status
         if (!res.ok || json.error) {
-          throw new Error(json.error || 'Invalid credentials. Please check your username and password.');
+          throw new Error(json.error || 'Failed to connect');
         }
 
         localStorage.setItem('webhook_tastytrade', 'true');
-        applyTastyUI(true, username);
+        applyTastyUI(true, json.account || 'Connected');
         closeTastyModal();
-      } catch(e) {
-        errEl.textContent = e.message || 'Could not connect. Check your credentials.';
+      } catch (e) {
+        errEl.textContent = e.message || 'Could not connect. Check your tokens.';
         errEl.style.display = 'block';
       } finally {
-        btn.textContent = 'Connect'; btn.disabled = false;
+        btn.textContent = 'Connect';
+        btn.disabled = false;
       }
     }
 
@@ -492,19 +460,25 @@
       const status  = document.getElementById('tastytrade-status');
       const acctEl  = document.getElementById('tastytrade-account-display');
       const connBtn = document.getElementById('tastytrade-connect-btn');
+      const apiBtn  = document.getElementById('tastytrade-api-btn');
       const discBtn = document.getElementById('tastytrade-disconnect-btn');
       if (connected) {
         card.classList.add('broker-connected');
-        status.style.display = 'block';
-        acctEl.style.display = 'block';
-        acctEl.textContent = username;
-        connBtn.textContent = 'Edit Credentials';
+        status.style.display = 'flex';
+        status.style.alignItems = 'center';
+        status.style.gap = '6px';
+        status.innerHTML = '<span style="color:var(--accent);font-size:1rem;">●</span> Live Trading Connected';
+        acctEl.style.display = 'none';
+        connBtn.style.display = 'none';
+        apiBtn.style.display = 'none';
         discBtn.style.display = 'block';
       } else {
         card.classList.remove('broker-connected');
         status.style.display = 'none';
         acctEl.style.display = 'none';
-        connBtn.textContent = 'Connect Account';
+        connBtn.style.display = 'block';
+        connBtn.textContent = 'Connect with tastytrade';
+        apiBtn.style.display = 'block';
         discBtn.style.display = 'none';
       }
     }
@@ -584,22 +558,61 @@
     }
 
     async function init() {
-      const { data: { session } } = await sbClient.auth.getSession();
-      if (!session) { window.location.href = 'signin.html'; return; }
-      currentUser = session.user;
+      // Debug: check localStorage
+      const storageKey = 'sb-' + SUPABASE_URL.replace('https://', '').replace('.supabase.co', '') + '-auth-token';
+      console.log('[Brokers] Looking for key:', storageKey);
+      const storedSession = localStorage.getItem(storageKey);
+      console.log('[Brokers] Stored session exists:', !!storedSession);
+      
+      if (!storedSession) {
+        console.log('[Brokers] No stored session, redirecting');
+        window.location.href = 'signin.html';
+        return;
+      }
+      
+      try {
+        // Manually set the session from localStorage
+        const sessionData = JSON.parse(storedSession);
+        const { data, error } = await sbClient.auth.setSession({
+          access_token: sessionData.access_token,
+          refresh_token: sessionData.refresh_token
+        });
+        console.log('[Brokers] setSession result:', data?.session?.user?.id, 'Error:', error);
+        
+        if (data?.session?.user) {
+          currentUser = data.session.user;
+        } else {
+          // Fallback: use stored user directly
+          currentUser = sessionData.user;
+        }
+      } catch (e) {
+        console.log('[Brokers] Failed to restore session:', e);
+        window.location.href = 'signin.html';
+        return;
+      }
+      
+      console.log('[Brokers] Current user:', currentUser?.id);
       document.getElementById('loading-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
 
-      // Check if tastytrade already connected
-      console.log('[Brokers] Checking for tastytrade credentials...');
-      const { data: creds, error: credsError } = await sbClient.from('broker_credentials').select('credentials').eq('user_id', currentUser.id).eq('broker', 'tastytrade').maybeSingle();
-      console.log('[Brokers] Creds result:', creds, 'Error:', credsError);
-      if (creds) {
-        console.log('[Brokers] Found credentials, setting localStorage and UI');
-        localStorage.setItem('webhook_tastytrade', 'true');
-        applyTastyUI(true, creds.credentials.username);
-      } else {
-        console.log('[Brokers] No credentials found');
+      // Check if tastytrade already connected (localStorage fallback for RLS issues)
+      const tastyConnected = localStorage.getItem('webhook_tastytrade') === 'true';
+      console.log('[Brokers] Tastytrade localStorage status:', tastyConnected);
+      if (tastyConnected) {
+        applyTastyUI(true, 'Connected');
+        // Fetch and display balance
+        try {
+          const balRes = await fetch(`${SUPABASE_URL}/functions/v1/tasty-oauth?action=balance&user_id=${currentUser.id}`, {
+            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+          });
+          const balJson = await balRes.json();
+          if (balJson.account_value) {
+            const statusEl = document.getElementById('tastytrade-status');
+            statusEl.innerHTML = `<span style="color:var(--accent);font-size:1rem;">●</span> Live Trading • $${Number(balJson.account_value).toLocaleString()}`;
+          }
+        } catch (e) {
+          console.log('[Brokers] Balance fetch failed:', e);
+        }
       }
 
       // Check if Alpaca already connected
@@ -630,12 +643,13 @@
       }
       // Show Bots sidebar if enabled (or admin)
       (async () => {
-        const isAdmin = session.user.id === 'd0bb84ba-f968-446c-9792-9bcff8849e37';
+        if (!currentUser) return;
+        const isAdmin = currentUser.id === 'd0bb84ba-f968-446c-9792-9bcff8849e37';
         if (isAdmin) {
           const bsec = document.getElementById('bots-sidebar-section');
           if (bsec) bsec.style.display = '';
         } else {
-          const { data: us } = await sbClient.from('user_settings').select('bots_enabled').eq('user_id', session.user.id).maybeSingle();
+          const { data: us } = await sbClient.from('user_settings').select('bots_enabled').eq('user_id', currentUser.id).maybeSingle();
           if (us?.bots_enabled) {
             const bsec = document.getElementById('bots-sidebar-section');
             if (bsec) bsec.style.display = '';

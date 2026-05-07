@@ -433,9 +433,10 @@ function generateSignalBoof20(candles: Candle[], tradeDirection = 'both', thresh
     return { signal: 'none', price: curClose, trend: 0, ema: curClose, adx: 50, reason: 'Boof 2.0 calculation error' };
   }
 
-  // Track position state like other strategies
+  // Track position state — only last 30 bars to avoid stale history blocking signals
   let inLong = false;
-  for (let j = 20; j <= i; j++) {
+  const replayStart = Math.max(20, i - 30);
+  for (let j = replayStart; j <= i; j++) {
     if (boofResults[j].signal === 1 && !inLong) inLong = true;
     else if (boofResults[j].signal === -1 && inLong) inLong = false;
   }
@@ -767,7 +768,7 @@ async function fetchCandles(symbol: string, interval = '1h', bars = 150, userId?
       
       // Yahoo Finance requires range based on interval
       const rangeMap: Record<string, string> = {
-        '1m': '1d', '2m': '5d', '5m': '5d', '15m': '5d', '30m': '1mo',
+        '1m': '5d', '2m': '5d', '5m': '5d', '15m': '5d', '30m': '1mo',
         '1h': '1mo', '4h': '3mo', '1d': '1y', '1wk': '5y'
       };
       const range = rangeMap[yahooInterval] || '1mo';
@@ -1223,7 +1224,7 @@ Deno.serve(async (req) => {
         if (botSignal === 'rsi_macd') {
           signalResult = generateSignalRSIMACD(candles, tradeDirection);
         } else if (botSignal === 'boof20') {
-          signalResult = generateSignalBoof20(candles, tradeDirection, 0.0, 0.0);
+          signalResult = generateSignalBoof20(candles, tradeDirection, 0.001, -0.001);
         } else if (botSignal === 'boof30') {
           signalResult = generateSignalBoof30(candles, tradeDirection);
         } else {

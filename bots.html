@@ -330,7 +330,7 @@
 
     .indicator-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(130,177,255,0.08); border: 1px solid rgba(130,177,255,0.15); color: #82b1ff; font-size: 0.72rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
 
-    .paper-balance-box { background: #0a0a0a; border: 1px solid #1e1e1e; border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
+    .paper-balance-box { background: #0a0a0a; border: 1px solid #1e1e1e; border-radius: 10px; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
     .paper-balance-label { font-size: 0.68rem; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.08em; }
     .paper-balance-value { font-size: 1.3rem; font-weight: 900; color: var(--accent); letter-spacing: -0.02em; }
     .paper-balance-pnl { font-size: 0.75rem; font-weight: 700; margin-top: 2px; }
@@ -463,11 +463,12 @@
         <input type="text" id="new-stock-name" placeholder="e.g. SPY Scalper" maxlength="40" />
       </div>
       <div class="create-bot-field">
-        <label>Scan Mode</label>
+        <label>Scan Mode <span style="color:#555;font-weight:400;font-size:0.72rem;">(select multiple)</span></label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button type="button" class="dir-pill active" id="new-scan-single" onclick="setNewBotScanMode('single')">Single Symbol</button>
-          <button type="button" class="dir-pill" id="new-scan-stocks" onclick="setNewBotScanMode('scan_stocks')">Stocks List</button>
-          <button type="button" class="dir-pill" id="new-scan-crypto" onclick="setNewBotScanMode('scan_crypto')">Crypto List</button>
+          <button type="button" class="dir-pill active" id="new-scan-single" onclick="toggleNewBotScanMode('single')">Single Symbol</button>
+          <button type="button" class="dir-pill" id="new-scan-stocks" onclick="toggleNewBotScanMode('scan_stocks')">Stocks List</button>
+          <button type="button" class="dir-pill" id="new-scan-crypto" onclick="toggleNewBotScanMode('scan_crypto')">Crypto List</button>
+          <button type="button" class="dir-pill" id="new-scan-futures" onclick="toggleNewBotScanMode('scan_futures')">Futures List</button>
         </div>
         <input type="hidden" id="new-scan-mode" value="single" />
       </div>
@@ -546,15 +547,6 @@
           <option value="boof30">Boof 3.0 (KMeans Regime Detection)</option>
         </select>
       </div>
-      <div class="create-bot-field">
-        <label>Options Expiry</label>
-        <select id="new-option-expiry" onchange="updateNewBotPreview()">
-          <option value="0dte">0DTE (Same Day - Scalping)</option>
-          <option value="weekly" selected>Weekly (1-7 Days)</option>
-          <option value="monthly">Monthly (30+ Days)</option>
-        </select>
-        <div id="expiry-hint" style="margin-top:6px;font-size:0.75rem;color:#888;">Weekly recommended for most strategies</div>
-      </div>
       <div class="create-bot-actions">
         <button class="create-bot-cancel" onclick="closeCreateModal('create-stock-modal')">Cancel</button>
         <button class="create-bot-submit" onclick="submitCreateStockBot()">Create Stock Bot</button>
@@ -564,15 +556,92 @@
 
   <!-- Create Options Bot Modal -->
   <div class="modal-overlay" id="create-options-modal" onclick="if(event.target===this)closeCreateModal('create-options-modal')">
-    <div class="create-bot-modal">
+    <div class="create-bot-modal" style="max-width:500px;">
       <h2>New Options Bot</h2>
       <div class="create-bot-field">
         <label>Bot Name</label>
-        <input type="text" id="new-options-name" placeholder="e.g. QQQ Iron Condor" maxlength="40" />
+        <input type="text" id="new-options-name" placeholder="e.g. SPY Options Scalper" maxlength="40" />
+      </div>
+      <div class="create-bot-field">
+        <label>Symbol</label>
+        <input type="text" id="new-options-symbol" placeholder="e.g. SPY" maxlength="10" style="text-transform:uppercase;" value="SPY" />
+      </div>
+      <div class="create-bot-field">
+        <label>Trading Style (Auto-sets intervals)</label>
+        <select id="new-options-style" onchange="updateNewOptionsBotPreview()">
+          <option value="hyper">Hyper Scalper (1m candles)</option>
+          <option value="scalper" selected>Scalper (5m candles)</option>
+          <option value="swing">Swing (15m candles)</option>
+          <option value="position">Position (1h candles)</option>
+          <option value="custom">Custom (Manual)</option>
+        </select>
+        <div id="options-style-description" style="margin-top:8px;padding:10px;background:#1a1a1a;border-radius:6px;border:1px solid #333;font-size:0.8rem;color:#aaa;">
+          <strong style="color:#00d4ff;">Scalper Settings:</strong><br/>
+          • Candle: 5 minute charts<br/>
+          • Scan: Every 1 minute<br/>
+          • Trend Filter: 1-hour EMA<br/>
+          • Best for: Quick intraday moves
+        </div>
+      </div>
+      <div class="create-bot-field" id="new-options-custom-settings" style="display:none;">
+        <label>Custom Candle Interval</label>
+        <select id="new-options-custom-candle">
+          <option value="1m">1 minute</option>
+          <option value="5m" selected>5 minutes</option>
+          <option value="15m">15 minutes</option>
+          <option value="30m">30 minutes</option>
+          <option value="1h">1 hour</option>
+        </select>
+      </div>
+      <div class="create-bot-field">
+        <label>$ Amount per Trade</label>
+        <input type="number" id="new-options-amount" value="1000" min="100" />
+      </div>
+      <div class="create-bot-field">
+        <label>Option Type</label>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="dir-pill active" id="new-opt-type-both" onclick="setNewOptType('both')">Both (Follow Signal)</button>
+          <button type="button" class="dir-pill" id="new-opt-type-call" onclick="setNewOptType('call')">Calls Only</button>
+          <button type="button" class="dir-pill" id="new-opt-type-put" onclick="setNewOptType('put')">Puts Only</button>
+        </div>
+        <input type="hidden" id="new-options-type" value="both" />
+      </div>
+      <div class="create-bot-field">
+        <label>Options Expiry</label>
+        <select id="new-options-expiry">
+          <option value="0dte" selected>0DTE (Same Day)</option>
+          <option value="weekly">Weekly (Next Friday)</option>
+          <option value="biweekly">Bi-Weekly (2 Weeks Out)</option>
+          <option value="monthly">Monthly (30+ Days)</option>
+        </select>
+      </div>
+      <div class="create-bot-field">
+        <label>Signal Strategy</label>
+        <select id="new-options-signal">
+          <option value="supertrend">Boof 1.0 (Adaptive SuperTrend + EMA50 + ADX)</option>
+          <option value="boof20">Boof 2.0 (ML-Style Predictive)</option>
+          <option value="boof30">Boof 3.0 (KMeans Regime Detection)</option>
+        </select>
+      </div>
+      <div class="create-bot-field">
+        <label>Take Profit %</label>
+        <input type="number" id="new-options-tp" value="50" min="1" max="1000" />
+      </div>
+      <div class="create-bot-field">
+        <label>Stop Loss %</label>
+        <input type="number" id="new-options-sl" value="25" min="1" max="100" />
+      </div>
+      <div class="create-bot-field">
+        <label>Broker</label>
+        <select id="new-options-broker">
+          <option value="paper">Paper Trading (Test)</option>
+          <option value="tastytrade">Tastytrade (Live)</option>
+          <option value="alpaca">Alpaca (Live)</option>
+        </select>
       </div>
       <div class="create-bot-actions">
         <button class="create-bot-cancel" onclick="closeCreateModal('create-options-modal')">Cancel</button>
-        <button class="create-bot-submit" onclick="submitCreateOptionsBot()">Create Bot</button>
+        <button class="create-bot-submit" onclick="submitCreateOptionsBot()">Create Options Bot</button>
       </div>
     </div>
   </div>
@@ -582,7 +651,10 @@
     <div class="activity-modal">
       <div class="activity-modal-header">
         <div class="activity-modal-title" id="activity-modal-title">Bot Activity</div>
-        <button class="activity-modal-close" onclick="closeActivityModal()">✕</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="activity-modal-close" style="width:auto;padding:0 12px;font-size:0.75rem;font-weight:700;" onclick="refreshActivityModal()">↻ Refresh</button>
+          <button class="activity-modal-close" onclick="closeActivityModal()">✕</button>
+        </div>
       </div>
       <div class="activity-modal-stats" id="activity-modal-stats"></div>
       <div class="activity-modal-body" id="activity-modal-body">
@@ -625,31 +697,24 @@
           .eq('status', 'open');
         
         let unrealizedPnl = 0;
-        const uniqueSymbols = [...new Set((openTrades || []).map(t => t.symbol))];
-        const livePrices = {};
-        
-        await Promise.all(uniqueSymbols.map(async (sym) => {
+        const { data: session } = await sbClient.auth.getSession();
+        const token = session?.session?.access_token || SUPABASE_ANON_KEY;
+
+        await Promise.all((openTrades || []).map(async (trade) => {
           try {
-            const { data: session } = await sbClient.auth.getSession();
-            const token = session?.session?.access_token || SUPABASE_ANON_KEY;
-            const res = await fetch(`${SUPABASE_URL}/functions/v1/get-price?symbol=${encodeURIComponent(sym)}`, {
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/options-bot`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'get_option_price', symbol: trade.symbol, strike: trade.strike, expiration: trade.expiration_date, option_type: trade.option_type })
             });
             const json = await res.json();
-            if (json?.price) livePrices[sym] = json.price;
+            const currentPremium = json?.price;
+            if (currentPremium && currentPremium > 0) {
+              const contracts = Number(trade.contracts) || 1;
+              unrealizedPnl += (currentPremium - Number(trade.premium_per_contract)) * contracts * 100;
+            }
           } catch (_) {}
         }));
-        
-        for (const trade of (openTrades || [])) {
-          const livePrice = livePrices[trade.symbol];
-          if (livePrice) {
-            const strike = Number(trade.strike);
-            const priceChange = livePrice - strike;
-            const delta = trade.option_type === 'call' ? 0.5 : -0.5;
-            const contracts = Number(trade.contracts) || 1;
-            unrealizedPnl += delta * priceChange * contracts * 100;
-          }
-        }
         
         // Total Account Value = Starting Balance + Realized P&L + Unrealized P&L
         const totalValue = startBalance + realizedPnl + unrealizedPnl;
@@ -873,7 +938,7 @@
       bots.forEach(b => {
         const isRunning = b.enabled && b.auto_submit;
         const paperBalance = Number(b.paper_balance ?? 100000);
-        const expiryLabel = b.bot_expiry_type === '0dte' ? '0DTE' : b.bot_expiry_type === 'weekly' ? 'Weekly' : 'Monthly';
+        const expiryLabel = b.bot_expiry_type === '0dte' ? '0DTE' : b.bot_expiry_type === 'biweekly' ? 'Bi-Weekly' : b.bot_expiry_type === 'weekly' ? 'Weekly' : 'Monthly';
         const otmLabel = b.bot_otm_strikes === 0 ? 'ATM' : `${b.bot_otm_strikes} Strike${b.bot_otm_strikes > 1 ? 's' : ''} OTM`;
         const runInt = b.run_interval_min || 60;
         const intervalText = runInt < 60 ? `${runInt}m` : `${Math.floor(runInt/60)}h`;
@@ -909,7 +974,11 @@
                 <span id="opt-paper-pct-${b.id}" style="font-size:0.82rem;font-weight:700;"></span>
               </div>
             </div>
-            <button class="reset-btn" onclick="resetOptionsPaperBalance('${b.id}')">Reset to $100k</button>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="opt-bal-input-${b.id}" placeholder="Set balance..." onkeydown="if(event.key==='Enter')setOptionsPaperBalance('${b.id}')" style="background:#111;border:1px solid #2a2a2a;color:var(--text);padding:5px 10px;border-radius:6px;font-family:inherit;font-size:0.82rem;width:130px;outline:none;flex:1;" />
+              <button onclick="setOptionsPaperBalance('${b.id}')" class="reset-btn" style="white-space:nowrap;">Set</button>
+              <button class="reset-btn" onclick="resetOptionsPaperBalance('${b.id}')">$100k</button>
+            </div>
           </div>
 
           <!-- Master toggle -->
@@ -937,6 +1006,8 @@
                   <option value="scan_etfs" ${b.bot_scan_mode==='scan_etfs'?'selected':''}>ETFs (QQQ, SPY, etc.)</option>
                   <option value="scan_top10" ${b.bot_scan_mode==='scan_top10'?'selected':''}>Top 10 (TSLA, NVDA, etc.)</option>
                   <option value="scan_top50" ${b.bot_scan_mode==='scan_top50'?'selected':''}>Top 50 Volatility</option>
+                  <option value="scan_duo" ${b.bot_scan_mode==='scan_duo'?'selected':''}>Duo (SPY & QQQ)</option>
+                  <option value="scan_boof" ${b.bot_scan_mode==='scan_boof'?'selected':''}>Boof List (QQQ, SPY, TSLA, NVDA)</option>
                   <option value="scan_futures" ${b.bot_scan_mode==='scan_futures'?'selected':''}>Top Futures (Overnight)</option>
                 </select>
               </div>
@@ -949,7 +1020,16 @@
                   <option value="put" ${b.bot_option_type==='put'?'selected':''}>PUTS Only</option>
                 </select>
               </div>
-              <div class="auto-settings-row"><span>Interval</span>
+              <div class="auto-settings-row"><span>Trading Style</span>
+                <select class="auto-input wide" id="ostyle-${b.id}" onchange="updateOptionsBotStyle('${b.id}')">
+                  <option value="hyper" ${b.trading_style==='hyper'?'selected':''}>Hyper Scalper (1m)</option>
+                  <option value="scalper" ${(!b.trading_style||b.trading_style==='scalper')?'selected':''}>Scalper (5m)</option>
+                  <option value="swing" ${b.trading_style==='swing'?'selected':''}>Swing (15m)</option>
+                  <option value="position" ${b.trading_style==='position'?'selected':''}>Position (1h)</option>
+                  <option value="custom" ${b.trading_style==='custom'?'selected':''}>Custom (Manual)</option>
+                </select>
+              </div>
+              <div class="auto-settings-row" id="oint-row-${b.id}" style="${b.trading_style&&b.trading_style!=='custom'?'display:none;':''}"><span>Interval</span>
                 <select class="auto-input wide" id="oint-${b.id}">
                   <option value="1m"  ${b.bot_interval==='1m' ?'selected':''}>1 min</option>
                   <option value="5m"  ${b.bot_interval==='5m' ?'selected':''}>5 min</option>
@@ -962,7 +1042,7 @@
                   <option value="1d"  ${b.bot_interval==='1d' ?'selected':''}>Daily</option>
                 </select>
               </div>
-              <div class="auto-settings-row"><span>Scan Interval</span>
+              <div class="auto-settings-row" id="orunint-row-${b.id}" style="${b.trading_style&&b.trading_style!=='custom'?'display:none;':''}"><span>Scan Interval</span>
                 <select class="auto-input wide" id="orunint-${b.id}" title="How often the bot scans for new trades">
                   <option value="1" ${(b.run_interval_min===1||b.run_interval_min===null)?'selected':''}>1 min</option>
                   <option value="5" ${b.run_interval_min===5?'selected':''}>5 min</option>
@@ -972,7 +1052,18 @@
                   <option value="45" ${b.run_interval_min===45?'selected':''}>45 min</option>
                   <option value="60" ${b.run_interval_min===60?'selected':''}>1 hour</option>
                 </select>
-              </div>/div>
+              </div>
+              <div class="auto-settings-row"><span>Start After Open</span>
+                <select class="auto-input wide" id="ostart-${b.id}" title="Minutes to wait after 9:30 AM ET before trading">
+                  <option value="0"  ${(b.market_open_delay_min===0||b.market_open_delay_min===null)?'selected':''}>0 min  (9:30 AM ET)</option>
+                  <option value="5"  ${b.market_open_delay_min===5 ?'selected':''}>5 min  (9:35 AM ET)</option>
+                  <option value="10" ${b.market_open_delay_min===10?'selected':''}>10 min (9:40 AM ET)</option>
+                  <option value="15" ${b.market_open_delay_min===15?'selected':''}>15 min (9:45 AM ET)</option>
+                  <option value="20" ${b.market_open_delay_min===20?'selected':''}>20 min (9:50 AM ET)</option>
+                  <option value="25" ${b.market_open_delay_min===25?'selected':''}>25 min (9:55 AM ET)</option>
+                  <option value="30" ${b.market_open_delay_min===30?'selected':''}>30 min (10:00 AM ET)</option>
+                </select>
+              </div>
               <div class="auto-settings-row">
                 <span>Signal</span>
                 <select class="auto-input" id="osig-${b.id}" style="width:220px;">
@@ -981,6 +1072,15 @@
                   <option value="boof30" ${b.bot_signal==='boof30'?'selected':''}>Boof 3.0 (KMeans Regime Detection)</option>
                 </select>
               </div>
+              <div class="auto-settings-row"><span>Expiry</span>
+                <select class="auto-input" id="oexp-${b.id}" style="width:160px;">
+                  <option value="0dte" ${b.bot_expiry_type==='0dte'?'selected':''}>0DTE (Today)</option>
+                  <option value="weekly" ${(!b.bot_expiry_type||b.bot_expiry_type==='weekly')?'selected':''}>Weekly (Next Friday)</option>
+                  <option value="biweekly" ${b.bot_expiry_type==='biweekly'?'selected':''}>Bi-Weekly (2 Weeks Out)</option>
+                  <option value="monthly" ${b.bot_expiry_type==='monthly'?'selected':''}>Monthly</option>
+                </select>
+              </div>
+
               <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="otp-${b.id}" type="number" value="${b.take_profit_pct||50}" min="1" max="500" step="1" style="width:80px;" title="Close trade when profit hits this %"/></div>
               <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||-20}" min="-100" max="0" step="1" style="width:80px;" title="Close trade when P&L drops to this % (e.g. -20)"/></div>
               <div class="auto-settings-row"><span>Broker</span>
@@ -1025,11 +1125,36 @@
       if (symRow) symRow.style.display = mode === 'single' ? '' : 'none';
     }
 
-    function setOptionsExpiry(botId, type) {
-      ['0dte','weekly','monthly'].forEach(t => {
-        const btn = document.getElementById(`oexp-${t}-${botId}`);
-        if (btn) btn.classList.toggle('active', t === type);
-      });
+    function updateOptionsBotStyle(botId) {
+      const style = document.getElementById('ostyle-' + botId)?.value || 'scalper';
+      const intervalRow = document.getElementById('oint-row-' + botId);
+      const intervalSelect = document.getElementById('oint-' + botId);
+      const scanRow = document.getElementById('orunint-row-' + botId);
+      const scanSelect = document.getElementById('orunint-' + botId);
+      
+      // Show/hide interval and scan rows based on style
+      if (intervalRow) {
+        intervalRow.style.display = style === 'custom' ? '' : 'none';
+      }
+      if (scanRow) {
+        scanRow.style.display = style === 'custom' ? '' : 'none';
+      }
+      
+      // Auto-set interval and scan based on style
+      const styleSettings = {
+        'hyper': { interval: '1m', scan: 1 },
+        'scalper': { interval: '5m', scan: 1 },
+        'swing': { interval: '15m', scan: 5 },
+        'position': { interval: '1h', scan: 15 },
+        'custom': null // Don't change, let user pick
+      };
+      
+      const settings = styleSettings[style];
+      if (settings) {
+        if (intervalSelect) intervalSelect.value = settings.interval;
+        if (scanSelect) scanSelect.value = settings.scan;
+        console.log(`[OptionsBot] Auto-set: interval=${settings.interval}, scan=${settings.scan}min for ${style} style`);
+      }
     }
 
     function setOptionsDir(botId, dir) {
@@ -1044,7 +1169,8 @@
       const dol = parseFloat(document.getElementById('odol-' + botId)?.value) || 500;
       const int = document.getElementById('oint-' + botId)?.value;
       const runInt = parseInt(document.getElementById('orunint-' + botId)?.value) || 1;
-      const expiry = ['0dte','weekly','monthly'].find(t => document.getElementById(`oexp-${t}-${botId}`)?.classList.contains('active')) || 'weekly';
+      const startDelay = parseInt(document.getElementById('ostart-' + botId)?.value) || 0;
+      const expiry = document.getElementById(`oexp-${botId}`)?.value || 'weekly';
       const dir = ['both','long','short'].find(d => document.getElementById(`odir-${d}-${botId}`)?.classList.contains('active')) || 'both';
       const strikeMode = ['budget','manual'].find(m => document.getElementById(`osm-${m}-${botId}`)?.classList.contains('active')) || 'budget';
       const manualStrike = parseFloat(document.getElementById('ostrike-' + botId)?.value) || null;
@@ -1056,14 +1182,16 @@
       const broker = document.getElementById('obrk-' + botId)?.value || 'paper';
       const botSignal = document.getElementById('osig-' + botId)?.value || 'supertrend';
       const optionType = document.getElementById('otype-' + botId)?.value || 'both';
-      console.log(`[SaveOptions] Bot ${botId}: sym=${sym}, $=${dol}, optionType=${optionType}, int=${int}, runInt=${runInt}min, dir=${dir}, signal=${botSignal}, scan=${scanMode}`);
+      const tradingStyle = document.getElementById('ostyle-' + botId)?.value || 'scalper';
+      console.log(`[SaveOptions] Bot ${botId}: sym=${sym}, $=${dol}, optionType=${optionType}, int=${int}, runInt=${runInt}min, dir=${dir}, signal=${botSignal}, scan=${scanMode}, style=${tradingStyle}`);
       const brkWarn = document.getElementById('obrk-warn-' + botId);
       if (brkWarn) {
         brkWarn.style.display = (broker === 'tastytrade' || broker === 'alpaca') ? 'flex' : 'none';
         const span = brkWarn.querySelector('span');
         if (span) span.textContent = `Live options trading — real orders will be placed on ${broker === 'alpaca' ? 'Alpaca' : 'Tastytrade'}`;
       }
-      const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_option_type: optionType, bot_interval: int, run_interval_min: runInt, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, broker, bot_signal: botSignal, updated_at: new Date().toISOString() }).eq('id', botId);
+      const otmStrikes = parseInt(document.getElementById(`ootm-${botId}`)?.value ?? '0');
+      const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_option_type: optionType, bot_interval: int, run_interval_min: runInt, market_open_delay_min: startDelay, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, broker, bot_signal: botSignal, bot_otm_strikes: otmStrikes, trading_style: tradingStyle, updated_at: new Date().toISOString() }).eq('id', botId);
       const r = document.getElementById('opt-run-result-' + botId);
       if (error) {
         console.error('[SaveOptions] Error:', error);
@@ -1117,6 +1245,26 @@
         sbClient.from('trades').delete().eq('user_id', currentUserId).eq('source', 'auto-bot'),
       ]);
       await Promise.all([loadBots(), loadOptionsBots()]);
+    }
+
+    async function setOptionsPaperBalance(botId) {
+      const val = parseFloat(document.getElementById('opt-bal-input-' + botId)?.value);
+      if (!val || val <= 0) { alert('Enter a valid amount'); return; }
+      const { error } = await sbClient.from('options_bots').update({ paper_balance: val, paper_balance_start: val }).eq('id', botId);
+      if (error) { alert('Error: ' + error.message); return; }
+      const el = document.getElementById('opt-paper-bal-' + botId);
+      if (el) el.textContent = '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('opt-bal-input-' + botId).value = '';
+    }
+
+    async function setStockPaperBalance(botId) {
+      const val = parseFloat(document.getElementById('stk-bal-input-' + botId)?.value);
+      if (!val || val <= 0) { alert('Enter a valid amount'); return; }
+      const { error } = await sbClient.from('stock_bots').update({ paper_balance: val, paper_balance_start: val }).eq('id', botId);
+      if (error) { alert('Error: ' + error.message); return; }
+      const el = document.getElementById('paper-bal-' + botId);
+      if (el) el.textContent = '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('stk-bal-input-' + botId).value = '';
     }
 
     async function resetOptionsPaperBalance(botId) {
@@ -1185,20 +1333,41 @@
       document.getElementById(id).classList.remove('open');
     }
 
-    function setNewBotScanMode(mode) {
-      // Update button states
-      ['single', 'stocks', 'crypto'].forEach(m => {
-        const btn = document.getElementById(`new-scan-${m}`);
-        if (btn) btn.classList.toggle('active', m === mode.replace('scan_', ''));
-      });
-      // Update hidden input
-      const input = document.getElementById('new-scan-mode');
-      if (input) input.value = mode;
-      // Show/hide symbol row
-      const symbolRow = document.getElementById('new-symbol-row');
-      if (symbolRow) {
-        symbolRow.style.display = mode === 'single' ? 'block' : 'none';
+    const _newBotScanModes = new Set(['single']);
+
+    function toggleNewBotScanMode(mode) {
+      const key = mode.replace('scan_', '');
+      const btnId = `new-scan-${key === 'single' ? 'single' : key === 'scan_stocks' ? 'stocks' : key}`;
+
+      if (mode === 'single') {
+        // Single Symbol is exclusive
+        _newBotScanModes.clear();
+        _newBotScanModes.add('single');
+      } else {
+        // Remove single if adding a list mode
+        _newBotScanModes.delete('single');
+        if (_newBotScanModes.has(mode)) {
+          _newBotScanModes.delete(mode);
+          if (_newBotScanModes.size === 0) _newBotScanModes.add('single');
+        } else {
+          _newBotScanModes.add(mode);
+        }
       }
+
+      // Update button states
+      ['single', 'scan_stocks', 'scan_crypto', 'scan_futures'].forEach(m => {
+        const id = `new-scan-${m === 'single' ? 'single' : m.replace('scan_', '')}`;
+        const btn = document.getElementById(id);
+        if (btn) btn.classList.toggle('active', _newBotScanModes.has(m));
+      });
+
+      // Store as comma-separated in hidden input
+      const input = document.getElementById('new-scan-mode');
+      if (input) input.value = [..._newBotScanModes].join(',');
+
+      // Show symbol row only if single is selected
+      const symbolRow = document.getElementById('new-symbol-row');
+      if (symbolRow) symbolRow.style.display = _newBotScanModes.has('single') ? 'block' : 'none';
     }
 
     function updateNewBotPreview() {
@@ -1294,14 +1463,15 @@
       if (!name) { document.getElementById('new-stock-name').focus(); return; }
       
       const scanMode = document.getElementById('new-scan-mode')?.value || 'single';
-      const symbol = scanMode === 'single' 
+      const isSingle = scanMode === 'single' || !scanMode.includes(',') && scanMode === 'single';
+      const hasSingle = scanMode.split(',').includes('single');
+      const symbol = hasSingle
         ? (document.getElementById('new-stock-symbol')?.value?.toUpperCase()?.trim() || 'SPY')
-        : 'SCAN';  // Placeholder for scan modes
+        : 'SCAN';
       const style = document.getElementById('new-stock-style')?.value || 'scalper';
       const amount = parseInt(document.getElementById('new-stock-amount')?.value) || 500;
       const broker = document.getElementById('new-stock-broker')?.value || 'paper';
       const signal = document.getElementById('new-stock-signal')?.value || 'supertrend';
-      const expiryType = document.getElementById('new-option-expiry')?.value || 'weekly';
       
       // Get interval based on style
       let candle, scan, trend;
@@ -1324,14 +1494,56 @@
       }
       
       closeCreateModal('create-stock-modal');
-      await createStockBot(name, symbol, candle, scan, trend, amount, signal, style, broker, scanMode, expiryType);
+      _newBotScanModes.clear(); _newBotScanModes.add('single');
+      await createStockBot(name, symbol, candle, scan, trend, amount, signal, style, broker, scanMode);
+    }
+
+    function updateNewOptionsBotPreview() {
+      const style = document.getElementById('new-options-style').value;
+      const customEl = document.getElementById('new-options-custom-settings');
+      if (customEl) customEl.style.display = style === 'custom' ? '' : 'none';
+      const descriptions = {
+        hyper:   { title: 'Hyper Scalper Settings:', candle: '1 minute charts',  scan: 'Every 1 minute', trend: '1-hour EMA',  expiry: '0DTE (same day)',      best: 'Ultra-fast scalping' },
+        scalper: { title: 'Scalper Settings:',        candle: '5 minute charts',  scan: 'Every 1 minute', trend: '1-hour EMA',  expiry: '0DTE or Weekly',       best: 'Quick intraday moves' },
+        swing:   { title: 'Swing Settings:',          candle: '15 minute charts', scan: 'Every 1 minute', trend: '4-hour EMA',  expiry: 'Weekly (1-7 days)',     best: 'Medium-term swings' },
+        position:{ title: 'Position Settings:',       candle: '1 hour charts',    scan: 'Every 1 minute', trend: 'Daily EMA',   expiry: 'Monthly (30+ days)',    best: 'Long-term trends' },
+        custom:  { title: 'Custom Settings:',         candle: 'You choose',       scan: 'You choose',     trend: 'You choose',  expiry: 'You choose',            best: 'Full manual control' },
+      };
+      const desc = descriptions[style];
+      const el = document.getElementById('options-style-description');
+      if (el && desc) el.innerHTML = `<strong style="color:#00d4ff;">${desc.title}</strong><br/>• Candle: ${desc.candle}<br/>• Scan: ${desc.scan}<br/>• Trend Filter: ${desc.trend}<br/>• Options: ${desc.expiry}<br/>• Best for: ${desc.best}`;
+    }
+
+    function setNewOptType(type) {
+      document.getElementById('new-options-type').value = type;
+      ['both','call','put'].forEach(t => {
+        const btn = document.getElementById('new-opt-type-' + t);
+        if (btn) btn.classList.toggle('active', t === type);
+      });
     }
 
     async function submitCreateOptionsBot() {
       const name = document.getElementById('new-options-name').value.trim();
       if (!name) { document.getElementById('new-options-name').focus(); return; }
+      const symbol  = (document.getElementById('new-options-symbol').value.trim() || 'SPY').toUpperCase();
+      const style   = document.getElementById('new-options-style').value;
+      const amount  = parseFloat(document.getElementById('new-options-amount').value) || 1000;
+      const optType = document.getElementById('new-options-type').value;
+      const expiry  = document.getElementById('new-options-expiry').value;
+      const signal  = document.getElementById('new-options-signal').value;
+      const tp      = parseFloat(document.getElementById('new-options-tp').value) || 50;
+      const sl      = parseFloat(document.getElementById('new-options-sl').value) || 25;
+      const broker  = document.getElementById('new-options-broker').value;
+      const styleIntervals = {
+        hyper:   { candle: '1m',  scan: 1, trend: '1h' },
+        scalper: { candle: '5m',  scan: 1, trend: '1h' },
+        swing:   { candle: '15m', scan: 1, trend: '4h' },
+        position:{ candle: '1h',  scan: 1, trend: '1d' },
+        custom:  { candle: document.getElementById('new-options-custom-candle')?.value || '5m', scan: 1, trend: '1h' },
+      };
+      const intervals = styleIntervals[style] || styleIntervals.scalper;
       closeCreateModal('create-options-modal');
-      await createOptionsBot(name);
+      await createOptionsBot(name, symbol, intervals.candle, intervals.scan, intervals.trend, amount, optType, expiry, signal, tp, sl, broker, style);
     }
 
     async function editBotName(id, currentName, type) {
@@ -1387,13 +1599,15 @@
       openCreateModal('create-stock-modal');
     }
 
-    async function createStockBot(name, symbol = 'SPY', interval = '5m', runIntervalMin = 5, trendFilter = '1h', dollarAmount = 500, signal = 'supertrend', tradingStyle = 'scalper', broker = 'paper', scanMode = 'single', expiryType = 'weekly') {
+    async function createStockBot(name, symbol = 'SPY', interval = '5m', runIntervalMin = 5, trendFilter = '1h', dollarAmount = 500, signal = 'supertrend', tradingStyle = 'scalper', broker = 'paper', scanMode = 'single') {
       console.log(`[CreateStockBot] Creating stock bot: ${name} | ${symbol} | ${interval} | $${dollarAmount} | broker=${broker} | scan=${scanMode}`);
       
-      // Set scan flags based on mode
-      const isSingle = scanMode === 'single';
-      const isStocks = scanMode === 'scan_stocks';
-      const isCrypto = scanMode === 'scan_crypto';
+      // Handle comma-separated multiple scan modes
+      const modes = scanMode.split(',').map(m => m.trim());
+      const hasSingle = modes.includes('single');
+      const isStocks = modes.includes('scan_stocks');
+      const isCrypto = modes.includes('scan_crypto');
+      const isFutures = modes.includes('scan_futures');
       
       const { data, error } = await sbClient.from('stock_bots').insert({
         user_id: currentUserId,
@@ -1401,15 +1615,15 @@
         enabled: false,
         auto_submit: false,
         broker: broker,
-        bot_symbol: isSingle ? symbol : 'SPY',  // Use symbol only for single mode
+        bot_symbol: hasSingle ? symbol : 'SPY',
         bot_dollar_amount: dollarAmount,
         bot_interval: interval,
         run_interval_min: runIntervalMin,
         bot_trade_direction: 'both',
-        bot_scan_mode: scanMode,  // Store the scan mode
+        bot_scan_mode: scanMode,
         scan_stocks: isStocks,
         scan_crypto: isCrypto,
-        scan_futures: false,
+        scan_futures: isFutures,
         bot_signal: signal,
         trend_filter: trendFilter,
         trading_style: tradingStyle,
@@ -1433,9 +1647,9 @@
       promptNewOptionsBot();
     }
 
-    async function createOptionsBot(name) {
+    async function createOptionsBot(name, symbol='SPY', candle='5m', scan=1, trend='1h', amount=1000, optType='both', expiry='weekly', signal='supertrend', tp=50, sl=25, broker='paper', style='scalper') {
       console.log(`[CreateOptionsBot] Creating options bot: ${name}`);
-      const { data, error } = await sbClient.from('options_bots').insert({ user_id: currentUserId, name, enabled: false, auto_submit: false, paper_balance: 100000, paper_balance_start: 100000, bot_dollar_amount: 500 }).select();
+      const { data, error } = await sbClient.from('options_bots').insert({ user_id: currentUserId, name, enabled: false, auto_submit: false, paper_balance: 100000, paper_balance_start: 100000, bot_dollar_amount: amount, bot_symbol: symbol, bot_interval: candle, run_interval_min: scan, bot_option_type: optType, bot_expiry_type: expiry, bot_signal: signal, take_profit_pct: tp, stop_loss_pct: sl, broker, trading_style: style }).select();
       if (error) { console.error('[CreateOptionsBot] Error:', error); alert('Error: ' + error.message); return; }
       console.log('[CreateOptionsBot] Created:', data?.[0]?.id);
       await loadOptionsBots();
@@ -2095,7 +2309,7 @@
         const status = t.status || 'unknown';
         const symbol = t.symbol || (type === 'stock' ? 'N/A' : t.option_symbol || 'N/A');
         const pnlText = t.pnl !== null && t.pnl !== undefined ? `$${Number(t.pnl).toFixed(2)}` : '-';
-        const action = t.action || t.side || '?';
+        const action = t.action || t.side || t.signal || '?';
         
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222;font-size:0.8rem;">
@@ -2186,7 +2400,11 @@
               </div>
               <div id="pnl-stats-${s.id}" style="display:flex;gap:16px;margin-top:8px;font-size:0.75rem;"></div>
             </div>
-            <button class="reset-btn" onclick="resetPaperBalance('${s.id}')">Reset to $100k</button>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="stk-bal-input-${s.id}" placeholder="Set balance..." onkeydown="if(event.key==='Enter')setStockPaperBalance('${s.id}')" style="background:#111;border:1px solid #2a2a2a;color:var(--text);padding:5px 10px;border-radius:6px;font-family:inherit;font-size:0.82rem;width:130px;outline:none;flex:1;" />
+              <button onclick="setStockPaperBalance('${s.id}')" class="reset-btn" style="white-space:nowrap;">Set</button>
+              <button class="reset-btn" onclick="resetPaperBalance('${s.id}')">$100k</button>
+            </div>
           </div>
           
           ` : ''}
@@ -2851,11 +3069,36 @@
       return `<table class="act-table"><thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>P&amp;L</th><th>Broker</th><th>Date</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
     }
 
-    function actOptionsRow(tr) {
+    function actOptionsRow(tr, livePrice, currentOptionPrice) {
       const isCall = tr.option_type === 'call';
-      const pnlHtml = tr.pnl != null
-        ? `<span class="${tr.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${tr.pnl >= 0 ? '+' : ''}$${Number(tr.pnl).toFixed(2)}</span>`
+      const isOpen = tr.status === 'open';
+      let displayPnl = tr.pnl != null ? Number(tr.pnl) : null;
+      let displayCost = Number(tr.total_cost) || (Number(tr.premium_per_contract) * Number(tr.contracts) * 100);
+      if (isOpen && currentOptionPrice && currentOptionPrice > 0) {
+        displayPnl = (currentOptionPrice - Number(tr.premium_per_contract)) * Number(tr.contracts) * 100;
+      } else if (isOpen && livePrice) {
+        const expDate = new Date(tr.expiration_date);
+        const dte = Math.max(0, (expDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+        const pct = dte < 1 ? 0.001 : dte <= 2 ? 0.002 : dte <= 7 ? 0.004 : 0.008;
+        const currentPremium = Math.max(0.01, livePrice * pct);
+        displayPnl = (currentPremium - Number(tr.premium_per_contract)) * Number(tr.contracts) * 100;
+      }
+      const _marketOpenLabel = (() => { const s = getNextMarketOpenTime(); return s === 'Market Open' ? '' : ` <span style="opacity:0.5;font-size:0.7em">${s}</span>`; })();
+      const pnlHtml = displayPnl != null
+        ? `<span class="${displayPnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${displayPnl >= 0 ? '+' : ''}$${displayPnl.toFixed(2)}${isOpen ? _marketOpenLabel : ''}</span>`
         : '—';
+      const pnlPct = displayPnl != null && displayCost > 0
+        ? ((displayPnl / displayCost) * 100)
+        : null;
+      const pnlPctHtml = pnlPct != null
+        ? `<span class="${pnlPct >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%</span>`
+        : '—';
+      const statusHtml = isOpen
+        ? `<span style="background:rgba(255,193,7,0.12);color:#ffc107;font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:10px;">OPEN</span>`
+        : `<span style="background:rgba(0,230,118,0.08);color:#555;font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:10px;">CLOSED</span>`;
+      const timeInfo = isOpen 
+        ? `<span style="color:var(--muted);font-size:0.78rem;">Entry: ${actTimeStr(tr.created_at)}</span>`
+        : `<span style="color:var(--muted);font-size:0.78rem;">Closed: ${tr.closed_at ? actTimeStr(tr.closed_at) : '—'}<br>Entry: ${actTimeStr(tr.created_at)}</span>`;
       return `<tr>
         <td style="font-weight:600;">${tr.symbol || '—'}</td>
         <td><span class="act-badge ${isCall?'act-badge-call':'act-badge-put'}">${isCall?'CALL':'PUT'}</span></td>
@@ -2864,15 +3107,59 @@
         <td>${tr.contracts} contract${tr.contracts>1?'s':''}</td>
         <td>$${Number(tr.premium_per_contract).toFixed(2)}</td>
         <td>${pnlHtml}</td>
-        <td style="color:var(--muted);font-size:0.78rem;">${actTimeStr(tr.created_at)}</td>
+        <td>${pnlPctHtml}</td>
+        <td>${statusHtml}</td>
+        <td style="font-size:0.78rem;">${timeInfo}</td>
       </tr>`;
     }
 
     function actOptionsTable(rows) {
-      return `<table class="act-table"><thead><tr><th>Symbol</th><th>Type</th><th>Strike</th><th>Expiry</th><th>Contracts</th><th>Premium</th><th>P&amp;L</th><th>Date</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+      return `<table class="act-table"><thead><tr><th>Symbol</th><th>Type</th><th>Strike</th><th>Expiry</th><th>Contracts</th><th>Premium</th><th>P&amp;L</th><th>% P&amp;L</th><th>Status</th><th>Time</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+    }
+    
+    function getNextMarketOpenTime() {
+      const now = new Date();
+      const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const etHour = et.getHours();
+      const etMin = et.getMinutes();
+      const etDay = et.getDay();
+      
+      // Market hours: Mon-Fri 9:30 AM - 4:00 PM ET
+      // If after hours or weekend, show next market open
+      let nextOpen = new Date(et);
+      
+      if (etDay === 0) { // Sunday
+        nextOpen.setDate(et.getDate() + 1);
+        nextOpen.setHours(9, 30, 0, 0);
+      } else if (etDay === 6) { // Saturday
+        nextOpen.setDate(et.getDate() + 2);
+        nextOpen.setHours(9, 30, 0, 0);
+      } else if (etHour > 16 || (etHour === 16 && etMin > 0)) { // After 4 PM
+        nextOpen.setDate(et.getDate() + 1);
+        nextOpen.setHours(9, 30, 0, 0);
+        if (nextOpen.getDay() === 6) nextOpen.setDate(nextOpen.getDate() + 2);
+        if (nextOpen.getDay() === 0) nextOpen.setDate(nextOpen.getDate() + 1);
+      } else if (etHour < 9 || (etHour === 9 && etMin < 30)) { // Before 9:30 AM
+        nextOpen.setHours(9, 30, 0, 0);
+      } else {
+        return 'Market Open';
+      }
+      
+      return nextOpen.toLocaleString('en-US', { 
+        weekday: 'short', 
+        month: 'short', 
+        day: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit',
+        timeZone: 'America/Denver',
+        timeZoneName: 'short'
+      });
     }
 
+    let _activityModalContext = null;
+    function refreshActivityModal() { if (_activityModalContext) openBotActivityModal(_activityModalContext.id, _activityModalContext.name, _activityModalContext.type); }
     async function openBotActivityModal(id, name, type) {
+      _activityModalContext = { id, name, type };
       document.getElementById('activity-modal-title').textContent = name + ' — Activity';
       document.getElementById('activity-modal-body').innerHTML = '<div class="feed-empty">Loading...</div>';
       document.getElementById('activity-modal-stats').innerHTML = '';
@@ -2922,10 +3209,26 @@
         
         const unrealizedPct = openPositionsCost > 0 ? (unrealizedPnl / openPositionsCost) * 100 : 0;
         
-        // Only show Unrealized P&L in stats
-        document.getElementById('activity-modal-stats').innerHTML = openT.length > 0
-          ? `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Unrealized P&amp;L</div><div class="activity-modal-stat-value" style="color:${unrealizedPnl>=0?'var(--accent)':'var(--red)'}">${unrealizedPnl>=0?'+':''}$${unrealizedPnl.toFixed(2)} (${unrealizedPct>=0?'+':''}${unrealizedPct.toFixed(1)}%)</div></div>`
-          : '';
+        // Calculate realized P&L from closed trades
+        const realizedPnl = closedT.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
+        const totalPnl = realizedPnl + unrealizedPnl;
+        
+        // Show all three: Realized, Unrealized, and Total + Next Market Open
+        let statsHtml = '';
+        if (closedT.length > 0) {
+          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Realized P&amp;L</div><div class="activity-modal-stat-value" style="color:${realizedPnl>=0?'var(--accent)':'var(--red)'}">${realizedPnl>=0?'+':''}$${realizedPnl.toFixed(2)}</div></div>`;
+        }
+        if (openT.length > 0) {
+          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Unrealized P&amp;L</div><div class="activity-modal-stat-value" style="color:${unrealizedPnl>=0?'var(--accent)':'var(--red)'}">${unrealizedPnl>=0?'+':''}$${unrealizedPnl.toFixed(2)} (${unrealizedPct>=0?'+':''}${unrealizedPct.toFixed(1)}%)</div></div>`;
+        }
+        if (closedT.length > 0 || openT.length > 0) {
+          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Total P&amp;L</div><div class="activity-modal-stat-value" style="color:${totalPnl>=0?'var(--accent)':'var(--red)'}">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</div></div>`;
+        }
+        // Add next market open time
+        const nextOpen = getNextMarketOpenTime();
+        statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Next Market Open</div><div class="activity-modal-stat-value" style="color:var(--muted);font-size:1rem;">${nextOpen}</div></div>`;
+        document.getElementById('activity-modal-stats').innerHTML = statsHtml;
+        document.getElementById('activity-modal-stats').style.gridTemplateColumns = `repeat(${Math.min(4, (closedT.length>0?1:0)+(openT.length>0?1:0)+2)}, 1fr)`;
           
         if (!t.length) { document.getElementById('activity-modal-body').innerHTML = '<div class="feed-empty" style="padding:40px;">No trades yet for this bot.</div>'; return; }
         let html = '';
@@ -2983,34 +3286,62 @@
           } catch (_) {}
         }));
         
+        // Fetch real Polygon option prices for open trades
+        const optionPrices = {};
+        await Promise.all(openT.map(async (trade) => {
+          try {
+            const { data: session } = await sbClient.auth.getSession();
+            const token = session?.session?.access_token || SUPABASE_ANON_KEY;
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/options-bot`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'get_option_price', symbol: trade.symbol, strike: trade.strike, expiration: trade.expiration_date, option_type: trade.option_type })
+            });
+            const json = await res.json();
+            if (json?.price && json.price > 0) optionPrices[trade.symbol + '_' + trade.strike + '_' + trade.option_type] = json.price;
+          } catch (_) {}
+        }));
+
         for (const trade of openT) {
-          const livePrice = livePrices[trade.symbol];
-          if (livePrice) {
-            const strike = Number(trade.strike);
-            const priceChange = livePrice - strike;
-            const delta = trade.option_type === 'call' ? 0.5 : -0.5;
-            const contracts = Number(trade.contracts) || 1;
-            const tradePnl = delta * priceChange * contracts * 100;
+          const contracts = Number(trade.contracts) || 1;
+          const entryPremium = Number(trade.premium_per_contract) || 0;
+          const cost = Number(trade.total_cost) || (entryPremium * contracts * 100);
+          openPositionsCost += cost;
+          const key = trade.symbol + '_' + trade.strike + '_' + trade.option_type;
+          const currentPremium = optionPrices[key];
+          if (currentPremium) {
+            const tradePnl = (currentPremium - entryPremium) * contracts * 100;
             unrealizedPnl += tradePnl;
-            openPositionsCost += Number(trade.total_cost) || (Number(trade.premium_per_contract) * contracts * 100);
           }
         }
         
         const unrealizedPct = openPositionsCost > 0 ? (unrealizedPnl / openPositionsCost) * 100 : 0;
         
-        // Only show Unrealized P&L in stats
-        document.getElementById('activity-modal-stats').innerHTML = openT.length > 0
-          ? `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Unrealized P&amp;L</div><div class="activity-modal-stat-value" style="color:${unrealizedPnl>=0?'var(--accent)':'var(--red)'}">${unrealizedPnl>=0?'+':''}$${unrealizedPnl.toFixed(2)} (${unrealizedPct>=0?'+':''}${unrealizedPct.toFixed(1)}%)</div></div>`
-          : '';
+        // Calculate realized P&L from closed options trades
+        const realizedPnl = closedT.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
+        const totalPnl = realizedPnl + unrealizedPnl;
+        
+        // Show all three: Realized, Unrealized, and Total + Next Market Open
+        let statsHtml = '';
+        if (closedT.length > 0) {
+          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Realized P&amp;L</div><div class="activity-modal-stat-value" style="color:${realizedPnl>=0?'var(--accent)':'var(--red)'}">${realizedPnl>=0?'+':''}$${realizedPnl.toFixed(2)}</div></div>`;
+        }
+        if (openT.length > 0) {
+          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Unrealized P&amp;L</div><div class="activity-modal-stat-value" style="color:${unrealizedPnl>=0?'var(--accent)':'var(--red)'}">${unrealizedPnl>=0?'+':''}$${unrealizedPnl.toFixed(2)} (${unrealizedPct>=0?'+':''}${unrealizedPct.toFixed(1)}%)</div></div>`;
+        }
+        if (closedT.length > 0 || openT.length > 0) {
+          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Total P&amp;L</div><div class="activity-modal-stat-value" style="color:${totalPnl>=0?'var(--accent)':'var(--red)'}">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</div></div>`;
+        }
+        // Add next market open time
+        const nextOpen = getNextMarketOpenTime();
+        statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Next Market Open</div><div class="activity-modal-stat-value" style="color:var(--muted);font-size:1rem;">${nextOpen}</div></div>`;
+        document.getElementById('activity-modal-stats').innerHTML = statsHtml;
+        document.getElementById('activity-modal-stats').style.gridTemplateColumns = `repeat(${Math.min(4, (closedT.length>0?1:0)+(openT.length>0?1:0)+2)}, 1fr)`;
           
         if (!t.length) { document.getElementById('activity-modal-body').innerHTML = '<div class="feed-empty" style="padding:40px;">No trades yet for this bot.</div>'; return; }
         let html = '';
-        html += `<div class="act-section-label">Open Positions (${openT.length})</div>`;
-        html += openT.length ? actOptionsTable(openT.map(actOptionsRow)) : '<div class="act-empty">No open positions.</div>';
-        html += `<div class="act-section-label">Closed Trades (${closedT.length})</div>`;
-        html += closedT.length ? actOptionsTable(closedT.map(actOptionsRow)) : '<div class="act-empty">No closed trades.</div>';
-        html += `<div class="act-section-label">Failed Trades (${failedT.length})</div>`;
-        html += failedT.length ? actOptionsTable(failedT.map(actOptionsRow)) : '<div class="act-empty">No failed trades.</div>';
+        html += `<div class="act-section-label">All Trades (${t.length})</div>`;
+        html += actOptionsTable(t.map(tr => actOptionsRow(tr, livePrices[tr.symbol], optionPrices[tr.symbol + '_' + tr.strike + '_' + tr.option_type])));
         document.getElementById('activity-modal-body').innerHTML = html;
       }
     }
