@@ -413,18 +413,36 @@ async function fetchPolygonSpotPrice(symbol: string): Promise<number | null> {
   return null;
 }
 
+// Known reasonable price ranges for sanity checking spot prices
+const SPOT_SANITY: Record<string, [number, number]> = {
+  'SPY':  [400, 700], 'QQQ':  [300, 600], 'IWM':  [150, 350],
+  'AAPL': [100, 400], 'MSFT': [200, 600], 'NVDA': [50,  200],
+  'TSLA': [100, 500], 'AMZN': [100, 300], 'META': [200, 800],
+  'GOOG': [100, 300], 'GOOGL':[100, 300],
+};
+
+function sanityCheckSpot(symbol: string, price: number): boolean {
+  const bounds = SPOT_SANITY[symbol];
+  if (!bounds) return price > 0 && price < 10000; // generic: just must be positive and sane
+  const ok = price >= bounds[0] && price <= bounds[1];
+  if (!ok) console.log(`[OptionsBot] SANITY FAIL: ${symbol} spot $${price} outside expected range $${bounds[0]}-$${bounds[1]}`);
+  return ok;
+}
+
 async function fetchTastytradeSpotPrice(symbol: string, accessToken: string): Promise<number | null> {
   try {
-    const res = await fetch(`https://api.tastytrade.com/market-data/quotes?symbol=${encodeURIComponent(symbol)}`, {
+    // Tastytrade equity quotes endpoint
+    const res = await fetch(`https://api.tastytrade.com/market-data/quotes?symbols[]=${encodeURIComponent(symbol)}`, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     const json = await res.json();
     const quote = json?.data?.items?.[0];
-    const mid = quote?.mid || ((quote?.bid + quote?.ask) / 2) || quote?.last;
-    if (mid && mid > 0) {
+    const mid = quote?.mid || ((Number(quote?.bid) + Number(quote?.ask)) / 2) || quote?.last;
+    if (mid && mid > 0 && sanityCheckSpot(symbol, mid)) {
       console.log(`[OptionsBot] Tastytrade real-time spot ${symbol} = $${mid} (bid=$${quote?.bid} ask=$${quote?.ask})`);
       return mid;
     }
+    console.log(`[OptionsBot] Tastytrade spot bad/missing for ${symbol}: mid=${mid} raw=${JSON.stringify(quote)}`);
   } catch (err) {
     console.log(`[OptionsBot] Tastytrade spot fetch failed for ${symbol}:`, err);
   }
@@ -1664,20 +1682,46 @@ Deno.serve(async (req) => {
                 }
               } catch (_) {}
 
-              // Spot price: Tastytrade real-time (all brokers) → Alpaca → Yahoo → candle close
-              let spotPrice: number = price;
+              // Spot price priority: Tastytrade → Polygon → Alpaca → Yahoo
+              // Each source is sanity-checked. If no sane price found, SKIP the trade.
+              let spotPrice: number | null = null;
+
+              // 1. Try Tastytrade real-time
               if (tastyAccessToken) {
-                const tsSpot = await fetchTastytradeSpotPrice(sym, tastyAccessToken);
-                if (tsSpot && tsSpot > 0) {
-                  spotPrice = tsSpot;
-                  console.log(`[OptionsBot] Tastytrade real-time spot ${sym}: $${spotPrice} (broker=${bot.broker})`);
-                } else {
-                  console.log(`[OptionsBot] WARN: Tastytrade spot unavailable for ${sym}, falling back`);
-                  spotPrice = (await fetchSpotPrice(sym, alpacaCreds?.api_key, alpacaCreds?.secret_key)) ?? price;
-                }
-              } else {
-                spotPrice = (await fetchSpotPrice(sym, alpacaCreds?.api_key, alpacaCreds?.secret_key)) ?? price;
+                spotPrice = await fetchTastytradeSpotPrice(sym, tastyAccessToken);
               }
+
+              // 2. Try Polygon (reliable, near real-time for equities)
+              if (!spotPrice) {
+                spotPrice = await fetchPolygonSpotPrice(sym);
+                if (spotPrice && !sanityCheckSpot(sym, spotPrice)) spotPrice = null;
+              }
+
+              // 3. Try Alpaca if connected
+              if (!spotPrice && alpacaCreds?.api_key) {
+                spotPrice = await fetchAlpacaSpotPrice(sym, alpacaCreds.api_key, alpacaCreds.secret_key);
+                if (spotPrice && !sanityCheckSpot(sym, spotPrice)) spotPrice = null;
+              }
+
+              // 4. Yahoo fallback — sanity check required
+              if (!spotPrice) {
+                try {
+                  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1m&range=1d`;
+                  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+                  const json = await res.json();
+                  const meta = json?.chart?.result?.[0]?.meta;
+                  const p = meta?.regularMarketPrice ?? meta?.price;
+                  if (p && p > 0 && sanityCheckSpot(sym, p)) spotPrice = p;
+                } catch (_) {}
+              }
+
+              // HARD STOP: if we can't get a sane spot price, don't trade
+              if (!spotPrice || spotPrice <= 0) {
+                console.log(`[OptionsBot] BLOCKED: Cannot get reliable spot price for ${sym} — skipping trade`);
+                results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'No reliable spot price' });
+                continue;
+              }
+              console.log(`[OptionsBot] Spot price for ${sym}: $${spotPrice} (broker=${bot.broker})`);
               const strikeInterval = spotPrice > 500 ? 5 : spotPrice > 100 ? 5 : spotPrice > 50 ? 2.5 : 1;
               const dollarAmount = bot.bot_dollar_amount || 500;
 
