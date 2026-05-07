@@ -348,21 +348,24 @@ function generateSignalBoof30(candles: Candle[], tradeDirection = 'both'): { sig
     signals.push({ regime, signal });
   }
 
-  // Current bar - independent signal (no position tracking for options)
+  // Current bar - only fire on crossover (signal changed from prev bar)
   const i = n - 2;
   const idx = validIndices.indexOf(i);
+  const prevIdx = validIndices.indexOf(i - 1);
   const current = idx >= 0 ? signals[idx] : { regime: 'Range' as MarketRegime, signal: 0 };
+  const prev = prevIdx >= 0 ? signals[prevIdx] : { signal: 0 };
   const curClose = closes[i];
+  const justFlipped = current.signal !== prev.signal;
 
   let signal: 'buy' | 'sell' | 'none' = 'none';
   let reason = `regime=${current.regime}, rsi=${rsi[i]?.toFixed(1)}, slope=${maSlope[i]?.toFixed(4)}`;
 
-  if (current.signal === 1) {
+  if (current.signal === 1 && justFlipped) {
     signal = 'buy';
-    reason = `Boof 3.0 BUY [${current.regime}]. ${reason}`;
-  } else if (current.signal === -1) {
+    reason = `Boof 3.0 BUY CROSSOVER [${current.regime}]. ${reason}`;
+  } else if (current.signal === -1 && justFlipped) {
     signal = 'sell';
-    reason = `Boof 3.0 SELL [${current.regime}]. ${reason}`;
+    reason = `Boof 3.0 SELL CROSSOVER [${current.regime}]. ${reason}`;
   } else {
     reason = `Boof 3.0 NONE [${current.regime}]. ${reason}`;
   }
@@ -523,13 +526,13 @@ function generateSignal(candles: Candle[], settings: BotSettings): { signal: 'bu
   const shortOK = curTrend === -1 && curClose < curEma && curAdx > settings.adxThreshold;
   let signal: 'buy' | 'sell' | 'none' = 'none';
   let reason = `trend=${curTrend}, close=${curClose.toFixed(2)}, ema=${curEma.toFixed(2)}, adx=${curAdx?.toFixed(1)}`;
-  // Fire on current trend conditions - no position state (each options contract is independent)
-  if (longOK) {
+  // Only fire on a fresh trend flip (crossover) — never enter mid-trend
+  if (longOK && trendJustFlipped) {
     signal = 'buy';
-    reason = `${trendJustFlipped ? 'TREND FLIP ' : ''}ENTER LONG. SuperTrend UP. ${reason}`;
-  } else if (shortOK && tradeDirection !== 'long') {
+    reason = `TREND FLIP ENTER LONG. SuperTrend UP. ${reason}`;
+  } else if (shortOK && trendJustFlipped && tradeDirection !== 'long') {
     signal = 'sell';
-    reason = `${trendJustFlipped ? 'TREND FLIP ' : ''}ENTER SHORT. SuperTrend DOWN. ${reason}`;
+    reason = `TREND FLIP ENTER SHORT. SuperTrend DOWN. ${reason}`;
   }
   return { signal, price: curClose, trend: curTrend, ema: curEma, adx: curAdx, reason };
 }
