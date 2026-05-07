@@ -3387,6 +3387,29 @@
       await loadBots();
       await loadOptionsBots();
       await loadAllTrades();
+
+      // TP/SL Daemon: check every 30s so positions close near target instead of overshooting
+      async function runTpslDaemon() {
+        try {
+          const { data: session } = await sbClient.auth.getSession();
+          const token = session?.session?.access_token;
+          if (!token) return;
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/options-bot`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'tpsl_daemon' })
+          });
+          const json = await res.json();
+          if (json.closed?.length > 0) {
+            console.log('[TPSL_Daemon] Closed', json.closed.length, 'positions:', json.closed);
+            await loadOptionsBots();
+            await loadAllTrades(allTradesPage);
+          }
+        } catch (err) {
+          console.warn('[TPSL_Daemon] Error:', err);
+        }
+      }
+      setInterval(runTpslDaemon, 30000);
     }
 
     async function signOut() {

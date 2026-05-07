@@ -413,6 +413,24 @@ async function fetchPolygonSpotPrice(symbol: string): Promise<number | null> {
   return null;
 }
 
+async function fetchTastytradeSpotPrice(symbol: string, accessToken: string): Promise<number | null> {
+  try {
+    const res = await fetch(`https://api.tastytrade.com/market-data/quotes?symbol=${encodeURIComponent(symbol)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const json = await res.json();
+    const quote = json?.data?.items?.[0];
+    const mid = quote?.mid || ((quote?.bid + quote?.ask) / 2) || quote?.last;
+    if (mid && mid > 0) {
+      console.log(`[OptionsBot] Tastytrade real-time spot ${symbol} = $${mid} (bid=$${quote?.bid} ask=$${quote?.ask})`);
+      return mid;
+    }
+  } catch (err) {
+    console.log(`[OptionsBot] Tastytrade spot fetch failed for ${symbol}:`, err);
+  }
+  return null;
+}
+
 async function fetchSpotPrice(symbol: string, alpacaApiKey?: string, alpacaSecretKey?: string): Promise<number | null> {
   // For paper trading: use real-time Alpaca data for accurate backtesting
   if (alpacaApiKey && alpacaSecretKey) {
@@ -1630,7 +1648,36 @@ Deno.serve(async (req) => {
               const targetExpiration = getExpirationDate(settings.expiryType);
               const expirationDate = findValidExpiration(targetExpiration);
               const alpacaCreds = bot.broker === 'alpaca' ? await supabase.from('broker_credentials').select('credentials').eq('user_id', bot.user_id).eq('broker', 'alpaca').maybeSingle().then((r: any) => r.data?.credentials) : null;
-              const spotPrice = (await fetchSpotPrice(sym, alpacaCreds?.api_key, alpacaCreds?.secret_key)) ?? price;
+
+              // Fetch Tastytrade access token for ALL bots if user has Tastytrade connected
+              // This ensures paper trading uses the same real data as live trading
+              let tastyAccessToken: string | null = null;
+              try {
+                const { data: tastyCreds } = await supabase.from('broker_credentials')
+                  .select('credentials').eq('user_id', bot.user_id).eq('broker', 'tastytrade').maybeSingle();
+                if (tastyCreds?.credentials?.refresh_token) {
+                  const tokenRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/tasty-oauth?action=refresh&user_id=${bot.user_id}`, {
+                    headers: { 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` }
+                  });
+                  const tokenJson = await tokenRes.json();
+                  if (tokenJson.access_token) tastyAccessToken = tokenJson.access_token;
+                }
+              } catch (_) {}
+
+              // Spot price: Tastytrade real-time (all brokers) → Alpaca → Yahoo → candle close
+              let spotPrice: number = price;
+              if (tastyAccessToken) {
+                const tsSpot = await fetchTastytradeSpotPrice(sym, tastyAccessToken);
+                if (tsSpot && tsSpot > 0) {
+                  spotPrice = tsSpot;
+                  console.log(`[OptionsBot] Tastytrade real-time spot ${sym}: $${spotPrice} (broker=${bot.broker})`);
+                } else {
+                  console.log(`[OptionsBot] WARN: Tastytrade spot unavailable for ${sym}, falling back`);
+                  spotPrice = (await fetchSpotPrice(sym, alpacaCreds?.api_key, alpacaCreds?.secret_key)) ?? price;
+                }
+              } else {
+                spotPrice = (await fetchSpotPrice(sym, alpacaCreds?.api_key, alpacaCreds?.secret_key)) ?? price;
+              }
               const strikeInterval = spotPrice > 500 ? 5 : spotPrice > 100 ? 5 : spotPrice > 50 ? 2.5 : 1;
               const dollarAmount = bot.bot_dollar_amount || 500;
 
@@ -1641,7 +1688,8 @@ Deno.serve(async (req) => {
               // Hard minimum: $1.00/contract. Never buy cheap far-OTM garbage.
               const atmStrike = Math.round(spotPrice / strikeInterval) * strikeInterval;
               const MIN_PREMIUM = 1.00; // $100/contract minimum
-              const MAX_STRIKES_WALK = 10;
+              const MAX_STRIKES_WALK = 5; // max 5 strikes OTM — prevents deep OTM garbage
+              const MAX_STRIKE_PCT_FROM_SPOT = 0.10; // never buy more than 10% OTM
               // For 0DTE, start ITM (negative offset = ITM for calls, positive = ITM for puts)
               const startOffset = expiryType === '0dte' ? -2 : 0;
               const startStrike = optionType === 'call'
@@ -1655,11 +1703,25 @@ Deno.serve(async (req) => {
                   ? startStrike + offset * strikeInterval
                   : startStrike - offset * strikeInterval;
                 const candidatePremium = await fetchRealOptionPrice(sym, candidateStrike, expirationDate, optionType, settings.interval, bot.user_id);
-                if (!candidatePremium || candidatePremium <= 0) continue;
+                // If Tastytrade credentials exist (paper or live): require a real price — no Black-Scholes estimates
+                if (!candidatePremium || candidatePremium <= 0) {
+                  if (tastyAccessToken) {
+                    console.log(`[OptionsBot] SKIP: No real-time price for ${sym} $${candidateStrike} ${optionType} — not trading on estimates (broker=${bot.broker})`);
+                    break;
+                  }
+                  continue;
+                }
 
                 // Too cheap — stop walking further OTM, it only gets worse
                 if (candidatePremium < MIN_PREMIUM) {
                   console.log(`[OptionsBot] $${candidateStrike} premium $${candidatePremium.toFixed(2)} fell below $${MIN_PREMIUM} min — stopping walk`);
+                  break;
+                }
+
+                // Sanity check: strike must be within 10% of spot price
+                const pctFromSpot = Math.abs(candidateStrike - spotPrice) / spotPrice;
+                if (pctFromSpot > MAX_STRIKE_PCT_FROM_SPOT) {
+                  console.log(`[OptionsBot] BLOCKED deep OTM: $${candidateStrike} is ${(pctFromSpot*100).toFixed(1)}% from spot $${spotPrice.toFixed(2)} — stopping walk`);
                   break;
                 }
 
