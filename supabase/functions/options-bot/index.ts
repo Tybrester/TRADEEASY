@@ -1831,10 +1831,15 @@ Deno.serve(async (req) => {
                   console.error(`[OptionsBot] Alpaca order failed: ${brokerError}`);
                 }
               } else {
-                // Paper trading: update virtual balance
+                // Paper trading: check balance before entering
                 const { data: botRow } = await supabase.from('options_bots').select('paper_balance').eq('id', bot.id).single();
                 const currentBalance = Number(botRow?.paper_balance ?? 100000);
-                await supabase.from('options_bots').update({ paper_balance: Math.max(0, currentBalance - totalCost) }).eq('id', bot.id);
+                if (currentBalance < totalCost) {
+                  console.log(`[OptionsBot] SKIP: insufficient paper balance $${currentBalance.toFixed(2)} for ${sym} trade costing $${totalCost.toFixed(2)}`);
+                  results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `Insufficient balance ($${currentBalance.toFixed(2)} < $${totalCost.toFixed(2)})` });
+                  continue;
+                }
+                await supabase.from('options_bots').update({ paper_balance: currentBalance - totalCost }).eq('id', bot.id);
               }
 
               console.log(`[OptionsBot] Inserting trade: ${sym} ${optionType} strike=${strike} premium=$${premium.toFixed(2)} contracts=${contracts} total=$${totalCost.toFixed(2)} status=${tradeStatus}`);
