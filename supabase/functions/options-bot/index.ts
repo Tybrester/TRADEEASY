@@ -1568,7 +1568,7 @@ Deno.serve(async (req) => {
               if (botSignal === 'rsi_macd') {
                 sigResult = generateSignalRSIMACD(candles, settings.tradeDirection);
               } else if (botSignal === 'boof20') {
-                sigResult = generateSignalBoof20(candles, settings.tradeDirection, 0.004, -0.004);
+                sigResult = generateSignalBoof20(candles, settings.tradeDirection, 0.003, -0.003);
               } else if (botSignal === 'boof30') {
                 sigResult = generateSignalBoof30(candles, settings.tradeDirection);
               } else {
