@@ -413,13 +413,13 @@ async function fetchPolygonSpotPrice(symbol: string): Promise<number | null> {
   return null;
 }
 
-// Dynamic sanity check: spot price must be within 25% of a reference price (candle close)
-// Pass referencePrice=0 to skip the cross-check (first call before candles loaded)
+// Sanity check: spot price must be positive and within 50% of candle close (catches truly bad API values)
+// referencePrice=0 skips cross-check
 function sanityCheckSpot(symbol: string, price: number, referencePrice = 0): boolean {
   if (!price || price <= 0) return false;
   if (referencePrice > 0) {
     const pct = Math.abs(price - referencePrice) / referencePrice;
-    if (pct > 0.25) {
+    if (pct > 0.50) {
       console.log(`[OptionsBot] SANITY FAIL: ${symbol} spot $${price.toFixed(2)} is ${(pct*100).toFixed(1)}% away from candle close $${referencePrice.toFixed(2)} — rejecting`);
       return false;
     }
@@ -1730,8 +1730,8 @@ Deno.serve(async (req) => {
               // Hard minimum: $1.00/contract. Never buy cheap far-OTM garbage.
               const atmStrike = Math.round(spotPrice / strikeInterval) * strikeInterval;
               const MIN_PREMIUM = 1.00; // $100/contract minimum
-              const MAX_STRIKES_WALK = 5; // max 5 strikes OTM — prevents deep OTM garbage
-              const MAX_STRIKE_PCT_FROM_SPOT = 0.10; // never buy more than 10% OTM
+              const MAX_STRIKES_WALK = 5; // max 5 strikes OTM
+              const MAX_STRIKE_PCT_FROM_SPOT = 0.15; // never buy more than 15% OTM
               // For 0DTE, start ITM (negative offset = ITM for calls, positive = ITM for puts)
               const startOffset = expiryType === '0dte' ? -2 : 0;
               const startStrike = optionType === 'call'
