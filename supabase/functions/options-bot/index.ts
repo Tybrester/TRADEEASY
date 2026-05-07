@@ -181,26 +181,33 @@ function generateSignalBoof20(candles: Candle[], tradeDirection = 'both', thresh
 
   // Current bar
   const i = n - 2;
-  const rPast = pastReturn[i] || 0;
-  const rMa = (maFastVals[i] - maSlowVals[i]) / closes[i] || 0;
-  const rRsi = (rsi[i] - 50) / 50 || 0;
+  const iPrev = i - 1;
 
-  // Simplified ATR
-  const atrSlice = highs.slice(i - 13, i + 1).map((h, idx) => h - lows[i - 13 + idx]);
-  const rAtr = Math.max(...atrSlice) / closes[i] || 0;
+  const calcPredicted = (idx: number) => {
+    const rP = pastReturn[idx] || 0;
+    const rM = (maFastVals[idx] - maSlowVals[idx]) / closes[idx] || 0;
+    const rR = (rsi[idx] - 50) / 50 || 0;
+    const atrSlice = highs.slice(idx - 13, idx + 1).map((h, j) => h - lows[idx - 13 + j]);
+    const rA = Math.max(...atrSlice) / closes[idx] || 0;
+    return 0.4 * rP + 0.3 * rM + 0.2 * rR - 0.1 * rA;
+  };
 
-  // ML prediction
-  const predictedReturn = 0.4 * rPast + 0.3 * rMa + 0.2 * rRsi - 0.1 * rAtr;
+  const predictedReturn = calcPredicted(i);
+  const prevPredicted = iPrev >= 13 ? calcPredicted(iPrev) : 0;
+
+  const curState = predictedReturn > thresholdBuy ? 1 : predictedReturn < thresholdSell ? -1 : 0;
+  const prevState = prevPredicted > thresholdBuy ? 1 : prevPredicted < thresholdSell ? -1 : 0;
+  const justFlipped = curState !== prevState;
 
   let signal: 'buy' | 'sell' | 'none' = 'none';
   let reason = `predicted=${predictedReturn.toFixed(4)}, rsi=${rsi[i]?.toFixed(1)}`;
 
-  if (predictedReturn > thresholdBuy) {
+  if (curState === 1 && justFlipped) {
     signal = 'buy';
-    reason = `Boof 2.0 BUY. ${reason}`;
-  } else if (predictedReturn < thresholdSell) {
+    reason = `Boof 2.0 BUY CROSSOVER. ${reason}`;
+  } else if (curState === -1 && justFlipped) {
     signal = 'sell';
-    reason = `Boof 2.0 SELL. ${reason}`;
+    reason = `Boof 2.0 SELL CROSSOVER. ${reason}`;
   }
 
   if (tradeDirection === 'long' && signal === 'sell') signal = 'none';
