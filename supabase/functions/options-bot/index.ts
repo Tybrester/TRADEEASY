@@ -1601,9 +1601,28 @@ Deno.serve(async (req) => {
               
               console.log(`[OptionsBot] "${bot.name}" | ${sym} | SIGNAL: ${signal} | price=$${price.toFixed(2)} | signal_type=${botSignal} | ${reason}`);
               
-              if (signal === 'none') { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'no_signal' }); continue; }
+              if (signal === 'none') {
+                // Clear pending signal if trend reversed
+                if (bot.last_signal && bot.last_signal !== 'none') {
+                  await supabase.from('options_bots').update({ last_signal: null, last_signal_at: null }).eq('id', bot.id);
+                }
+                results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'no_signal' }); continue;
+              }
               if (signal === 'buy'  && settings.tradeDirection === 'short') { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Direction filter' }); continue; }
               if (signal === 'sell' && settings.tradeDirection === 'long')  { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Direction filter' }); continue; }
+
+              // Confirmation candle: on first crossover, store as pending and wait for next candle to confirm
+              const lastSignal = bot.last_signal as string | null;
+              const lastSignalAt = bot.last_signal_at ? new Date(bot.last_signal_at as string).getTime() : 0;
+              const sigCandleMs = candles[candles.length - 2].time * 1000;
+              if (lastSignal !== signal || lastSignalAt < sigCandleMs) {
+                // Fresh signal or new candle — store as pending, don't enter yet
+                await supabase.from('options_bots').update({ last_signal: signal, last_signal_at: now.toISOString() }).eq('id', bot.id);
+                console.log(`[OptionsBot] "${bot.name}" ${sym} — pending ${signal} signal, waiting for confirmation candle`);
+                results.push({ bot_id: bot.id, symbol: sym, status: 'pending_confirmation', reason: `${signal} signal pending confirmation` });
+                continue;
+              }
+              // Signal confirmed on this candle — proceed to entry
 
               // In-memory dedup: prevent parallel batch from trading same symbol twice in one run
               if (tradedThisRun.has(sym)) { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Already traded this symbol in this run' }); continue; }
