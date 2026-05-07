@@ -1244,6 +1244,8 @@
         sbClient.from('options_trades').delete().eq('user_id', currentUserId),
         sbClient.from('trades').delete().eq('user_id', currentUserId).eq('source', 'auto-bot'),
       ]);
+      // Re-stamp enabled_at so 5-minute cooldown kicks in before next entry
+      await sbClient.from('options_bots').update({ enabled_at: new Date().toISOString() }).eq('user_id', currentUserId).eq('enabled', true);
       await Promise.all([loadBots(), loadOptionsBots()]);
     }
 
@@ -2211,6 +2213,8 @@
         // Reset all bot paper balances
         await sbClient.from('stock_bots').update({ paper_balance: 100000 }).eq('user_id', currentUserId);
         await sbClient.from('options_bots').update({ paper_balance: 100000 }).eq('user_id', currentUserId);
+        // Re-stamp enabled_at so 5-minute cooldown kicks in before next entry
+        await sbClient.from('options_bots').update({ enabled_at: new Date().toISOString() }).eq('user_id', currentUserId).eq('enabled', true);
         
         console.log('[ClearAllTrades] ✅ All trades cleared, balances reset');
         
