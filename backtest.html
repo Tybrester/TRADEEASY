@@ -71,7 +71,33 @@
   <div class="controls">
     <div class="control-group">
       <label>Symbol</label>
-      <input type="text" id="bt-symbol" value="ES=F" placeholder="ES=F, NQ=F, AAPL…">
+      <select id="bt-symbol">
+        <optgroup label="Futures">
+          <option value="ES=F">ES=F (S&amp;P 500)</option>
+          <option value="NQ=F">NQ=F (Nasdaq)</option>
+          <option value="YM=F">YM=F (Dow)</option>
+          <option value="RTY=F">RTY=F (Russell)</option>
+          <option value="CL=F">CL=F (Crude Oil)</option>
+          <option value="GC=F">GC=F (Gold)</option>
+        </optgroup>
+        <optgroup label="Crypto">
+          <option value="BTC-USD">BTC-USD</option>
+          <option value="ETH-USD">ETH-USD</option>
+          <option value="SOL-USD">SOL-USD</option>
+        </optgroup>
+        <optgroup label="Stocks">
+          <option value="AAPL">AAPL</option>
+          <option value="AMD">AMD</option>
+          <option value="NVDA">NVDA</option>
+          <option value="TSLA">TSLA</option>
+          <option value="MSFT">MSFT</option>
+          <option value="META">META</option>
+          <option value="AMZN">AMZN</option>
+          <option value="GOOGL">GOOGL</option>
+          <option value="SPY">SPY</option>
+          <option value="QQQ">QQQ</option>
+        </optgroup>
+      </select>
     </div>
     <div class="control-group">
       <label>Interval</label>
@@ -597,7 +623,7 @@ function renderSystemCard(name, badgeClass, result, symbol) {
 }
 
 async function runBacktest() {
-  const symbol    = document.getElementById('bt-symbol').value.trim().toUpperCase();
+  const symbol    = document.getElementById('bt-symbol').value;
   const interval  = document.getElementById('bt-interval').value;
   const count     = parseInt(document.getElementById('bt-candles').value);
   const systems   = document.getElementById('bt-systems').value;
