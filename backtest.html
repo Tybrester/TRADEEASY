@@ -444,9 +444,9 @@ function runBacktest(candles, stateArr, direction) {
   let open = null; // { action, entry, entryIdx, entryTime }
   const n = candles.length;
 
-  for (let i = 1; i < n; i++) {
-    const state = stateArr[i];       // current bar state: 1, -1, 0
-    const prev  = stateArr[i - 1];   // previous bar state
+  for (let i = 1; i < n - 1; i++) {  // stop at n-2 so exit uses close of next bar
+    const state = stateArr[i]   ?? 0;
+    const prev  = stateArr[i-1] ?? 0;
     const price = candles[i].close;
     const time  = candles[i].time;
     const stateFlipped = state !== prev;
@@ -630,7 +630,8 @@ async function runBacktest() {
     await new Promise(r => setTimeout(r, 50));
 
     const cards = toRun.map(sys => {
-      const result = runBacktest(candles, sys.states, direction);
+      const states = Array.isArray(sys.states) ? sys.states : new Array(candles.length).fill(0);
+      const result = runBacktest(candles, states, direction);
       return renderSystemCard(sys.name, sys.badge, result, symbol);
     });
 
