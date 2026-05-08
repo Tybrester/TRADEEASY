@@ -307,68 +307,85 @@ function generateSignalRSIMACD(candles, direction = 'both') {
   return { signal, price: curClose };
 }
 
-// Boof 3.0: run once over full candle set, return per-bar signal array for backtest
+// Boof 3.0: rolling k-means — only uses past data at each bar (no look-ahead bias)
+function kMeans3(features, dims, maxIter=30) {
+  const k=3, n=features.length;
+  if (n < k) return new Array(n).fill(0);
+  const centroids = features.slice(0,k).map(f=>[...f]);
+  let clusters = new Array(n).fill(0);
+  for (let iter=0;iter<maxIter;iter++) {
+    let changed=false;
+    for (let i=0;i<n;i++) {
+      let best=0,bestDist=Infinity;
+      for (let j=0;j<k;j++) { let d=0; for(let d2=0;d2<dims;d2++) d+=(features[i][d2]-centroids[j][d2])**2; if(d<bestDist){bestDist=d;best=j;} }
+      if(clusters[i]!==best){clusters[i]=best;changed=true;}
+    }
+    if(!changed) break;
+    const nc=Array(k).fill(null).map(()=>Array(dims).fill(0)),counts=Array(k).fill(0);
+    for(let i=0;i<n;i++){counts[clusters[i]]++;for(let d2=0;d2<dims;d2++)nc[clusters[i]][d2]+=features[i][d2];}
+    for(let j=0;j<k;j++){if(counts[j]>0)for(let d2=0;d2<dims;d2++)centroids[j][d2]=nc[j][d2]/counts[j];}
+  }
+  return clusters;
+}
+
 function computeBoof30Signals(candles) {
-  const highs   = candles.map(c => c.high);
-  const lows    = candles.map(c => c.low);
   const closes  = candles.map(c => c.close);
   const volumes = candles.map(c => c.volume || 1000000);
   const n = closes.length;
-  const out = new Array(n).fill(0); // -1, 0, 1 per bar
-  if (n < 35) return out;
+  const out = new Array(n).fill(0);
+  if (n < 50) return out;
+
   const lookback = 14;
+  const WINDOW = 100; // only use past 100 bars for clustering — no look-ahead
+
   const returns = new Array(n).fill(0);
-  for (let i = 1; i < n; i++) returns[i] = (closes[i]-closes[i-1])/closes[i-1];
+  for (let i=1;i<n;i++) returns[i]=(closes[i]-closes[i-1])/closes[i-1];
+
   const returnStd = new Array(n).fill(0);
-  for (let i = lookback; i < n; i++) {
-    const sl = returns.slice(i-lookback+1,i+1), mean = sl.reduce((a,b)=>a+b,0)/lookback;
-    returnStd[i] = Math.sqrt(sl.reduce((a,b)=>a+(b-mean)**2,0)/lookback);
+  for (let i=lookback;i<n;i++) {
+    const sl=returns.slice(i-lookback+1,i+1),mean=sl.reduce((a,b)=>a+b,0)/lookback;
+    returnStd[i]=Math.sqrt(sl.reduce((a,b)=>a+(b-mean)**2,0)/lookback);
   }
-  const maFast = new Array(n).fill(NaN), maSlow = new Array(n).fill(NaN);
-  for (let i = 4; i < n; i++) maFast[i] = closes.slice(i-4,i+1).reduce((a,b)=>a+b,0)/5;
-  for (let i = 19; i < n; i++) maSlow[i] = closes.slice(i-19,i+1).reduce((a,b)=>a+b,0)/20;
-  const maSlope = maFast.map((f,i) => !isNaN(f)&&!isNaN(maSlow[i]) ? f-maSlow[i] : 0);
-  const rsi = calcRSI(closes, lookback);
-  const volumeStd = new Array(n).fill(0);
-  for (let i = lookback; i < n; i++) {
-    const sl = volumes.slice(i-lookback+1,i+1), mean = sl.reduce((a,b)=>a+b,0)/lookback;
-    volumeStd[i] = Math.sqrt(sl.reduce((a,b)=>a+(b-mean)**2,0)/lookback);
+  const maFast=new Array(n).fill(NaN),maSlow=new Array(n).fill(NaN);
+  for(let i=4;i<n;i++) maFast[i]=closes.slice(i-4,i+1).reduce((a,b)=>a+b,0)/5;
+  for(let i=19;i<n;i++) maSlow[i]=closes.slice(i-19,i+1).reduce((a,b)=>a+b,0)/20;
+  const maSlope=maFast.map((f,i)=>!isNaN(f)&&!isNaN(maSlow[i])?f-maSlow[i]:0);
+  const rsi=calcRSI(closes,lookback);
+  const volumeStd=new Array(n).fill(0);
+  for(let i=lookback;i<n;i++) {
+    const sl=volumes.slice(i-lookback+1,i+1),mean=sl.reduce((a,b)=>a+b,0)/lookback;
+    volumeStd[i]=Math.sqrt(sl.reduce((a,b)=>a+(b-mean)**2,0)/lookback);
   }
+
   const validStart = Math.max(lookback, 20);
-  const features = [], validIndices = [];
-  for (let i = validStart; i < n; i++) {
-    if (!isNaN(rsi[i])) { features.push([returnStd[i]*100, maSlope[i], rsi[i], volumeStd[i]/1000000]); validIndices.push(i); }
-  }
-  if (features.length < 10) return out;
-  const k = 3, dims = 4, maxIter = 50;
-  const centroids = features.slice(0, k).map(f => [...f]);
-  let clusters = new Array(features.length).fill(0);
-  for (let iter = 0; iter < maxIter; iter++) {
-    let changed = false;
-    for (let i = 0; i < features.length; i++) {
-      let best = 0, bestDist = Infinity;
-      for (let j = 0; j < k; j++) {
-        let d = 0; for (let d2=0;d2<dims;d2++) d+=(features[i][d2]-centroids[j][d2])**2;
-        if (d < bestDist) { bestDist=d; best=j; }
-      }
-      if (clusters[i]!==best) { clusters[i]=best; changed=true; }
+
+  // At each bar, cluster only the past WINDOW bars (rolling — no future data)
+  for (let ci = validStart + WINDOW; ci < n; ci++) {
+    const winStart = ci - WINDOW;
+    const winIndices = [];
+    const winFeatures = [];
+    for (let j = winStart; j <= ci; j++) {
+      if (!isNaN(rsi[j])) { winFeatures.push([returnStd[j]*100, maSlope[j], rsi[j], volumeStd[j]/1000000]); winIndices.push(j); }
     }
-    if (!changed) break;
-    const nc=Array(k).fill(null).map(()=>Array(dims).fill(0)), counts=Array(k).fill(0);
-    for (let i=0;i<features.length;i++) { counts[clusters[i]]++; for(let d2=0;d2<dims;d2++) nc[clusters[i]][d2]+=features[i][d2]; }
-    for (let j=0;j<k;j++) { if(counts[j]>0) for(let d2=0;d2<dims;d2++) centroids[j][d2]=nc[j][d2]/counts[j]; }
+    if (winFeatures.length < 10) continue;
+
+    const clusters = kMeans3(winFeatures, 4);
+
+    // Map clusters to regimes by avg slope
+    const cs = Array.from({length:3},(_,c)=>{
+      const idxs=winIndices.filter((_,i)=>clusters[i]===c);
+      return {cluster:c, avgSlope:idxs.reduce((a,i)=>a+maSlope[i],0)/(idxs.length||1)};
+    }).sort((a,b)=>a.avgSlope-b.avgSlope);
+    const rm={[cs[0].cluster]:'Range',[cs[1].cluster]:'HighVol',[cs[2].cluster]:'Trend'};
+
+    // Only assign signal to the current bar (last in window)
+    const localIdx = winIndices.indexOf(ci);
+    if (localIdx < 0) continue;
+    const regime = rm[clusters[localIdx]];
+    if (regime==='Trend')   { if(maSlope[ci]>0&&rsi[ci]>50)out[ci]=1; else if(maSlope[ci]<0&&rsi[ci]<50)out[ci]=-1; }
+    if (regime==='Range')   { if(rsi[ci]<40)out[ci]=1; else if(rsi[ci]>60)out[ci]=-1; }
+    if (regime==='HighVol') { if(rsi[ci]<40&&maSlope[ci]>0)out[ci]=1; else if(rsi[ci]>60&&maSlope[ci]<0)out[ci]=-1; }
   }
-  const cs = Array.from({length:k},(_,c)=>{
-    const idxs=validIndices.filter((_,i)=>clusters[i]===c);
-    return {cluster:c, avgSlope:idxs.reduce((a,i)=>a+maSlope[i],0)/(idxs.length||1)};
-  }).sort((a,b)=>a.avgSlope-b.avgSlope);
-  const rm = {[cs[0].cluster]:'Range',[cs[1].cluster]:'HighVol',[cs[2].cluster]:'Trend'};
-  validIndices.forEach((vi,i)=>{
-    const regime = rm[clusters[i]];
-    if (regime==='Trend')   { if(maSlope[vi]>0&&rsi[vi]>50)out[vi]=1; else if(maSlope[vi]<0&&rsi[vi]<50)out[vi]=-1; else out[vi]=0; }
-    if (regime==='Range')   { if(rsi[vi]<40)out[vi]=1; else if(rsi[vi]>60)out[vi]=-1; else out[vi]=0; }
-    if (regime==='HighVol') { if(rsi[vi]<40&&maSlope[vi]>0)out[vi]=1; else if(rsi[vi]>60&&maSlope[vi]<0)out[vi]=-1; else out[vi]=0; }
-  });
   return out;
 }
 
