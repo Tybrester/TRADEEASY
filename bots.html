@@ -3053,9 +3053,22 @@
       // Note: Options bots are independent - no paired toggle
     }
 
-    function actTimeStr(d) {
+    const CRYPTO_SYMBOLS = new Set(['BTC','ETH','SOL','XRP','BNB','ADA','DOGE','AVAX','MATIC','LTC','DOT','LINK','UNI','ATOM','XLM','ALGO','VET','FIL','THETA','TRX']);
+
+    function isTwentyFourHour(symbol) {
+      if (!symbol) return false;
+      if (symbol.includes('=F')) return true; // futures
+      const base = symbol.replace(/[-/]USD.*$/i, '').toUpperCase();
+      return CRYPTO_SYMBOLS.has(base);
+    }
+
+    function actTimeStr(d, symbol) {
       const dt = new Date(d);
-      return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      const use24h = isTwentyFourHour(symbol);
+      const timeStr = use24h
+        ? dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+        : dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + timeStr;
     }
 
     const futuresTickSpecs = {
@@ -3141,7 +3154,7 @@
         <td>${entry ? '$'+Number(entry).toFixed(2) : '—'}</td>
         <td>${pnlHtml}</td>
         <td style="color:var(--muted);font-size:0.8rem;">${tr.broker || 'paper'}</td>
-        <td style="color:var(--muted);font-size:0.78rem;">${actTimeStr(tr.created_at)}</td>
+        <td style="color:var(--muted);font-size:0.78rem;">${actTimeStr(tr.created_at, tr.symbol)}</td>
       </tr>`;
     }
 
@@ -3173,10 +3186,10 @@
         ? `<span style="background:rgba(255,193,7,0.12);color:#ffc107;font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:10px;">OPEN</span>`
         : `<span style="background:rgba(0,230,118,0.08);color:#555;font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:10px;">CLOSED</span>`;
       const timeInfo = isOpen
-        ? `<span style="color:var(--muted);font-size:0.78rem;">Entry: ${actTimeStr(tr.created_at)}</span>`
+        ? `<span style="color:var(--muted);font-size:0.78rem;">Entry: ${actTimeStr(tr.created_at, tr.symbol)}</span>`
         : `<span style="color:var(--muted);font-size:0.78rem;line-height:1.6;">
-            <span style="color:#aaa;">In:</span> ${actTimeStr(tr.created_at)}<br>
-            <span style="color:#aaa;">Out:</span> ${tr.closed_at ? actTimeStr(tr.closed_at) : '<span style="color:#ff7043;">not recorded</span>'}
+            <span style="color:#aaa;">In:</span> ${actTimeStr(tr.created_at, tr.symbol)}<br>
+            <span style="color:#aaa;">Out:</span> ${tr.closed_at ? actTimeStr(tr.closed_at, tr.symbol) : '<span style="color:#ff7043;">not recorded</span>'}
            </span>`;
       return `<tr>
         <td style="font-weight:600;">${tr.symbol || '—'}</td>
@@ -3326,7 +3339,7 @@
               <td>${tr.quantity || '—'}</td>
               <td>${entry ? '$'+Number(entry).toFixed(2) : '—'}</td>
               <td style="color:var(--red);font-size:0.85rem;">${tr.failure_reason || 'Insufficient balance'}</td>
-              <td style="color:var(--muted);font-size:0.78rem;">${actTimeStr(tr.created_at)}</td>
+              <td style="color:var(--muted);font-size:0.78rem;">${actTimeStr(tr.created_at, tr.symbol)}</td>
             </tr>`;
           });
           html += `<table class="act-table"><thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Reason</th><th>Date</th></tr></thead><tbody>${failRows.join('')}</tbody></table>`;
