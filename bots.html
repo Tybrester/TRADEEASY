@@ -2041,6 +2041,7 @@
             </td>
           </tr>` : '';
           return `<tr ${rowClickAttr}>
+            <td>${closeButton}</td>
             <td>
               <span class="bot-name">${t.botName}</span>
               ${typeBadge}
@@ -2055,7 +2056,6 @@
             <td class="${pnlClass}">${pnlText}<span style="font-size:0.75rem;color:#bbb;">${pnlPercentText}</span></td>
             <td>${statusBadge}</td>
             <td class="time-ago">${timeAgo}<br><span style="font-size:0.7rem;color:#aaa;">${new Date(t.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></td>
-            <td>${closeButton}</td>
           </tr>${detailRow}`;
         }).join('');
         
@@ -2086,6 +2086,7 @@
         container.innerHTML = `<table class="all-trades-table">
           <thead>
             <tr>
+              <th>Action</th>
               <th onclick="sortTrades('botName')" style="${thStyle}">Bot Name${arrow('botName')}</th>
               <th onclick="sortTrades('symbol')" style="${thStyle}">Symbol${arrow('symbol')}</th>
               <th onclick="sortTrades('action')" style="${thStyle}">Action${arrow('action')}</th>
@@ -2094,7 +2095,6 @@
               <th onclick="sortTrades('pnl')" style="${thStyle}">P&L${arrow('pnl')}</th>
               <th onclick="sortTrades('status')" style="${thStyle}">Status${arrow('status')}</th>
               <th onclick="sortTrades('createdAt')" style="${thStyle}">Time${arrow('createdAt')}</th>
-              <th>Actions</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
