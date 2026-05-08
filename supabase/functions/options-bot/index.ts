@@ -343,14 +343,12 @@ function generateSignalBoof30(candles: Candle[], tradeDirection = 'both'): { sig
     const regime = regimeMap[clusters[idx]];
     let signal = 0;
     if (regime === 'Trend') {
-      if (maSlope[i] > 0 && rsi[i] > 50) signal = 1;
-      else if (maSlope[i] < 0 && rsi[i] < 50) signal = -1;
+      signal = maSlope[i] > 0 ? 1 : -1;
     } else if (regime === 'Range') {
-      if (rsi[i] < 35) signal = 1;
-      else if (rsi[i] > 65) signal = -1;
+      if (rsi[i] < 45) signal = 1;
+      else if (rsi[i] > 55) signal = -1;
     } else if (regime === 'HighVol') {
-      if (rsi[i] < 25 && maSlope[i] > 0) signal = 1;
-      else if (rsi[i] > 75 && maSlope[i] < 0) signal = -1;
+      signal = maSlope[i] > 0 ? 1 : -1;
     }
     signals.push({ regime, signal });
   }
@@ -529,8 +527,8 @@ function generateSignal(candles: Candle[], settings: BotSettings): { signal: 'bu
   const curTrend = trend[i], prevTrend = trend[i - 1];
   const curEma = emaArr[i], curAdx = adx[i], curClose = closes[i];
   const trendJustFlipped = curTrend !== prevTrend;
-  const longOK  = curTrend === 1  && curClose > curEma && curAdx > settings.adxThreshold;
-  const shortOK = curTrend === -1 && curClose < curEma && curAdx > settings.adxThreshold;
+  const longOK  = curTrend === 1;
+  const shortOK = curTrend === -1;
   let signal: 'buy' | 'sell' | 'none' = 'none';
   let reason = `trend=${curTrend}, close=${curClose.toFixed(2)}, ema=${curEma.toFixed(2)}, adx=${curAdx?.toFixed(1)}`;
   // Only fire on a fresh trend flip (crossover) — never enter mid-trend
