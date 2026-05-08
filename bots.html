@@ -1964,7 +1964,10 @@
             if (t.botType === 'stock') {
               const entryPrice = Number(t.entryPrice || t.price);
               const qty = Number(t.quantity);
-              displayPnl = t.action === 'buy' ? (livePrice - entryPrice) * qty : (entryPrice - livePrice) * qty;
+              const action = t.action === 'buy' ? 'buy' : 'sell';
+              displayPnl = (t.symbol && t.symbol.includes('=F'))
+                ? calcFuturesPnL(t.symbol, entryPrice, livePrice, qty, action)
+                : (action === 'buy' ? (livePrice - entryPrice) : (entryPrice - livePrice)) * qty;
               isUnrealized = true;
             } else if (t.botType === 'options' && t.strike && t.optionType) {
               const underlyingEntry = Number(t.strike);
