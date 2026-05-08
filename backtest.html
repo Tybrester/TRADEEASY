@@ -137,6 +137,14 @@
       </select>
     </div>
     <div class="control-group">
+      <label>Take Profit %</label>
+      <input type="number" id="bt-tp" value="" placeholder="e.g. 0.5" min="0" step="0.1" style="width:90px">
+    </div>
+    <div class="control-group">
+      <label>Stop Loss %</label>
+      <input type="number" id="bt-sl" value="" placeholder="e.g. 0.3" min="0" step="0.1" style="width:90px">
+    </div>
+    <div class="control-group">
       <label>&nbsp;</label>
       <button class="run-btn" id="run-btn" onclick="runBacktest()">▶ Run Backtest</button>
     </div>
@@ -470,32 +478,46 @@ function generateSignalBoof30(candles, direction = 'both') {
 // Exits on the first bar the state flips away from the current position.
 // ─────────────────────────────────────────────
 
-function runBacktestEngine(candles, stateArr, direction) {
+function runBacktestEngine(candles, stateArr, direction, tpPct = 0, slPct = 0) {
   const trades = [];
   let open = null; // { action, entry, entryIdx, entryTime }
   const n = candles.length;
 
-  for (let i = 1; i < n - 1; i++) {  // stop at n-2 so exit uses close of next bar
+  for (let i = 1; i < n - 1; i++) {
     const state = stateArr[i]   ?? 0;
     const prev  = stateArr[i-1] ?? 0;
+    const high  = candles[i].high;
+    const low   = candles[i].low;
     const price = candles[i].close;
     const time  = candles[i].time;
     const stateFlipped = state !== prev;
 
-    // ── EXIT open position when state leaves current direction ──
+    // ── CHECK TP/SL on open position first (uses this bar's high/low) ──
+    if (open) {
+      let exitPrice = null, exitReason = null;
+      if (open.action === 'buy') {
+        if (tpPct > 0 && high >= open.entry * (1 + tpPct / 100)) { exitPrice = open.entry * (1 + tpPct / 100); exitReason = 'tp'; }
+        else if (slPct > 0 && low  <= open.entry * (1 - slPct / 100)) { exitPrice = open.entry * (1 - slPct / 100); exitReason = 'sl'; }
+      } else {
+        if (tpPct > 0 && low  <= open.entry * (1 - tpPct / 100)) { exitPrice = open.entry * (1 - tpPct / 100); exitReason = 'tp'; }
+        else if (slPct > 0 && high >= open.entry * (1 + slPct / 100)) { exitPrice = open.entry * (1 + slPct / 100); exitReason = 'sl'; }
+      }
+      if (exitPrice !== null) {
+        const pnl = open.action === 'buy' ? exitPrice - open.entry : open.entry - exitPrice;
+        trades.push({ action: open.action, entry: open.entry, entryIdx: open.entryIdx, entryTime: open.entryTime,
+          exit: exitPrice, exitIdx: i, exitTime: time, pnl, pct: (pnl / open.entry) * 100, win: pnl > 0, exitReason });
+        open = null;
+      }
+    }
+
+    // ── EXIT on signal flip (if not already closed by TP/SL) ──
     if (open) {
       const shouldExit = (open.action === 'buy'  && state !== 1)
                       || (open.action === 'sell' && state !== -1);
       if (shouldExit) {
-        const pnl = open.action === 'buy'
-          ? price - open.entry
-          : open.entry - price;
-        trades.push({
-          action: open.action, entry: open.entry,
-          entryIdx: open.entryIdx, entryTime: open.entryTime,
-          exit: price, exitIdx: i, exitTime: time,
-          pnl, pct: (pnl / open.entry) * 100, win: pnl > 0
-        });
+        const pnl = open.action === 'buy' ? price - open.entry : open.entry - price;
+        trades.push({ action: open.action, entry: open.entry, entryIdx: open.entryIdx, entryTime: open.entryTime,
+          exit: price, exitIdx: i, exitTime: time, pnl, pct: (pnl / open.entry) * 100, win: pnl > 0, exitReason: 'signal' });
         open = null;
       }
     }
@@ -564,6 +586,9 @@ function renderSystemCard(name, badgeClass, result, symbol) {
     ? '<tr><td colspan="7" class="no-trades">No completed trades found in this data range.</td></tr>'
     : trades.map(t => {
         const sellHigher = t.action === 'buy' ? t.exit > t.entry : t.entry > t.exit;
+        const exitLabel = t.exitReason === 'tp' ? '<span style="color:#00e676;">TP</span>'
+                        : t.exitReason === 'sl' ? '<span style="color:#ff5252;">SL</span>'
+                        : '<span style="color:#aaa;">Signal</span>';
         return `<tr class="${t.win ? 'win' : 'loss'}">
           <td><span class="badge-${t.action}">${t.action.toUpperCase()}</span></td>
           <td>${fmtTime(t.entryTime)}</td>
@@ -571,6 +596,7 @@ function renderSystemCard(name, badgeClass, result, symbol) {
           <td>${fmtTime(t.exitTime)}</td>
           <td>${fmtPrice(t.exit)}</td>
           <td class="${t.win ? 'pnl-pos' : 'pnl-neg'}">${fmtPct(t.pct)}</td>
+          <td style="font-size:0.75rem;">${exitLabel}</td>
           <td style="font-size:0.75rem;">${sellHigher ? '<span style="color:#00e676;">✓ Yes</span>' : '<span style="color:#ff5252;">✗ No</span>'}</td>
         </tr>`;
       }).join('');
@@ -614,7 +640,7 @@ function renderSystemCard(name, badgeClass, result, symbol) {
     <div class="trades-table-wrap">
       <table class="trades-table">
         <thead><tr>
-          <th>Side</th><th>Entry Time</th><th>Entry</th><th>Exit Time</th><th>Exit</th><th>P&L %</th><th>Exit Higher?</th>
+          <th>Side</th><th>Entry Time</th><th>Entry</th><th>Exit Time</th><th>Exit</th><th>P&L %</th><th>Exit</th><th>Exit Higher?</th>
         </tr></thead>
         <tbody>${tradeRows}</tbody>
       </table>
@@ -628,6 +654,8 @@ async function runBacktest() {
   const count     = parseInt(document.getElementById('bt-candles').value);
   const systems   = document.getElementById('bt-systems').value;
   const direction = document.getElementById('bt-direction').value;
+  const tpPct     = parseFloat(document.getElementById('bt-tp').value) || 0;
+  const slPct     = parseFloat(document.getElementById('bt-sl').value) || 0;
 
   if (!symbol) { alert('Enter a symbol'); return; }
 
@@ -662,7 +690,7 @@ async function runBacktest() {
 
     const cards = toRun.map(sys => {
       const states = Array.isArray(sys.states) ? sys.states : new Array(candles.length).fill(0);
-      const result = runBacktestEngine(candles, states, direction);
+      const result = runBacktestEngine(candles, states, direction, tpPct, slPct);
       return renderSystemCard(sys.name, sys.badge, result, symbol);
     });
 
