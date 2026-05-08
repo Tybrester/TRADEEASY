@@ -3310,17 +3310,18 @@
         // Calculate realized P&L from closed trades
         const realizedPnl = closedT.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
         const totalPnl = realizedPnl + unrealizedPnl;
+        const fmtPnl = v => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         
         // Show all three: Realized, Unrealized, and Total + Next Market Open
         let statsHtml = '';
         if (closedT.length > 0) {
-          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Realized P&amp;L</div><div class="activity-modal-stat-value" style="color:${realizedPnl>=0?'var(--accent)':'var(--red)'}">${realizedPnl>=0?'+':''}$${realizedPnl.toFixed(2)}</div></div>`;
+          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Realized P&amp;L</div><div class="activity-modal-stat-value" style="color:${realizedPnl>=0?'var(--accent)':'var(--red)'}">${realizedPnl>=0?'+':''}$${fmtPnl(realizedPnl)}</div></div>`;
         }
         if (openT.length > 0) {
-          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Unrealized P&amp;L</div><div class="activity-modal-stat-value" style="color:${unrealizedPnl>=0?'var(--accent)':'var(--red)'}">${unrealizedPnl>=0?'+':''}$${unrealizedPnl.toFixed(2)} (${unrealizedPct>=0?'+':''}${unrealizedPct.toFixed(1)}%)</div></div>`;
+          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Unrealized P&amp;L</div><div class="activity-modal-stat-value" style="color:${unrealizedPnl>=0?'var(--accent)':'var(--red)'}">${unrealizedPnl>=0?'+':''}$${fmtPnl(unrealizedPnl)} (${unrealizedPct>=0?'+':''}${unrealizedPct.toFixed(1)}%)</div></div>`;
         }
         if (closedT.length > 0 || openT.length > 0) {
-          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Total P&amp;L</div><div class="activity-modal-stat-value" style="color:${totalPnl>=0?'var(--accent)':'var(--red)'}">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</div></div>`;
+          statsHtml += `<div class="activity-modal-stat"><div class="activity-modal-stat-label">Total P&amp;L</div><div class="activity-modal-stat-value" style="color:${totalPnl>=0?'var(--accent)':'var(--red)'}">${totalPnl>=0?'+':''}$${fmtPnl(totalPnl)}</div></div>`;
         }
         // Add next market open time
         const nextOpen = getNextMarketOpenTime();
