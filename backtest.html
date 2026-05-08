@@ -454,22 +454,20 @@ function runBacktestOnCandles(candles, genFn, direction) {
     const slice = candles.slice(0, i + 1);
     const { signal, price } = genFn(slice, direction, i);
 
-    if (signal === 'buy' && !openTrade) {
-      openTrade = { entry: price, entryIdx: i, entryTime: candles[i].time, action: 'buy' };
-    } else if (signal === 'sell' && openTrade && openTrade.action === 'buy') {
-      const exitPrice = price;
-      const pnl = exitPrice - openTrade.entry;
-      const pct = (pnl / openTrade.entry) * 100;
-      trades.push({ ...openTrade, exit: exitPrice, exitIdx: i, exitTime: candles[i].time, pnl, pct, win: pnl > 0 });
+    // Close existing trade on opposite signal (always allowed regardless of direction)
+    if (signal === 'sell' && openTrade && openTrade.action === 'buy') {
+      const pnl = price - openTrade.entry;
+      trades.push({ ...openTrade, exit: price, exitIdx: i, exitTime: candles[i].time, pnl, pct: (pnl/openTrade.entry)*100, win: pnl > 0 });
       openTrade = null;
-    } else if (signal === 'sell' && !openTrade && direction !== 'long') {
-      openTrade = { entry: price, entryIdx: i, entryTime: candles[i].time, action: 'sell' };
     } else if (signal === 'buy' && openTrade && openTrade.action === 'sell') {
-      const exitPrice = price;
-      const pnl = openTrade.entry - exitPrice;
-      const pct = (pnl / openTrade.entry) * 100;
-      trades.push({ ...openTrade, exit: exitPrice, exitIdx: i, exitTime: candles[i].time, pnl, pct, win: pnl > 0 });
+      const pnl = openTrade.entry - price;
+      trades.push({ ...openTrade, exit: price, exitIdx: i, exitTime: candles[i].time, pnl, pct: (pnl/openTrade.entry)*100, win: pnl > 0 });
       openTrade = null;
+    }
+    // Enter new trade only if direction allows and no open position
+    if (!openTrade) {
+      if (signal === 'buy'  && direction !== 'short') openTrade = { entry: price, entryIdx: i, entryTime: candles[i].time, action: 'buy' };
+      if (signal === 'sell' && direction !== 'long')  openTrade = { entry: price, entryIdx: i, entryTime: candles[i].time, action: 'sell' };
     }
   }
 
@@ -619,9 +617,7 @@ async function runBacktest() {
     function makePrecomputedFn(sigArr) {
       return (c, d, i) => {
         const s = sigArr[i] ?? 0;
-        let sig = s===1 ? 'buy' : s===-1 ? 'sell' : 'none';
-        if (d==='long'  && sig==='sell') sig='none';
-        if (d==='short' && sig==='buy')  sig='none';
+        const sig = s===1 ? 'buy' : s===-1 ? 'sell' : 'none';
         return { signal: sig, price: c[c.length-1].close };
       };
     }
