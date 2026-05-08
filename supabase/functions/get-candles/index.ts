@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
     const ticker = normalizeSymbol(symbol);
 
     const rangeMap: Record<string, string> = {
-      '1m': '7d', '5m': '60d', '15m': '60d', '30m': '60d', '1h': '730d', '1d': '5y'
+      '1m': '30d', '5m': '60d', '15m': '60d', '30m': '60d', '1h': '730d', '1d': '5y'
     };
     const range = rangeMap[interval] || '60d';
 
