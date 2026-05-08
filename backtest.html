@@ -400,23 +400,25 @@ function computeBoof30Signals(candles) {
     }
     if (winFeatures.length < 10) continue;
 
-    const clusters = kMeans3(winFeatures, 4);
+    const clusters = kMeans3(winFeatures, 3); // 3 clusters: Range, HighVol, Trend
 
-    // Map clusters to regimes by avg slope
-    const cs = Array.from({length:3},(_,c)=>{
-      const idxs=winIndices.filter((_,i)=>clusters[i]===c);
-      return {cluster:c, avgSlope:idxs.reduce((a,i)=>a+maSlope[i],0)/(idxs.length||1)};
-    }).sort((a,b)=>a.avgSlope-b.avgSlope);
-    const rm={[cs[0].cluster]:'Range',[cs[1].cluster]:'HighVol',[cs[2].cluster]:'Trend'};
+    // Map clusters to regimes by avg MA slope (low=Range, mid=HighVol, high=Trend)
+    const cs = [0,1,2].map(c => {
+      const idxs = winIndices.filter((_,i) => clusters[i]===c);
+      return { cluster:c, avgSlope: idxs.reduce((a,i)=>a+maSlope[i],0)/(idxs.length||1) };
+    }).sort((a,b) => a.avgSlope - b.avgSlope);
+    const rm = { [cs[0].cluster]:'Range', [cs[1].cluster]:'HighVol', [cs[2].cluster]:'Trend' };
 
-    // Only assign signal to the current bar (last in window)
+    // Assign state to current bar
     const localIdx = winIndices.indexOf(ci);
     if (localIdx < 0) continue;
     const regime = rm[clusters[localIdx]];
-    // State every bar (1/-1/0) — engine will enter on state change
-    if (regime==='Trend')   { out[ci]=maSlope[ci]>0&&rsi[ci]>50?1:maSlope[ci]<0&&rsi[ci]<50?-1:0; }
-    if (regime==='Range')   { out[ci]=rsi[ci]<40?1:rsi[ci]>60?-1:0; }
-    if (regime==='HighVol') { out[ci]=rsi[ci]<40&&maSlope[ci]>0?1:rsi[ci]>60&&maSlope[ci]<0?-1:0; }
+    if (!regime) continue;
+
+    // State every bar — use RSI + slope direction for signal
+    if (regime==='Trend')   { out[ci] = maSlope[ci]>0 ? 1 : -1; }
+    if (regime==='Range')   { out[ci] = rsi[ci]<45 ? 1 : rsi[ci]>55 ? -1 : 0; }
+    if (regime==='HighVol') { out[ci] = maSlope[ci]>0 ? 1 : -1; }
   }
   return out;
 }
