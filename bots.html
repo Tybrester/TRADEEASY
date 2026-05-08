@@ -2138,34 +2138,26 @@
         
         try {
           const { data: session } = await sbClient.auth.getSession();
-          const token = session?.access_token;
-          const isCrypto = symbol.includes('-USD') || Object.keys(cryptoPrices).some(c => symbol.startsWith(c.split('-')[0]));
-          
-          if (isCrypto && cryptoPrices[symbol]) {
-            // Use hardcoded price for crypto
-            currentPrice = cryptoPrices[symbol];
-            console.log(`[CloseTrade] Using hardcoded price for ${symbol}: $${currentPrice}`);
-          } else {
-            // Use Alpaca for stocks
-            const res = await fetch(`${SUPABASE_URL}/functions/v1/alpaca-data?symbol=${symbol}`, {
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-            });
-            const json = await res.json();
-            currentPrice = json?.price || 0;
-          }
+          const token = session?.session?.access_token || SUPABASE_ANON_KEY;
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/get-price?symbol=${encodeURIComponent(symbol)}`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+          });
+          const json = await res.json();
+          currentPrice = json?.price || 0;
         } catch (err) {
-          console.log('[CloseTrade] Price fetch failed, trying hardcoded fallback:', err);
-        }
-        
-        if (!currentPrice && cryptoPrices[symbol]) {
-          // Fallback to hardcoded if fetch failed
-          currentPrice = cryptoPrices[symbol];
-          console.log(`[CloseTrade] Fallback to hardcoded price: $${currentPrice}`);
+          console.log('[CloseTrade] Price fetch failed:', err);
         }
         
         if (!currentPrice) {
-          alert('Could not get current price. Try again in a moment.');
-          return;
+          // Fallback: get trade's entry price so we can still close at breakeven
+          const { data: tradePreview } = await sbClient.from('trades').select('entry_price, price').eq('id', tradeId).single();
+          currentPrice = Number(tradePreview?.entry_price || tradePreview?.price || 0);
+          if (currentPrice) {
+            console.log(`[CloseTrade] Using entry price as fallback: $${currentPrice}`);
+          } else {
+            alert('Could not get current price and no entry price found. Try again.');
+            return;
+          }
         }
         
         // Get trade details
@@ -2197,12 +2189,15 @@
           return;
         }
 
-        // Calculate P&L (stocks)
+        // Calculate P&L (stocks/futures)
         let pnl = 0;
         if (botType === 'stock') {
-          const entryPrice = Number(trade.price);
+          const entryPrice = Number(trade.entry_price || trade.price);
           const qty = Number(trade.quantity);
-          pnl = trade.action === 'buy' ? (currentPrice - entryPrice) * qty : (entryPrice - currentPrice) * qty;
+          const action = trade.action === 'buy' ? 'buy' : 'sell';
+          pnl = (trade.symbol && trade.symbol.includes('=F'))
+            ? calcFuturesPnL(trade.symbol, entryPrice, currentPrice, qty, action)
+            : (action === 'buy' ? (currentPrice - entryPrice) : (entryPrice - currentPrice)) * qty;
         }
         
         // Update trade to closed status
