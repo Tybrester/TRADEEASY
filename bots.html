@@ -934,10 +934,13 @@
             displayPnl = delta * priceChange * contracts * 100;
             totalEntryCost += Number(t.total_cost) || (entryPrice * contracts * 100);
           } else {
-            // Stocks
-            const entryPrice = Number(t.price);
+            // Stocks / Futures
+            const entryPrice = Number(t.entry_price || t.price);
             const qty = Number(t.quantity);
-            displayPnl = t.action === 'buy' ? (livePrice - entryPrice) * qty : (entryPrice - livePrice) * qty;
+            const action = t.action === 'buy' ? 'buy' : 'sell';
+            displayPnl = (t.symbol && t.symbol.includes('=F'))
+              ? calcFuturesPnL(t.symbol, entryPrice, livePrice, qty, action)
+              : (action === 'buy' ? (livePrice - entryPrice) : (entryPrice - livePrice)) * qty;
             totalEntryCost += entryPrice * qty;
           }
           totalUnrealizedPnl += displayPnl;
