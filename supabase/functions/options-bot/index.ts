@@ -1359,7 +1359,7 @@ Deno.serve(async (req) => {
     ];
 
     const SCAN_BOOF = [
-      'QQQ','SPY','TSLA','NVDA',
+      'QQQ','SPY','TSLA','NVDA','AMD',
     ];
 
     const SCAN_DUO = [
