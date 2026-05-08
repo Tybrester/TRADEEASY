@@ -1150,7 +1150,10 @@
 
           <!-- Recent Trades -->
           <div style="background:#0a0a0a;border-radius:8px;padding:12px;margin-top:12px;border:1px solid #1a1a1a;">
-            <div style="font-size:0.8rem;font-weight:600;color:#888;margin-bottom:8px;">Recent Trades</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <div style="font-size:0.8rem;font-weight:600;color:#888;">Recent Trades</div>
+              <div style="font-size:0.75rem;font-weight:700;color:#555;">${(b.options_trades||[]).length} total · ${(b.options_trades||[]).filter(t=>t.status==='closed').length} closed · ${(b.options_trades||[]).filter(t=>t.status==='open').length} open</div>
+            </div>
             ${formatRecentTrades(b.options_trades, 'options')}
           </div>
 
