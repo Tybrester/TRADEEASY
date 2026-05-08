@@ -439,7 +439,7 @@ function generateSignalBoof30(candles, direction = 'both') {
 // Exits on the first bar the state flips away from the current position.
 // ─────────────────────────────────────────────
 
-function runBacktest(candles, stateArr, direction) {
+function runBacktestEngine(candles, stateArr, direction) {
   const trades = [];
   let open = null; // { action, entry, entryIdx, entryTime }
   const n = candles.length;
@@ -631,7 +631,7 @@ async function runBacktest() {
 
     const cards = toRun.map(sys => {
       const states = Array.isArray(sys.states) ? sys.states : new Array(candles.length).fill(0);
-      const result = runBacktest(candles, states, direction);
+      const result = runBacktestEngine(candles, states, direction);
       return renderSystemCard(sys.name, sys.badge, result, symbol);
     });
 
