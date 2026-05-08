@@ -97,10 +97,9 @@
       <label>Systems</label>
       <select id="bt-systems">
         <option value="all" selected>All 3</option>
-        <option value="supertrend">SuperTrend (1.0)</option>
+        <option value="supertrend">Boof 1.0</option>
         <option value="boof20">Boof 2.0</option>
         <option value="boof30">Boof 3.0</option>
-        <option value="rsi_macd">RSI/MACD</option>
       </select>
     </div>
     <div class="control-group">
@@ -559,10 +558,9 @@ async function runBacktest() {
     resEl.innerHTML = `<div class="loading"><span class="spinner"></span>Running signal backtests on ${candles.length} candles…</div>`;
 
     const systemDefs = [
-      { key: 'supertrend', name: 'SuperTrend (1.0)', badge: 'badge-st',  fn: (c,d) => generateSignalSuperTrend(c) },
-      { key: 'boof20',     name: 'Boof 2.0',         badge: 'badge-b20', fn: (c,d) => generateSignalBoof20(c, d) },
-      { key: 'boof30',     name: 'Boof 3.0',         badge: 'badge-b30', fn: (c,d) => generateSignalBoof30(c, d) },
-      { key: 'rsi_macd',   name: 'RSI / MACD',       badge: 'badge-rsm', fn: (c,d) => generateSignalRSIMACD(c, d) },
+      { key: 'supertrend', name: 'Boof 1.0', badge: 'badge-st',  fn: (c,d) => generateSignalSuperTrend(c) },
+      { key: 'boof20',     name: 'Boof 2.0', badge: 'badge-b20', fn: (c,d) => generateSignalBoof20(c, d) },
+      { key: 'boof30',     name: 'Boof 3.0', badge: 'badge-b30', fn: (c,d) => generateSignalBoof30(c, d) },
     ];
 
     const toRun = systems === 'all' ? systemDefs : systemDefs.filter(s => s.key === systems);
