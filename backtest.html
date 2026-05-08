@@ -206,9 +206,12 @@ function computeBoof10Signals(candles) {
   const lows   = candles.map(c => c.low);
   const closes = candles.map(c => c.close);
   const n = closes.length;
-  // Return trend state (1=bullish, -1=bearish) every bar, not just crossover bars
-  const { trend } = calcSuperTrend(highs, lows, closes, 10, 3.0);
-  return trend.map(t => t === 1 ? 1 : -1);
+  const { trend } = calcSuperTrend(highs, lows, closes, 7, 2.0);
+  // Return the trend direction every bar so engine holds through the trend
+  // and exits+re-enters cleanly on each flip
+  const out = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) out[i] = trend[i] === 1 ? 1 : -1;
+  return out;
 }
 
 function generateSignalSuperTrend(candles, settings = {}) {
