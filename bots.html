@@ -3294,9 +3294,12 @@
         for (const trade of openT) {
           const livePrice = livePrices[trade.symbol];
           if (livePrice) {
-            const entryPrice = Number(trade.price);
+            const entryPrice = Number(trade.entry_price || trade.price);
             const qty = Number(trade.quantity);
-            const tradePnl = trade.action === 'buy' ? (livePrice - entryPrice) * qty : (entryPrice - livePrice) * qty;
+            const action = trade.action === 'buy' ? 'buy' : 'sell';
+            const tradePnl = (trade.symbol && trade.symbol.includes('=F'))
+              ? calcFuturesPnL(trade.symbol, entryPrice, livePrice, qty, action)
+              : (action === 'buy' ? (livePrice - entryPrice) : (entryPrice - livePrice)) * qty;
             unrealizedPnl += tradePnl;
             openPositionsCost += entryPrice * qty;
           }
