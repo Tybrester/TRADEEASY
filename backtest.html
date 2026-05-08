@@ -434,50 +434,59 @@ function generateSignalBoof30(candles, direction = 'both') {
 
 // ─────────────────────────────────────────────
 // BACKTEST ENGINE
+// Accepts a pre-computed state array (1=long, -1=short, 0=neutral) for each bar.
+// Enters on the first bar the state flips to a tradeable direction.
+// Exits on the first bar the state flips away from the current position.
 // ─────────────────────────────────────────────
 
-function runBacktestOnCandles(candles, genFn, direction) {
+function runBacktest(candles, stateArr, direction) {
   const trades = [];
-  let openTrade = null;
+  let open = null; // { action, entry, entryIdx, entryTime }
+  const n = candles.length;
 
-  for (let i = 20; i < candles.length - 1; i++) {
-    const slice = candles.slice(0, i + 1);
-    const { signal, price } = genFn(slice, direction, i);
+  for (let i = 1; i < n; i++) {
+    const state = stateArr[i];       // current bar state: 1, -1, 0
+    const prev  = stateArr[i - 1];   // previous bar state
+    const price = candles[i].close;
+    const time  = candles[i].time;
+    const stateFlipped = state !== prev;
 
-    // State-based engine: close when state flips, enter when state matches direction
-    const prevSig = genFn(candles.slice(0, i), direction, i-1).signal;
-    const stateChanged = signal !== prevSig;
-
-    // Close on state flip to opposite
-    if (stateChanged && openTrade) {
-      if (openTrade.action === 'buy' && signal !== 'buy') {
-        const pnl = price - openTrade.entry;
-        trades.push({ ...openTrade, exit: price, exitIdx: i, exitTime: candles[i].time, pnl, pct: (pnl/openTrade.entry)*100, win: pnl > 0 });
-        openTrade = null;
-      } else if (openTrade.action === 'sell' && signal !== 'sell') {
-        const pnl = openTrade.entry - price;
-        trades.push({ ...openTrade, exit: price, exitIdx: i, exitTime: candles[i].time, pnl, pct: (pnl/openTrade.entry)*100, win: pnl > 0 });
-        openTrade = null;
+    // ── EXIT open position when state leaves current direction ──
+    if (open) {
+      const shouldExit = (open.action === 'buy'  && state !== 1)
+                      || (open.action === 'sell' && state !== -1);
+      if (shouldExit) {
+        const pnl = open.action === 'buy'
+          ? price - open.entry
+          : open.entry - price;
+        trades.push({
+          action: open.action, entry: open.entry,
+          entryIdx: open.entryIdx, entryTime: open.entryTime,
+          exit: price, exitIdx: i, exitTime: time,
+          pnl, pct: (pnl / open.entry) * 100, win: pnl > 0
+        });
+        open = null;
       }
     }
-    // Enter on state flip to new direction
-    if (!openTrade && stateChanged) {
-      if (signal === 'buy'  && direction !== 'short') openTrade = { entry: price, entryIdx: i, entryTime: candles[i].time, action: 'buy' };
-      if (signal === 'sell' && direction !== 'long')  openTrade = { entry: price, entryIdx: i, entryTime: candles[i].time, action: 'sell' };
+
+    // ── ENTER new position on state flip ──
+    if (!open && stateFlipped) {
+      if (state === 1  && direction !== 'short') open = { action: 'buy',  entry: price, entryIdx: i, entryTime: time };
+      if (state === -1 && direction !== 'long')  open = { action: 'sell', entry: price, entryIdx: i, entryTime: time };
     }
   }
 
   const wins   = trades.filter(t => t.win);
   const losses = trades.filter(t => !t.win);
-  const totalPnl = trades.reduce((s,t) => s+t.pnl, 0);
-  const avgWin  = wins.length   ? wins.reduce((s,t)=>s+t.pnl,0)/wins.length   : 0;
-  const avgLoss = losses.length ? losses.reduce((s,t)=>s+t.pnl,0)/losses.length : 0;
-  const winRate = trades.length ? (wins.length / trades.length) * 100 : 0;
-  const profitFactor = losses.length && Math.abs(losses.reduce((s,t)=>s+t.pnl,0)) > 0
-    ? Math.abs(wins.reduce((s,t)=>s+t.pnl,0)) / Math.abs(losses.reduce((s,t)=>s+t.pnl,0))
-    : wins.length ? Infinity : 0;
+  const totalPnl = trades.reduce((s, t) => s + t.pnl, 0);
+  const winRate  = trades.length ? (wins.length / trades.length) * 100 : 0;
+  const avgWin   = wins.length   ? wins.reduce((s,t)=>s+t.pnl,0)   / wins.length   : 0;
+  const avgLoss  = losses.length ? losses.reduce((s,t)=>s+t.pnl,0) / losses.length : 0;
+  const grossWin  = wins.reduce((s,t)=>s+t.pnl,0);
+  const grossLoss = Math.abs(losses.reduce((s,t)=>s+t.pnl,0));
+  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : wins.length ? Infinity : 0;
 
-  return { trades, wins: wins.length, losses: losses.length, totalPnl, avgWin, avgLoss, winRate, profitFactor };
+  return { trades, wins: wins.length, losses: losses.length, totalPnl, winRate, avgWin, avgLoss, profitFactor };
 }
 
 // ─────────────────────────────────────────────
@@ -610,27 +619,18 @@ async function runBacktest() {
     const boof20Signals = computeBoof20Signals(candles, direction);
     const boof30Signals = computeBoof30Signals(candles);
 
-    function makePrecomputedFn(sigArr) {
-      return (c, d, i) => {
-        const s = sigArr[i] ?? 0;
-        const sig = s===1 ? 'buy' : s===-1 ? 'sell' : 'none';
-        return { signal: sig, price: c[c.length-1].close };
-      };
-    }
-
     const systemDefs = [
-      { key: 'supertrend', name: 'Boof 1.0', badge: 'badge-st',  fn: makePrecomputedFn(boof10Signals) },
-      { key: 'boof20',     name: 'Boof 2.0', badge: 'badge-b20', fn: makePrecomputedFn(boof20Signals) },
-      { key: 'boof30',     name: 'Boof 3.0', badge: 'badge-b30', fn: makePrecomputedFn(boof30Signals) },
+      { key: 'supertrend', name: 'Boof 1.0', badge: 'badge-st',  states: boof10Signals },
+      { key: 'boof20',     name: 'Boof 2.0', badge: 'badge-b20', states: boof20Signals },
+      { key: 'boof30',     name: 'Boof 3.0', badge: 'badge-b30', states: boof30Signals },
     ];
 
     const toRun = systems === 'all' ? systemDefs : systemDefs.filter(s => s.key === systems);
 
-    // Run all (slight delay to let UI update)
     await new Promise(r => setTimeout(r, 50));
 
     const cards = toRun.map(sys => {
-      const result = runBacktestOnCandles(candles, sys.fn, direction);
+      const result = runBacktest(candles, sys.states, direction);
       return renderSystemCard(sys.name, sys.badge, result, symbol);
     });
 
