@@ -640,11 +640,11 @@
       const balSub = document.getElementById('stat-balance-sub');
       const brokerSel = document.getElementById('broker-selector');
 
-      // Show options bot paper balance (most recent options bot)
-      const { data: oBotsList } = await sbClient.from('options_bots').select('paper_balance,paper_balance_start').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1);
-      const oBot = oBotsList?.[0];
-      const paperBalance = oBot
-        ? (oBot.paper_balance != null ? Number(oBot.paper_balance) : Number(oBot.paper_balance_start ?? 100000))
+      // Show options bot paper balance — find enabled bot first, else most recently updated
+      const { data: oBotsList } = await sbClient.from('options_bots').select('paper_balance,paper_balance_start,enabled').eq('user_id', user.id).order('updated_at', { ascending: false });
+      const activeOBot = (oBotsList || []).find(b => b.enabled) || oBotsList?.[0];
+      const paperBalance = activeOBot
+        ? Number(activeOBot.paper_balance ?? activeOBot.paper_balance_start ?? 100000)
         : 100000;
 
       // Load tastytrade connection
@@ -700,11 +700,11 @@
           .eq('user_id', user.id)
           .neq('source', 'auto-bot');
 
-        // Get options bot paper balance (most recent)
-        const { data: freshOBots } = await sbClient.from('options_bots').select('paper_balance,paper_balance_start').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1);
-        const freshOBot = freshOBots?.[0];
-        const storedBalance = freshOBot
-          ? (freshOBot.paper_balance != null ? Number(freshOBot.paper_balance) : Number(freshOBot.paper_balance_start ?? 100000))
+        // Get options bot paper balance — enabled bot first, else most recently updated
+        const { data: freshOBots } = await sbClient.from('options_bots').select('paper_balance,paper_balance_start,enabled').eq('user_id', user.id).order('updated_at', { ascending: false });
+        const freshActiveOBot = (freshOBots || []).find(b => b.enabled) || freshOBots?.[0];
+        const storedBalance = freshActiveOBot
+          ? Number(freshActiveOBot.paper_balance ?? freshActiveOBot.paper_balance_start ?? 100000)
           : 100000;
 
         // Calculate unrealized P&L from open positions
