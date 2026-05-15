@@ -493,18 +493,24 @@
         <input type="text" id="new-stock-name" placeholder="e.g. SPY Scalper" maxlength="40" />
       </div>
       <div class="create-bot-field">
-        <label>Scan Mode <span style="color:#555;font-weight:400;font-size:0.72rem;">(select multiple)</span></label>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button type="button" class="dir-pill active" id="new-scan-single" onclick="toggleNewBotScanMode('single')">Single Symbol</button>
-          <button type="button" class="dir-pill" id="new-scan-stocks" onclick="toggleNewBotScanMode('scan_stocks')">Stocks List</button>
-          <button type="button" class="dir-pill" id="new-scan-crypto" onclick="toggleNewBotScanMode('scan_crypto')">Crypto List</button>
-          <button type="button" class="dir-pill" id="new-scan-futures" onclick="toggleNewBotScanMode('scan_futures')">Futures List</button>
+        <label>Mode</label>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="dir-pill active" id="new-mode-single" onclick="setNewBotMode(false)">Single Symbol</button>
+          <button type="button" class="dir-pill" id="new-mode-scan" onclick="setNewBotMode(true)">Scan List</button>
         </div>
-        <input type="hidden" id="new-scan-mode" value="single" />
       </div>
       <div class="create-bot-field" id="new-symbol-row" style="display:block;">
         <label>Symbol</label>
         <input type="text" id="new-stock-symbol" placeholder="e.g. SPY" maxlength="10" style="text-transform:uppercase;" value="SPY" />
+      </div>
+      <div class="create-bot-field" id="new-scan-row" style="display:none;">
+        <label>Scan Markets</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="dir-pill active" id="new-scan-stocks" onclick="toggleNewBotScanMarket('scan_stocks')">Stocks (Market Hours)</button>
+          <button type="button" class="dir-pill" id="new-scan-crypto" onclick="toggleNewBotScanMarket('scan_crypto')">Crypto (24/7)</button>
+          <button type="button" class="dir-pill" id="new-scan-futures" onclick="toggleNewBotScanMarket('scan_futures')">Futures (24/7)</button>
+        </div>
+        <input type="hidden" id="new-scan-mode" value="single" />
       </div>
       <div class="create-bot-field">
         <label>Trading Style (Auto-sets intervals)</label>
@@ -610,8 +616,26 @@
         <input type="text" id="new-options-name" placeholder="e.g. SPY Options Scalper" maxlength="40" />
       </div>
       <div class="create-bot-field">
+        <label>Mode</label>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="dir-pill active" id="new-opt-mode-single" onclick="setNewOptionsMode(false)">Single Symbol</button>
+          <button type="button" class="dir-pill" id="new-opt-mode-scan" onclick="setNewOptionsMode(true)">Scan List</button>
+        </div>
+      </div>
+      <div class="create-bot-field" id="new-options-symbol-row" style="display:block;">
         <label>Symbol</label>
         <input type="text" id="new-options-symbol" placeholder="e.g. SPY" maxlength="10" style="text-transform:uppercase;" value="SPY" />
+      </div>
+      <div class="create-bot-field" id="new-options-scan-row" style="display:none;">
+        <label>Scan List</label>
+        <select id="new-options-scan-list">
+          <option value="scan_stocks" selected>Top Stocks</option>
+          <option value="scan_etfs">ETFs (QQQ, SPY, etc.)</option>
+          <option value="scan_top10">Top 10 (TSLA, NVDA, etc.)</option>
+          <option value="scan_top50">Top 50 Volatility</option>
+          <option value="scan_duo">Duo (SPY & QQQ)</option>
+          <option value="scan_boof">Boof List (QQQ, SPY, TSLA, NVDA, AMD)</option>
+        </select>
       </div>
       <div class="create-bot-field">
         <label>Trading Style (Auto-sets intervals)</label>
@@ -1503,41 +1527,57 @@
       document.getElementById(id).classList.remove('open');
     }
 
-    const _newBotScanModes = new Set(['single']);
+    const _newBotScanMarkets = new Set(['scan_stocks']);
 
-    function toggleNewBotScanMode(mode) {
-      const key = mode.replace('scan_', '');
-      const btnId = `new-scan-${key === 'single' ? 'single' : key === 'scan_stocks' ? 'stocks' : key}`;
-
-      if (mode === 'single') {
-        // Single Symbol is exclusive
-        _newBotScanModes.clear();
-        _newBotScanModes.add('single');
-      } else {
-        // Remove single if adding a list mode
-        _newBotScanModes.delete('single');
-        if (_newBotScanModes.has(mode)) {
-          _newBotScanModes.delete(mode);
-          if (_newBotScanModes.size === 0) _newBotScanModes.add('single');
-        } else {
-          _newBotScanModes.add(mode);
-        }
-      }
-
-      // Update button states
-      ['single', 'scan_stocks', 'scan_crypto', 'scan_futures'].forEach(m => {
-        const id = `new-scan-${m === 'single' ? 'single' : m.replace('scan_', '')}`;
-        const btn = document.getElementById(id);
-        if (btn) btn.classList.toggle('active', _newBotScanModes.has(m));
-      });
-
-      // Store as comma-separated in hidden input
+    function setNewBotMode(isScanMode) {
+      // Toggle button states
+      const singleBtn = document.getElementById('new-mode-single');
+      const scanBtn = document.getElementById('new-mode-scan');
+      if (singleBtn) singleBtn.classList.toggle('active', !isScanMode);
+      if (scanBtn) scanBtn.classList.toggle('active', isScanMode);
+      
+      // Show/hide rows
+      const symRow = document.getElementById('new-symbol-row');
+      const scanRow = document.getElementById('new-scan-row');
+      if (symRow) symRow.style.display = isScanMode ? 'none' : 'block';
+      if (scanRow) scanRow.style.display = isScanMode ? 'block' : 'none';
+      
+      // Update hidden input
       const input = document.getElementById('new-scan-mode');
-      if (input) input.value = [..._newBotScanModes].join(',');
+      if (input) input.value = isScanMode ? [..._newBotScanMarkets].join(',') : 'single';
+    }
 
-      // Show symbol row only if single is selected
-      const symbolRow = document.getElementById('new-symbol-row');
-      if (symbolRow) symbolRow.style.display = _newBotScanModes.has('single') ? 'block' : 'none';
+    function toggleNewBotScanMarket(market) {
+      const btn = document.getElementById('new-scan-' + market.replace('scan_', ''));
+      if (!btn) return;
+      
+      const isActive = btn.classList.toggle('active');
+      if (isActive) _newBotScanMarkets.add(market);
+      else _newBotScanMarkets.delete(market);
+      
+      // Ensure at least one is selected
+      if (_newBotScanMarkets.size === 0) {
+        _newBotScanMarkets.add('scan_stocks');
+        document.getElementById('new-scan-stocks')?.classList.add('active');
+      }
+      
+      // Update hidden input
+      const input = document.getElementById('new-scan-mode');
+      if (input) input.value = [..._newBotScanMarkets].join(',');
+    }
+
+    function setNewOptionsMode(isScanMode) {
+      // Toggle button states
+      const singleBtn = document.getElementById('new-opt-mode-single');
+      const scanBtn = document.getElementById('new-opt-mode-scan');
+      if (singleBtn) singleBtn.classList.toggle('active', !isScanMode);
+      if (scanBtn) scanBtn.classList.toggle('active', isScanMode);
+      
+      // Show/hide rows
+      const symRow = document.getElementById('new-options-symbol-row');
+      const scanRow = document.getElementById('new-options-scan-row');
+      if (symRow) symRow.style.display = isScanMode ? 'none' : 'block';
+      if (scanRow) scanRow.style.display = isScanMode ? 'block' : 'none';
     }
 
     function onOptionsExpiryChange() {
@@ -1753,7 +1793,7 @@
       }
       
       closeCreateModal('create-stock-modal');
-      _newBotScanModes.clear(); _newBotScanModes.add('single');
+      _newBotScanMarkets.clear(); _newBotScanMarkets.add('scan_stocks');
       await createStockBot(name, symbol, candle, scan, trend, amount, signal, style, broker, scanMode);
     }
 
@@ -1785,7 +1825,13 @@
     async function submitCreateOptionsBot() {
       const name = document.getElementById('new-options-name').value.trim();
       if (!name) { document.getElementById('new-options-name').focus(); return; }
-      const symbol  = (document.getElementById('new-options-symbol').value.trim() || 'SPY').toUpperCase();
+      
+      // Determine if scan mode or single symbol
+      const isScanMode = document.getElementById('new-opt-mode-scan')?.classList.contains('active') || false;
+      const scanList = document.getElementById('new-options-scan-list')?.value || 'scan_stocks';
+      const symbol  = isScanMode ? 'SCAN' : (document.getElementById('new-options-symbol').value.trim() || 'SPY').toUpperCase();
+      const botScanMode = isScanMode ? scanList : 'single';
+      
       const style   = document.getElementById('new-options-style').value;
       const amount  = parseFloat(document.getElementById('new-options-amount').value) || 1000;
       const optType = document.getElementById('new-options-type').value;
@@ -1805,7 +1851,7 @@
       };
       const intervals = styleIntervals[style] || styleIntervals.scalper;
       closeCreateModal('create-options-modal');
-      await createOptionsBot(name, symbol, intervals.candle, intervals.scan, intervals.trend, amount, optType, expiry, signal, tp, sl, broker, style, trend);
+      await createOptionsBot(name, symbol, intervals.candle, intervals.scan, intervals.trend, amount, optType, expiry, signal, tp, sl, broker, style, trend, botScanMode);
     }
 
     async function editBotName(id, currentName, type) {
@@ -1930,9 +1976,9 @@
       promptNewOptionsBot();
     }
 
-    async function createOptionsBot(name, symbol='SPY', candle='5m', scan=1, trend='1h', amount=1000, optType='both', expiry='weekly', signal='supertrend', tp=50, sl=25, broker='paper', style='scalper', trendFilter='none') {
-      console.log(`[CreateOptionsBot] Creating options bot: ${name} with trend_filter=${trendFilter}`);
-      const { data, error } = await sbClient.from('options_bots').insert({ user_id: currentUserId, name, enabled: false, auto_submit: false, paper_balance: 100000, paper_balance_start: 100000, bot_dollar_amount: amount, bot_symbol: symbol, bot_interval: candle, run_interval_min: scan, bot_option_type: optType, bot_expiry_type: expiry, bot_signal: signal, take_profit_pct: tp, stop_loss_pct: sl, broker, trading_style: style, trend_filter: trendFilter }).select();
+    async function createOptionsBot(name, symbol='SPY', candle='5m', scan=1, trend='1h', amount=1000, optType='both', expiry='weekly', signal='supertrend', tp=50, sl=25, broker='paper', style='scalper', trendFilter='none', botScanMode='single') {
+      console.log(`[CreateOptionsBot] Creating options bot: ${name} with trend_filter=${trendFilter}, scan_mode=${botScanMode}`);
+      const { data, error } = await sbClient.from('options_bots').insert({ user_id: currentUserId, name, enabled: false, auto_submit: false, paper_balance: 100000, paper_balance_start: 100000, bot_dollar_amount: amount, bot_symbol: symbol, bot_interval: candle, run_interval_min: scan, bot_option_type: optType, bot_expiry_type: expiry, bot_signal: signal, take_profit_pct: tp, stop_loss_pct: sl, broker, trading_style: style, trend_filter: trendFilter, bot_scan_mode: botScanMode }).select();
       if (error) { console.error('[CreateOptionsBot] Error:', error); alert('Error: ' + error.message); return; }
       console.log('[CreateOptionsBot] Created:', data?.[0]?.id);
       await loadOptionsBots();
