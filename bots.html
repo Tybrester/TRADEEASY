@@ -1086,19 +1086,21 @@
             </div>
           </div>
 
-          <!-- Paper balance -->
-          <div class="paper-balance-box" style="border-color:#2a2000;">
+          <!-- Balance box: paper controls for paper, live balance display for live -->
+          <div class="paper-balance-box" style="border-color:${b.broker && b.broker !== 'paper' ? '#002a1a' : '#2a2000'};">
             <div>
               <div style="display:flex;align-items:baseline;gap:10px;">
                 <div class="paper-balance-value" id="opt-paper-bal-${b.id}">$${paperBalance.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
                 <span id="opt-paper-pct-${b.id}" style="font-size:0.82rem;font-weight:700;"></span>
               </div>
+              ${b.broker && b.broker !== 'paper' ? `<div style="font-size:0.7rem;color:#00e676;margin-top:2px;">Live ${b.broker === 'alpaca' ? 'Alpaca' : 'Tastytrade'} Account</div>` : ''}
             </div>
+            ${b.broker && b.broker !== 'paper' ? '' : `
             <div style="display:flex;gap:6px;align-items:center;">
               <input type="number" id="opt-bal-input-${b.id}" placeholder="Set balance..." onkeydown="if(event.key==='Enter')setOptionsPaperBalance('${b.id}')" style="background:#111;border:1px solid #2a2a2a;color:var(--text);padding:5px 10px;border-radius:6px;font-family:inherit;font-size:0.82rem;width:130px;outline:none;flex:1;" />
               <button onclick="setOptionsPaperBalance('${b.id}')" class="reset-btn" style="white-space:nowrap;">Set</button>
               <button class="reset-btn" onclick="resetOptionsPaperBalance('${b.id}')">$100k</button>
-            </div>
+            </div>`}
             <button onclick="resetOptionsBot('${b.id}')" style="width:100%;margin-top:4px;background:transparent;border:1px solid #2a1a1a;color:#664444;font-size:0.72rem;font-weight:700;padding:6px 0;border-radius:6px;cursor:pointer;font-family:inherit;letter-spacing:0.04em;transition:all 0.15s;" onmouseover="this.style.borderColor='#ff4444';this.style.color='#ff4444';this.style.background='rgba(255,68,68,0.06)'" onmouseout="this.style.borderColor='#2a1a1a';this.style.color='#664444';this.style.background='transparent'">↺ Reset Bot &amp; Clear Trades</button>
           </div>
 
