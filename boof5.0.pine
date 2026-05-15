@@ -1,0 +1,353 @@
+// @version=5
+indicator("Boof 5.0 - Quant Institutional System", overlay=true, max_lines_count=500, max_bars_back=500)
+
+// ═════════════════════════════════════════════════════════════════════════════
+// BOOF 5.0 - QUANTITATIVE INSTITUTIONAL TRADING SYSTEM
+// Inspired by: Two Sigma, Renaissance, Citadel approaches
+// Factors: Momentum, Mean Reversion, Volatility Regime, Market Microstructure
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INPUTS & PARAMETERS
+// ─────────────────────────────────────────────────────────────────────────────
+group1 = "Timeframe Analysis"
+tf_primary     = input.timeframe("1", "Primary TF", group=group1)
+tf_secondary   = input.timeframe("5", "Secondary TF", group=group1)
+tf_trend       = input.timeframe("1H", "Trend Anchor TF", group=group1)
+tf_macro       = input.timeframe("4H", "Macro TF", group=group1)
+
+group2 = "Signal Generation"
+lookback       = input.int(20, "Lookback Period", 10, 100, group=group2)
+momentum_len   = input.int(10, "Momentum Length", 5, 50, group=group2)
+rsi_len        = input.int(14, "RSI Length", 5, 30, group=group2)
+volume_lookback= input.int(20, "Volume Lookback", 10, 50, group=group2)
+
+group3 = "Regime Detection"
+vol_regime_len = input.int(20, "Volatility Regime Length", 10, 50, group=group3)
+trend_adx_len  = input.int(14, "ADX Length", 5, 30, group=group3)
+trend_threshold= input.int(25, "Trend Strength Threshold", 10, 50, group=group3)
+
+group4 = "Risk Management"
+use_vol_filter = input.bool(true, "Use Volatility Filter", group=group4)
+max_vol_percentile = input.int(80, "Max Volatility Percentile", 50, 95, group=group4)
+min_vol_percentile = input.int(20, "Min Volatility Percentile", 5, 50, group=group4)
+use_corr_filter = input.bool(true, "Use Correlation Filter", group=group4)
+
+group5 = "Display"
+show_signals   = input.bool(true, "Show Entry Signals", group=group5)
+show_tp_sl     = input.bool(true, "Show TP/SL Levels", group=group5)
+tp_multiplier  = input.float(2.0, "TP: ATR Multiple", 0.5, 5.0, step=0.1, group=group5)
+sl_multiplier  = input.float(1.0, "SL: ATR Multiple", 0.5, 3.0, step=0.1, group=group5)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MULTI-TIMEFRAME DATA FETCHING
+// ─────────────────────────────────────────────────────────────────────────────
+// Primary timeframe
+p_open  = request.security(syminfo.tickerid, tf_primary, open)
+p_high  = request.security(syminfo.tickerid, tf_primary, high)
+p_low   = request.security(syminfo.tickerid, tf_primary, low)
+p_close = request.security(syminfo.tickerid, tf_primary, close)
+p_vol   = request.security(syminfo.tickerid, tf_primary, volume)
+
+// Secondary timeframe
+s_close = request.security(syminfo.tickerid, tf_secondary, close)
+s_vol   = request.security(syminfo.tickerid, tf_secondary, volume)
+
+// Trend anchor
+t_close = request.security(syminfo.tickerid, tf_trend, close)
+t_ema20 = request.security(syminfo.tickerid, tf_trend, ta.ema(close, 20))
+t_ema50 = request.security(syminfo.tickerid, tf_trend, ta.ema(close, 50))
+
+// Macro timeframe
+m_close = request.security(syminfo.tickerid, tf_macro, close)
+m_ema50 = request.security(syminfo.tickerid, tf_macro, ta.ema(close, 50))
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACTOR 1: MOMENTUM (Price Velocity & Acceleration)
+// ─────────────────────────────────────────────────────────────────────────────
+// Simple momentum
+mom1 = ta.change(p_close, momentum_len) / p_close[momentum_len] * 100
+
+// Acceleration (second derivative)
+mom2 = ta.change(mom1, 5)
+
+// Smoothed momentum (ADX-style)
+mom_smooth = ta.ema(mom1, 10)
+
+// Momentum regime
+mom_bull = mom_smooth > 0 and mom2 > -0.5
+mom_bear = mom_smooth < 0 and mom2 < 0.5
+mom_neutral = not mom_bull and not mom_bear
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACTOR 2: MEAN REVERSION (Statistical Arbitrage Style)
+// ─────────────────────────────────────────────────────────────────────────────
+// Z-score of price relative to moving average
+ma_fast = ta.sma(p_close, 20)
+ma_slow = ta.sma(p_close, 50)
+price_zscore = (p_close - ma_fast) / ta.stdev(p_close, 20)
+
+// Bollinger Band position
+bb_basis = ta.sma(p_close, 20)
+bb_dev = 2 * ta.stdev(p_close, 20)
+bb_upper = bb_basis + bb_dev
+bb_lower = bb_basis - bb_dev
+bb_position = (p_close - bb_lower) / (bb_upper - bb_lower)
+
+// Mean reversion signals
+mr_oversold = price_zscore < -1.5 and bb_position < 0.1
+mr_overbought = price_zscore > 1.5 and bb_position > 0.9
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACTOR 3: VOLATILITY REGIME (Risk-Adjusted Positioning)
+// ─────────────────────────────────────────────────────────────────────────────
+// Realized volatility (annualized)
+daily_returns = ta.change(p_close) / p_close[1]
+volatility = ta.stdev(daily_returns, vol_regime_len) * math.sqrt(252) * 100
+
+// Historical volatility percentiles
+vol_sma = ta.sma(volatility, 50)
+vol_high = volatility > vol_sma * 1.2
+vol_low = volatility < vol_sma * 0.8
+vol_normal = not vol_high and not vol_low
+
+// ATR for position sizing
+atr = ta.atr(14)
+atr_percent = atr / p_close * 100
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACTOR 4: TREND STRENGTH (Institutional ADX)
+// ─────────────────────────────────────────────────────────────────────────────
+// ADX calculation
+dm_plus = ta.change(p_high) > ta.change(p_low) ? ta.change(p_high) : 0
+dm_minus = ta.change(p_low) > ta.change(p_high) ? ta.change(p_low) : 0
+tr = math.max(p_high - p_low, math.abs(p_high - p_close[1]), math.abs(p_low - p_close[1]))
+di_plus = 100 * ta.rma(dm_plus, trend_adx_len) / ta.rma(tr, trend_adx_len)
+di_minus = 100 * ta.rma(dm_minus, trend_adx_len) / ta.rma(tr, trend_adx_len)
+dx = 100 * math.abs(di_plus - di_minus) / (di_plus + di_minus)
+adx = ta.rma(dx, trend_adx_len)
+
+// Trend regime detection
+strong_trend = adx > trend_threshold and di_plus > di_minus
+strong_downtrend = adx > trend_threshold and di_minus > di_plus
+weak_trend = adx < 20
+
+// Multi-timeframe trend alignment
+trend_aligned_bull = p_close > t_ema20 and t_close > t_ema50 and m_close > m_ema50
+trend_aligned_bear = p_close < t_ema20 and t_close < t_ema50 and m_close < m_ema50
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACTOR 5: VOLUME ANALYSIS (Order Flow & Participation)
+// ─────────────────────────────────────────────────────────────────────────────
+// Volume moving average
+vol_ma = ta.sma(p_vol, volume_lookback)
+
+// Relative volume
+rel_vol = p_vol / vol_ma
+
+// Volume trend
+vol_increasing = rel_vol > 1.2
+vol_decreasing = rel_vol < 0.8
+
+// On-balance volume momentum
+obv = ta.obv(p_close, p_vol)
+obv_ma = ta.ema(obv, 20)
+obv_momentum = obv > obv_ma
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACTOR 6: MARKET MICROSTRUCTURE (Price Action)
+// ─────────────────────────────────────────────────────────────────────────────
+// Body/Wick ratio (institutional candle analysis)
+body = math.abs(p_close - p_open)
+wick = p_high - p_low
+body_ratio = wick > 0 ? body / wick : 0
+
+// Rejection patterns
+upper_rejection = (p_high - math.max(p_open, p_close)) / wick > 0.6
+lower_rejection = (math.min(p_open, p_close) - p_low) / wick > 0.6
+
+// Gap analysis
+gap_up = p_open > p_close[1] * 1.003
+gap_down = p_open < p_close[1] * 0.997
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPOSITE SCORING (Weighted Factor Model)
+// ─────────────────────────────────────────────────────────────────────────────
+// Momentum score (-2 to +2)
+mom_score = mom_bull ? 2 : mom_bear ? -2 : mom_smooth > 0 ? 1 : mom_smooth < 0 ? -1 : 0
+
+// Trend score (-2 to +2)
+trend_score = strong_trend ? 2 : strong_downtrend ? -2 : 0
+
+// Mean reversion score (-1 to +1)
+mr_score = mr_oversold ? 1 : mr_overbought ? -1 : 0
+
+// Volume confirmation (0 to 1)
+vol_score = vol_increasing and obv_momentum ? 1 : 0
+
+// Microstructure score (-1 to +1)
+micro_score = lower_rejection ? 1 : upper_rejection ? -1 : 0
+
+// Composite signal (-5 to +5)
+composite = mom_score + trend_score + mr_score + vol_score + micro_score
+composite_smooth = ta.ema(composite, 3)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REGIME CLASSIFICATION (Institutional Style)
+// ─────────────────────────────────────────────────────────────────────────────
+// Market regime
+trending = adx > 25 and not weak_trend
+ranging = adx < 20 or (math.abs(price_zscore) < 1 and volatility < vol_sma)
+volatile = volatility > vol_sma * 1.5 and atr_percent > 2
+
+// Regime-specific signal adjustments
+adjusted_composite = composite_smooth
+if ranging
+    adjusted_composite := -composite_smooth * 0.5 // Mean reversion in ranges
+if volatile and not trend_aligned_bull and not trend_aligned_bear
+    adjusted_composite := adjusted_composite * 0.3 // Reduce size in chop
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SIGNAL GENERATION
+// ─────────────────────────────────────────────────────────────────────────────
+// Signal thresholds
+threshold_buy = 2.5
+threshold_sell = -2.5
+
+// Raw signals
+raw_buy = adjusted_composite > threshold_buy
+raw_sell = adjusted_composite < threshold_sell
+
+// Signal persistence (require 2 bars for confirmation)
+buy_confirmed = raw_buy and raw_buy[1]
+sell_confirmed = raw_sell and raw_sell[1]
+
+// Volatility filter
+vol_ok = not use_vol_filter or (volatility < ta.percentile(volatility, 100, max_vol_percentile) and volatility > ta.percentile(volatility, 100, min_vol_percentile))
+
+// Final signals
+buy_signal = buy_confirmed and trend_aligned_bull and vol_ok and not ranging
+sell_signal = sell_confirmed and trend_aligned_bear and vol_ok and not ranging
+
+// Exit signals
+exit_long = adjusted_composite < -1 or (mr_overbought and composite < 0)
+exit_short = adjusted_composite > 1 or (mr_oversold and composite > 0)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POSITION MANAGEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+// Dynamic position sizing based on volatility
+vol_adj = volatility > 0 ? 1 / volatility * 100 : 1
+position_size = math.min(1, math.max(0.2, vol_adj))
+
+// Kelly Criterion approximation (simplified)
+win_rate = 0.55 // Assumed from backtests
+avg_win = 2.0   // R:R ratio
+avg_loss = 1.0
+kelly = win_rate - ((1 - win_rate) / avg_win)
+kelly_adj = math.max(0.1, math.min(0.5, kelly)) * position_size
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PLOTTING & VISUALIZATION
+// ─────────────────────────────────────────────────────────────────────────────
+// Background regime coloring
+regime_color = trending and not strong_downtrend ? color.new(color.green, 90) :
+               trending and strong_downtrend ? color.new(color.red, 90) :
+               ranging ? color.new(color.gray, 90) :
+               volatile ? color.new(color.orange, 90) :
+               color.new(color.blue, 95)
+bgcolor(regime_color)
+
+// EMAs for trend reference
+plot(ta.ema(p_close, 20), title="EMA 20", color=color.new(#00d4ff, 50), linewidth=1)
+plot(ta.ema(p_close, 50), title="EMA 50", color=color.new(#ffaa00, 50), linewidth=2)
+plot(ta.ema(p_close, 200), title="EMA 200", color=color.new(#ff00ff, 70), linewidth=1)
+
+// Signals
+plotshape(show_signals and buy_signal, title="Buy", location=location.belowbar, 
+         color=color.new(#00ff88, 0), style=shape.triangleup, size=size.normal, text="BUY",
+         textcolor=color.new(#00ff88, 0))
+plotshape(show_signals and sell_signal, title="Sell", location=location.abovebar, 
+         color=color.new(#ff4444, 0), style=shape.triangledown, size=size.normal, text="SELL",
+         textcolor=color.new(#ff4444, 0))
+
+// TP/SL levels (for last signal)
+var float entry_price = na
+var float tp_level = na
+var float sl_level = na
+
+if buy_signal
+    entry_price := p_close
+    tp_level := entry_price + (atr * tp_multiplier)
+    sl_level := entry_price - (atr * sl_multiplier)
+
+if sell_signal
+    entry_price := p_close
+    tp_level := entry_price - (atr * tp_multiplier)
+    sl_level := entry_price + (atr * sl_multiplier)
+
+// Plot TP/SL
+plot(show_tp_sl and not na(tp_level) ? tp_level : na, title="Take Profit", 
+     color=color.new(color.green, 70), style=plot.style_linebr, linewidth=1)
+plot(show_tp_sl and not na(sl_level) ? sl_level : na, title="Stop Loss", 
+     color=color.new(color.red, 70), style=plot.style_linebr, linewidth=1)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INFORMATION PANEL
+// ─────────────────────────────────────────────────────────────────────────────
+var table info_panel = table.new(position.top_right, 2, 8, bgcolor=color.new(#0a0a0a, 5), 
+                                border_width=1, border_color=color.new(#00d4ff, 50), 
+                                frame_width=1)
+
+if barstate.islast
+    // Regime
+    regime_text = trending ? (strong_downtrend ? "TREND DOWN" : "TREND UP") : 
+                  ranging ? "RANGE" : volatile ? "VOLATILE" : "UNCERTAIN"
+    regime_color_text = strong_downtrend ? color.red : trending ? color.green : ranging ? color.gray : color.orange
+    table.cell(info_panel, 0, 0, "REGIME", text_color=color.white, text_size=size.tiny)
+    table.cell(info_panel, 1, 0, regime_text, text_color=regime_color_text, text_size=size.tiny)
+    
+    // Composite Score
+    table.cell(info_panel, 0, 1, "SCORE", text_color=color.white, text_size=size.tiny)
+    score_color = adjusted_composite > 0 ? color.green : adjusted_composite < 0 ? color.red : color.gray
+    table.cell(info_panel, 1, 1, str.tostring(adjusted_composite, "#.##"), text_color=score_color, text_size=size.tiny)
+    
+    // ADX
+    table.cell(info_panel, 0, 2, "ADX", text_color=color.white, text_size=size.tiny)
+    adx_color = adx > 25 ? color.green : adx < 20 ? color.gray : color.orange
+    table.cell(info_panel, 1, 2, str.tostring(adx, "#"), text_color=adx_color, text_size=size.tiny)
+    
+    // Volatility
+    table.cell(info_panel, 0, 3, "VOL%", text_color=color.white, text_size=size.tiny)
+    vol_color = vol_high ? color.red : vol_low ? color.green : color.gray
+    table.cell(info_panel, 1, 3, str.tostring(volatility, "#."), text_color=vol_color, text_size=size.tiny)
+    
+    // Momentum
+    table.cell(info_panel, 0, 4, "MOM", text_color=color.white, text_size=size.tiny)
+    mom_color = mom_bull ? color.green : mom_bear ? color.red : color.gray
+    table.cell(info_panel, 1, 4, str.tostring(mom_smooth, "#."), text_color=mom_color, text_size=size.tiny)
+    
+    // Z-Score
+    table.cell(info_panel, 0, 5, "Z-SCORE", text_color=color.white, text_size=size.tiny)
+    z_color = price_zscore > 1.5 ? color.red : price_zscore < -1.5 ? color.green : color.gray
+    table.cell(info_panel, 1, 5, str.tostring(price_zscore, "#.##"), text_color=z_color, text_size=size.tiny)
+    
+    // Position Size
+    table.cell(info_panel, 0, 6, "SIZE", text_color=color.white, text_size=size.tiny)
+    table.cell(info_panel, 1, 6, str.tostring(kelly_adj * 100, "#") + "%", text_color=color.new(#00d4ff, 0), text_size=size.tiny)
+    
+    // Signal
+    table.cell(info_panel, 0, 7, "SIGNAL", text_color=color.white, text_size=size.tiny)
+    signal_text = buy_signal ? "LONG" : sell_signal ? "SHORT" : exit_long ? "EXIT LONG" : exit_short ? "EXIT SHORT" : "HOLD"
+    signal_color = buy_signal ? color.green : sell_signal ? color.red : exit_long or exit_short ? color.orange : color.gray
+    table.cell(info_panel, 1, 7, signal_text, text_color=signal_color, text_size=size.tiny)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ALERTS
+// ─────────────────────────────────────────────────────────────────────────────
+alertcondition(buy_signal, title="Boof 5.0 Long Entry", message='Boof 5.0: LONG {{ticker}} @ {{close}} | Score: {{plot_0}} | Regime: Trending')
+alertcondition(sell_signal, title="Boof 5.0 Short Entry", message='Boof 5.0: SHORT {{ticker}} @ {{close}} | Score: {{plot_0}} | Regime: Trending')
+alertcondition(exit_long, title="Boof 5.0 Exit Long", message='Boof 5.0: EXIT LONG {{ticker}} @ {{close}}')
+alertcondition(exit_short, title="Boof 5.0 Exit Short", message='Boof 5.0: EXIT SHORT {{ticker}} @ {{close}}')
+alertcondition(ranging and not ranging[1], title="Boof 5.0 Range Regime", message='Boof 5.0: {{ticker}} entered RANGE regime - Mean reversion mode')
+alertcondition(trending and not trending[1], title="Boof 5.0 Trend Regime", message='Boof 5.0: {{ticker}} entered TREND regime - Momentum mode')

@@ -484,6 +484,7 @@
           <option value="hyper">Hyper Scalper (1m candles)</option>
           <option value="scalper" selected>Scalper (5m candles)</option>
           <option value="swing">Swing (15m candles)</option>
+          <option value="longer_swing">Longer Swing (30m candles)</option>
           <option value="position">Position (1h candles)</option>
           <option value="custom">Custom (Manual)</option>
         </select>
@@ -523,9 +524,17 @@
         <label>Custom Trend Filter</label>
         <select id="new-custom-trend-filter">
           <option value="none">No Filter</option>
+          <option value="15m">15-Minute Trend (Fast)</option>
           <option value="1h" selected>1-Hour Trend</option>
           <option value="4h">4-Hour Trend</option>
           <option value="1d">Daily Trend</option>
+        </select>
+      </div>
+      <div class="create-bot-field" id="new-custom-signal-test" style="display:none;">
+        <label>Test Signal (Debug Mode)</label>
+        <select id="new-custom-test-signal">
+          <option value="test_always_buy">TEST: Always Buy (Debug)</option>
+          <option value="test_always_sell">TEST: Always Sell (Debug)</option>
         </select>
       </div>
       <div class="create-bot-field">
@@ -534,12 +543,20 @@
       </div>
       <div class="create-bot-field">
         <label>Broker</label>
-        <select id="new-stock-broker">
+        <select id="new-stock-broker" onchange="updateBrokerStatus()">
           <option value="paper">Paper Trading (Test)</option>
           <option value="alpaca">Alpaca (Live)</option>
           <option value="tastytrade">Tastytrade (Live)</option>
         </select>
         <span style="font-size:0.7rem;color:#888;">Both stock & options bot will use this broker</span>
+      </div>
+      <div class="create-bot-field" id="tastytrade-status-container" style="display:none;">
+        <label>Tastytrade Connection</label>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span id="tastytrade-status-dot" style="width:10px;height:10px;border-radius:50%;background:var(--muted);"></span>
+          <span id="tastytrade-status-text" style="font-size:0.8rem;">Checking...</span>
+          <button type="button" onclick="testTastytradeConnection()" style="padding:4px 10px;font-size:0.7rem;background:var(--surface);border:1px solid var(--border);border-radius:4px;cursor:pointer;">Test Connection</button>
+        </div>
       </div>
       <div class="create-bot-field">
         <label>Signal Strategy</label>
@@ -547,6 +564,7 @@
           <option value="supertrend">Boof 1.0 (Adaptive SuperTrend + EMA50 + ADX)</option>
           <option value="boof20">Boof 2.0 (ML-Style Predictive)</option>
           <option value="boof30">Boof 3.0 (KMeans Regime Detection)</option>
+          <option value="boof50">Boof 5.0 (Quant Six-Factor)</option>
         </select>
       </div>
       <div class="create-bot-actions">
@@ -574,6 +592,7 @@
           <option value="hyper">Hyper Scalper (1m candles)</option>
           <option value="scalper" selected>Scalper (5m candles)</option>
           <option value="swing">Swing (15m candles)</option>
+          <option value="longer_swing">Longer Swing (30m candles)</option>
           <option value="position">Position (1h candles)</option>
           <option value="custom">Custom (Manual)</option>
         </select>
@@ -623,7 +642,31 @@
           <option value="supertrend">Boof 1.0 (Adaptive SuperTrend + EMA50 + ADX)</option>
           <option value="boof20">Boof 2.0 (ML-Style Predictive)</option>
           <option value="boof30">Boof 3.0 (KMeans Regime Detection)</option>
+          <option value="boof50">Boof 5.0 (Quant Six-Factor)</option>
         </select>
+      </div>
+      <div class="create-bot-field">
+        <label>Trend Filter (Optional)</label>
+        <select id="new-options-trend">
+          <option value="none" selected>No Filter (Trade All Signals)</option>
+          <option value="15m">15-Minute Trend (Fast - for 0DTE)</option>
+          <option value="1h">1-Hour Trend</option>
+          <option value="4h">4-Hour Trend</option>
+          <option value="1d">Daily Trend (1d candles)</option>
+        </select>
+      </div>
+      <div class="create-bot-field">
+        <label>Signal Strategy</label>
+        <select id="new-options-signal" onchange="toggleTestSignal()">
+          <option value="supertrend">Boof 1.0 (Adaptive SuperTrend + EMA50 + ADX)</option>
+          <option value="boof20">Boof 2.0 (ML-Style Predictive)</option>
+          <option value="boof30">Boof 3.0 (KMeans Regime Detection)</option>
+          <option value="boof50">Boof 5.0 (Quant Six-Factor)</option>
+          <option value="test_always_buy">🧪 TEST: Always Buy (Debug Mode)</option>
+          <option value="test_always_sell">🧪 TEST: Always Sell (Debug Mode)</option>
+        </select>
+        <span id="test-signal-warning" style="font-size:0.7rem;color:var(--red);display:none;">⚠️ TEST MODE: Will trade EVERY scan cycle!</span>
+        <span style="font-size:0.7rem;color:#888;">Leave as "No Filter" to trade pure signals</span>
       </div>
       <div class="create-bot-field">
         <label>Take Profit %</label>
@@ -701,13 +744,14 @@
         let unrealizedPnl = 0;
         const { data: session } = await sbClient.auth.getSession();
         const token = session?.session?.access_token || SUPABASE_ANON_KEY;
+        const userId = session?.session?.user?.id || currentUser?.id;
 
         await Promise.all((openTrades || []).map(async (trade) => {
           try {
             const res = await fetch(`${SUPABASE_URL}/functions/v1/options-bot`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'get_option_price', symbol: trade.symbol, strike: trade.strike, expiration: trade.expiration_date, option_type: trade.option_type })
+              body: JSON.stringify({ action: 'get_option_price', symbol: trade.symbol, strike: trade.strike, expiration: trade.expiration_date, option_type: trade.option_type, user_id: userId })
             });
             const json = await res.json();
             const currentPremium = json?.price;
@@ -1074,6 +1118,7 @@
                   <option value="hyper" ${b.trading_style==='hyper'?'selected':''}>Hyper Scalper (1m)</option>
                   <option value="scalper" ${(!b.trading_style||b.trading_style==='scalper')?'selected':''}>Scalper (5m)</option>
                   <option value="swing" ${b.trading_style==='swing'?'selected':''}>Swing (15m)</option>
+                  <option value="longer_swing" ${b.trading_style==='longer_swing'?'selected':''}>Longer Swing (30m)</option>
                   <option value="position" ${b.trading_style==='position'?'selected':''}>Position (1h)</option>
                   <option value="custom" ${b.trading_style==='custom'?'selected':''}>Custom (Manual)</option>
                 </select>
@@ -1119,7 +1164,25 @@
                   <option value="supertrend" ${(b.bot_signal||'supertrend')==='supertrend'?'selected':''}>Boof 1.0 (Adaptive SuperTrend + EMA50 + ADX)</option>
                   <option value="boof20" ${b.bot_signal==='boof20'?'selected':''}>Boof 2.0 (ML-Style Predictive)</option>
                   <option value="boof30" ${b.bot_signal==='boof30'?'selected':''}>Boof 3.0 (KMeans Regime Detection)</option>
+                  <option value="boof50" ${b.bot_signal==='boof50'?'selected':''}>Boof 5.0 (Quant Six-Factor)</option>
+                  <option value="test_always_buy" ${b.bot_signal==='test_always_buy'?'selected':''}>🧪 TEST: Always Buy</option>
+                  <option value="test_always_sell" ${b.bot_signal==='test_always_sell'?'selected':''}>🧪 TEST: Always Sell</option>
                 </select>
+              </div>
+              <div class="auto-settings-row">
+                <span>Trend Filter</span>
+                <select class="auto-input" id="otrend-${b.id}" style="width:220px;">
+                  <option value="none" ${!b.trend_filter||b.trend_filter==='none'?'selected':''}>No Filter (Trade All Signals)</option>
+                  <option value="vwap_1m" ${b.trend_filter==='vwap_1m'?'selected':''}>VWAP 1m (Recommended)</option>
+                  <option value="1m_ema150" ${b.trend_filter==='1m_ema150'?'selected':''}>1-Minute EMA150 (~10m equiv)</option>
+                  <option value="5m" ${b.trend_filter==='5m'?'selected':''}>5-Minute EMA25</option>
+                  <option value="10m" ${b.trend_filter==='10m'?'selected':''}>10-Minute EMA25</option>
+                  <option value="15m" ${b.trend_filter==='15m'?'selected':''}>15-Minute EMA25</option>
+                  <option value="1h" ${b.trend_filter==='1h'?'selected':''}>1-Hour EMA25</option>
+                  <option value="4h" ${b.trend_filter==='4h'?'selected':''}>4-Hour EMA25</option>
+                  <option value="1d" ${b.trend_filter==='1d'?'selected':''}>Daily EMA25</option>
+                </select>
+                <span style="font-size:0.7rem;color:#555;">Only trade with higher TF trend</span>
               </div>
               <div class="auto-settings-row"><span>Expiry</span>
                 <select class="auto-input" id="oexp-${b.id}" style="width:160px;">
@@ -1197,6 +1260,7 @@
         'hyper': { interval: '1m', scan: 1 },
         'scalper': { interval: '5m', scan: 1 },
         'swing': { interval: '15m', scan: 5 },
+        'longer_swing': { interval: '30m', scan: 10 },
         'position': { interval: '1h', scan: 15 },
         'custom': null // Don't change, let user pick
       };
@@ -1235,7 +1299,8 @@
       const botSignal = document.getElementById('osig-' + botId)?.value || 'supertrend';
       const optionType = document.getElementById('otype-' + botId)?.value || 'both';
       const tradingStyle = document.getElementById('ostyle-' + botId)?.value || 'scalper';
-      console.log(`[SaveOptions] Bot ${botId}: sym=${sym}, $=${dol}, optionType=${optionType}, int=${int}, runInt=${runInt}min, dir=${dir}, signal=${botSignal}, scan=${scanMode}, style=${tradingStyle}`);
+      const trendFilter = document.getElementById('otrend-' + botId)?.value || 'none';
+      console.log(`[SaveOptions] Bot ${botId}: sym=${sym}, $=${dol}, optionType=${optionType}, int=${int}, runInt=${runInt}min, dir=${dir}, signal=${botSignal}, scan=${scanMode}, style=${tradingStyle}, trend=${trendFilter}`);
       const brkWarn = document.getElementById('obrk-warn-' + botId);
       if (brkWarn) {
         brkWarn.style.display = (broker === 'tastytrade' || broker === 'alpaca') ? 'flex' : 'none';
@@ -1243,7 +1308,7 @@
         if (span) span.textContent = `Live options trading — real orders will be placed on ${broker === 'alpaca' ? 'Alpaca' : 'Tastytrade'}`;
       }
       const otmStrikes = parseInt(document.getElementById(`ootm-${botId}`)?.value ?? '0');
-      const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_option_type: optionType, bot_interval: int, run_interval_min: runInt, market_open_delay_min: startDelay, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, max_loss_dollar: null, max_profit_dollar: null, broker, bot_signal: botSignal, bot_otm_strikes: otmStrikes, trading_style: tradingStyle, updated_at: new Date().toISOString() }).eq('id', botId);
+      const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_option_type: optionType, bot_interval: int, run_interval_min: runInt, market_open_delay_min: startDelay, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, max_loss_dollar: null, max_profit_dollar: null, broker, bot_signal: botSignal, bot_otm_strikes: otmStrikes, trading_style: tradingStyle, trend_filter: trendFilter, updated_at: new Date().toISOString() }).eq('id', botId);
       const r = document.getElementById('opt-run-result-' + botId);
       if (error) {
         console.error('[SaveOptions] Error:', error);
@@ -1435,6 +1500,14 @@
       if (symbolRow) symbolRow.style.display = _newBotScanModes.has('single') ? 'block' : 'none';
     }
 
+    function toggleTestSignal() {
+      const signal = document.getElementById('new-options-signal')?.value;
+      const warning = document.getElementById('test-signal-warning');
+      if (warning) {
+        warning.style.display = (signal === 'test_always_buy' || signal === 'test_always_sell') ? 'inline' : 'none';
+      }
+    }
+
     function updateNewBotPreview() {
       const name = document.getElementById('new-stock-name')?.value || '[Name]';
       const style = document.getElementById('new-stock-style')?.value || 'scalper';
@@ -1491,6 +1564,14 @@
           expiry: 'Weekly (1-7 days)',
           best: 'Medium-term swings'
         },
+        longer_swing: { 
+          title: 'Longer Swing Settings:', 
+          candle: '30 minute charts', 
+          scan: 'Every 10 minutes', 
+          trend: '4-hour EMA',
+          expiry: 'Weekly (1-7 days)',
+          best: 'Wider swing trades'
+        },
         position: { 
           title: 'Position Settings:', 
           candle: '1 hour charts', 
@@ -1523,6 +1604,68 @@
       }
     }
 
+    function updateBrokerStatus() {
+      const broker = document.getElementById('new-stock-broker')?.value;
+      const container = document.getElementById('tastytrade-status-container');
+      if (container) {
+        container.style.display = broker === 'tastytrade' ? 'block' : 'none';
+        if (broker === 'tastytrade') {
+          testTastytradeConnection();
+        }
+      }
+    }
+
+    async function testTastytradeConnection() {
+      const statusDot = document.getElementById('tastytrade-status-dot');
+      const statusText = document.getElementById('tastytrade-status-text');
+      
+      statusDot.style.background = 'orange';
+      statusText.textContent = 'Testing...';
+      
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          statusDot.style.background = 'var(--red)';
+          statusText.textContent = 'Not logged in';
+          return;
+        }
+        
+        // Check if credentials exist
+        const { data: creds } = await supabase
+          .from('broker_credentials')
+          .select('credentials')
+          .eq('user_id', user.id)
+          .eq('broker', 'tastytrade')
+          .maybeSingle();
+        
+        if (!creds?.credentials?.refresh_token) {
+          statusDot.style.background = 'var(--red)';
+          statusText.textContent = 'Not connected - Connect in Account Settings';
+          return;
+        }
+        
+        // Test the OAuth refresh
+        const response = await fetch(`${supabaseUrl}/functions/v1/tasty-oauth?action=refresh&user_id=${user.id}`, {
+          headers: { 'Authorization': `Bearer ${supabaseKey}` }
+        });
+        const result = await response.json();
+        
+        if (result.access_token) {
+          statusDot.style.background = 'var(--accent)';
+          statusText.textContent = 'Connected ✓';
+          alert('✅ Tastytrade connection is working!');
+        } else {
+          statusDot.style.background = 'var(--red)';
+          statusText.textContent = `Failed: ${result.error || 'Unknown error'}`;
+          alert('❌ Tastytrade connection failed. Try reconnecting in Account Settings.');
+        }
+      } catch (err) {
+        statusDot.style.background = 'var(--red)';
+        statusText.textContent = 'Error testing connection';
+        console.error('Test connection error:', err);
+      }
+    }
+
     async function submitCreateStockBot() {
       const name = document.getElementById('new-stock-name').value.trim();
       if (!name) { document.getElementById('new-stock-name').focus(); return; }
@@ -1550,6 +1693,7 @@
           hyper: { candle: '1m', scan: 1, trend: '1h' },
           scalper: { candle: '5m', scan: 1, trend: '1h' },
           swing: { candle: '15m', scan: 1, trend: '4h' },
+          longer_swing: { candle: '30m', scan: 1, trend: '4h' },
           position: { candle: '1h', scan: 1, trend: '1d' }
         };
         const settings = styleIntervals[style] || styleIntervals.scalper;
@@ -1571,6 +1715,7 @@
         hyper:   { title: 'Hyper Scalper Settings:', candle: '1 minute charts',  scan: 'Every 1 minute', trend: '1-hour EMA',  expiry: '0DTE (same day)',      best: 'Ultra-fast scalping' },
         scalper: { title: 'Scalper Settings:',        candle: '5 minute charts',  scan: 'Every 1 minute', trend: '1-hour EMA',  expiry: '0DTE or Weekly',       best: 'Quick intraday moves' },
         swing:   { title: 'Swing Settings:',          candle: '15 minute charts', scan: 'Every 1 minute', trend: '4-hour EMA',  expiry: 'Weekly (1-7 days)',     best: 'Medium-term swings' },
+        longer_swing: { title: 'Longer Swing Settings:', candle: '30 minute charts', scan: 'Every 10 minutes', trend: '4-hour EMA', expiry: 'Weekly (1-7 days)',     best: 'Wider swing trades' },
         position:{ title: 'Position Settings:',       candle: '1 hour charts',    scan: 'Every 1 minute', trend: 'Daily EMA',   expiry: 'Monthly (30+ days)',    best: 'Long-term trends' },
         custom:  { title: 'Custom Settings:',         candle: 'You choose',       scan: 'You choose',     trend: 'You choose',  expiry: 'You choose',            best: 'Full manual control' },
       };
@@ -1596,6 +1741,7 @@
       const optType = document.getElementById('new-options-type').value;
       const expiry  = document.getElementById('new-options-expiry').value;
       const signal  = document.getElementById('new-options-signal').value;
+      const trend   = document.getElementById('new-options-trend')?.value || 'none';
       const tp      = parseFloat(document.getElementById('new-options-tp').value) || 50;
       const sl      = parseFloat(document.getElementById('new-options-sl').value) || 25;
       const broker  = document.getElementById('new-options-broker').value;
@@ -1603,12 +1749,13 @@
         hyper:   { candle: '1m',  scan: 1, trend: '1h' },
         scalper: { candle: '5m',  scan: 1, trend: '1h' },
         swing:   { candle: '15m', scan: 1, trend: '4h' },
+        longer_swing: { candle: '30m', scan: 1, trend: '4h' },
         position:{ candle: '1h',  scan: 1, trend: '1d' },
         custom:  { candle: document.getElementById('new-options-custom-candle')?.value || '5m', scan: 1, trend: '1h' },
       };
       const intervals = styleIntervals[style] || styleIntervals.scalper;
       closeCreateModal('create-options-modal');
-      await createOptionsBot(name, symbol, intervals.candle, intervals.scan, intervals.trend, amount, optType, expiry, signal, tp, sl, broker, style);
+      await createOptionsBot(name, symbol, intervals.candle, intervals.scan, intervals.trend, amount, optType, expiry, signal, tp, sl, broker, style, trend);
     }
 
     async function editBotName(id, currentName, type) {
@@ -1712,9 +1859,9 @@
       promptNewOptionsBot();
     }
 
-    async function createOptionsBot(name, symbol='SPY', candle='5m', scan=1, trend='1h', amount=1000, optType='both', expiry='weekly', signal='supertrend', tp=50, sl=25, broker='paper', style='scalper') {
-      console.log(`[CreateOptionsBot] Creating options bot: ${name}`);
-      const { data, error } = await sbClient.from('options_bots').insert({ user_id: currentUserId, name, enabled: false, auto_submit: false, paper_balance: 100000, paper_balance_start: 100000, bot_dollar_amount: amount, bot_symbol: symbol, bot_interval: candle, run_interval_min: scan, bot_option_type: optType, bot_expiry_type: expiry, bot_signal: signal, take_profit_pct: tp, stop_loss_pct: sl, broker, trading_style: style }).select();
+    async function createOptionsBot(name, symbol='SPY', candle='5m', scan=1, trend='1h', amount=1000, optType='both', expiry='weekly', signal='supertrend', tp=50, sl=25, broker='paper', style='scalper', trendFilter='none') {
+      console.log(`[CreateOptionsBot] Creating options bot: ${name} with trend_filter=${trendFilter}`);
+      const { data, error } = await sbClient.from('options_bots').insert({ user_id: currentUserId, name, enabled: false, auto_submit: false, paper_balance: 100000, paper_balance_start: 100000, bot_dollar_amount: amount, bot_symbol: symbol, bot_interval: candle, run_interval_min: scan, bot_option_type: optType, bot_expiry_type: expiry, bot_signal: signal, take_profit_pct: tp, stop_loss_pct: sl, broker, trading_style: style, trend_filter: trendFilter }).select();
       if (error) { console.error('[CreateOptionsBot] Error:', error); alert('Error: ' + error.message); return; }
       console.log('[CreateOptionsBot] Created:', data?.[0]?.id);
       await loadOptionsBots();
@@ -2521,6 +2668,7 @@
                   <option value="hyper" ${s.trading_style==='hyper'?'selected':''}>Hyper Scalper (1m candles)</option>
                   <option value="scalper" ${s.trading_style==='scalper'?'selected':''}>Scalper (5m candles)</option>
                   <option value="swing" ${s.trading_style==='swing'?'selected':''}>Swing (15m candles)</option>
+                  <option value="longer_swing" ${s.trading_style==='longer_swing'?'selected':''}>Longer Swing (30m candles)</option>
                   <option value="position" ${s.trading_style==='position'?'selected':''}>Position (1h candles)</option>
                 </select>
                 <span style="font-size:0.7rem;color:#555;">Auto-sets intervals</span>
@@ -2578,12 +2726,14 @@
                   <option value="supertrend" ${(s.bot_signal||'supertrend')==='supertrend'?'selected':''}>Boof 1.0 (Adaptive SuperTrend + EMA50 + ADX)</option>
                   <option value="boof20" ${s.bot_signal==='boof20'?'selected':''}>Boof 2.0 (ML-Style Predictive)</option>
                   <option value="boof30" ${s.bot_signal==='boof30'?'selected':''}>Boof 3.0 (KMeans Regime Detection)</option>
+                  <option value="boof50" ${s.bot_signal==='boof50'?'selected':''}>Boof 5.0 (Quant Six-Factor)</option>
                 </select>
               </div>
-              <div class="auto-settings-row" id="trend-row-${s.id}" style="${!s.trading_style||s.trading_style==='custom'?'':'display:none;'}">
+              <div class="auto-settings-row" id="trend-row-${s.id}">
                 <span>Trend Filter</span>
                 <select class="auto-input" id="trend-${s.id}" style="width:220px;">
                   <option value="none" ${!s.trend_filter||s.trend_filter==='none'?'selected':''}>No Filter (Trade All Signals)</option>
+                  <option value="15m" ${s.trend_filter==='15m'?'selected':''}>15-Minute Trend (15m candles)</option>
                   <option value="1h" ${s.trend_filter==='1h'?'selected':''}>1-Hour Trend (1h candles)</option>
                   <option value="4h" ${s.trend_filter==='4h'?'selected':''}>4-Hour Trend (4h candles)</option>
                   <option value="1d" ${s.trend_filter==='1d'?'selected':''}>Daily Trend (1d candles)</option>
@@ -2714,6 +2864,7 @@
         hyper: { candle: '1m', scan: '1', trend: '1h' },
         scalper: { candle: '5m', scan: '1', trend: '1h' },
         swing: { candle: '15m', scan: '1', trend: '4h' },
+        longer_swing: { candle: '30m', scan: '1', trend: '4h' },
         position: { candle: '1h', scan: '1', trend: '1d' }
       };
       
@@ -3360,7 +3511,7 @@
       } else {
         console.log(`[Activity] Fetching options trades for bot ${id}, user ${currentUserId}`);
         const { data: trades, error: tradesError } = await sbClient.from('options_trades')
-          .select('symbol, option_type, strike, expiration_date, contracts, premium_per_contract, pnl, status, created_at, total_cost')
+          .select('symbol, option_type, strike, expiration_date, contracts, premium_per_contract, pnl, status, created_at, closed_at, total_cost')
           .eq('user_id', currentUserId).eq('bot_id', id)
           .order('created_at', { ascending: false }).limit(500);
         if (tradesError) console.error('[Activity] Error fetching options trades:', tradesError);
@@ -3388,16 +3539,17 @@
           } catch (_) {}
         }));
         
-        // Fetch real Polygon option prices for open trades
+        // Fetch real-time option prices for open trades
         const optionPrices = {};
+        const { data: priceSession } = await sbClient.auth.getSession();
+        const priceToken = priceSession?.session?.access_token || SUPABASE_ANON_KEY;
+        const priceUserId = priceSession?.session?.user?.id || currentUser?.id;
         await Promise.all(openT.map(async (trade) => {
           try {
-            const { data: session } = await sbClient.auth.getSession();
-            const token = session?.session?.access_token || SUPABASE_ANON_KEY;
             const res = await fetch(`${SUPABASE_URL}/functions/v1/options-bot`, {
               method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'get_option_price', symbol: trade.symbol, strike: trade.strike, expiration: trade.expiration_date, option_type: trade.option_type })
+              headers: { 'Authorization': `Bearer ${priceToken}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'get_option_price', symbol: trade.symbol, strike: trade.strike, expiration: trade.expiration_date, option_type: trade.option_type, user_id: priceUserId })
             });
             const json = await res.json();
             if (json?.price && json.price > 0) optionPrices[trade.symbol + '_' + trade.strike + '_' + trade.option_type] = json.price;

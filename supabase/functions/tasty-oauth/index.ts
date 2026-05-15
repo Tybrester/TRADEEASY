@@ -6,26 +6,77 @@ const corsHeaders = {
 };
 
 // Tastytrade Personal Grant flow - use refresh token to get access tokens
-const TASTY_TOKEN_URL = 'https://api.tastytrade.com/oauth/token';
+// LIVE API - your credentials are for production
+const TASTY_LIVE_URL = 'https://api.tastytrade.com/oauth/token';
+const TASTY_SANDBOX_URL = 'https://api.cert.tastytrade.com/oauth/token';
 
-async function getAccessToken(refreshToken: string, clientSecret: string): Promise<{ access_token: string; expires_in: number } | null> {
+function extractClientIdFromJWT(token: string): string | null {
   try {
-    const res = await fetch(TASTY_TOKEN_URL, {
+    const payload = token.split('.')[1];
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    return decoded.aud || null;
+  } catch { return null; }
+}
+
+async function tryRefreshToken(url: string, refreshToken: string, clientSecret: string): Promise<{ access_token: string; expires_in: number } | null> {
+  const apiType = url.includes('cert') ? 'SANDBOX' : 'LIVE';
+  
+  // Extract client_id from JWT aud claim
+  const clientId = extractClientIdFromJWT(refreshToken) || clientSecret;
+  console.log(`[TastyOAuth] Trying ${apiType} API: client_id=${clientId}, client_secret_length=${clientSecret?.length}`);
+  
+  try {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
+        client_id: clientId,
         client_secret: clientSecret
       })
     });
-    const json = await res.json();
-    if (json.error) throw new Error(json.error_description || json.error);
-    return { access_token: json.access_token, expires_in: json.expires_in || 900 };
+    
+    console.log(`[TastyOAuth] ${apiType} fetch completed, status=${res.status}`);
+    
+    let responseText = '';
+    try {
+      responseText = await res.text();
+      console.log(`[TastyOAuth] ${apiType} raw response: ${responseText || '(empty)'}`);
+    } catch (textErr) {
+      console.error(`[TastyOAuth] ${apiType} failed to read response text:`, textErr);
+    }
+    
+    if (res.status === 200 && responseText) {
+      try {
+        const json = JSON.parse(responseText);
+        console.log(`[TastyOAuth] ${apiType} parsed JSON: has_access_token=${!!json.access_token}, error=${json.error || 'none'}`);
+        if (json.access_token) {
+          console.log(`[TastyOAuth] SUCCESS with ${apiType} API!`);
+          return { access_token: json.access_token, expires_in: json.expires_in || 900 };
+        }
+      } catch (parseErr) {
+        console.error(`[TastyOAuth] ${apiType} JSON parse error:`, parseErr);
+      }
+    } else {
+      console.log(`[TastyOAuth] ${apiType} returned status ${res.status}, no valid token`);
+    }
+    return null;
   } catch (err) {
-    console.error('[TastyOAuth] Token refresh failed:', err);
+    console.error(`[TastyOAuth] ${apiType} CRASHED:`, err);
     return null;
   }
+}
+
+async function getAccessToken(refreshToken: string, clientSecret: string): Promise<{ access_token: string; expires_in: number } | null> {
+  console.log(`[TastyOAuth] Refreshing token via LIVE API: refresh_token_length=${refreshToken?.length}, client_secret_length=${clientSecret?.length}`);
+  
+  // LIVE API only
+  const liveResult = await tryRefreshToken(TASTY_LIVE_URL, refreshToken, clientSecret);
+  if (liveResult) return liveResult;
+  
+  console.error('[TastyOAuth] LIVE API failed');
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -51,33 +102,42 @@ Deno.serve(async (req) => {
     );
 
     try {
-      // Get initial access token
+      // Try to get initial access token (non-blocking — save creds regardless)
       const token = await getAccessToken(refresh_token, client_secret);
-      if (!token) throw new Error('Failed to get access token');
+      console.log(`[TastyOAuth] connect: token_obtained=${!!token}`);
 
-      // Get account info
+      // Get account info if token worked
       let accountNumber = null;
-      try {
-        const acctRes = await fetch('https://api.tastytrade.com/customers/me/accounts', {
-          headers: { Authorization: `Bearer ${token.access_token}` }
-        });
-        const acctJson = await acctRes.json();
-        accountNumber = acctJson?.data?.items?.[0]?.account?.['account-number'] || null;
-      } catch (_) {}
+      if (token) {
+        try {
+          const acctRes = await fetch('https://api.tastytrade.com/customers/me/accounts', {
+            headers: { Authorization: `Bearer ${token.access_token}` }
+          });
+          const acctJson = await acctRes.json();
+          accountNumber = acctJson?.data?.items?.[0]?.account?.['account-number'] || null;
+          console.log(`[TastyOAuth] connect: account_number=${accountNumber}`);
+        } catch (_) {}
+      }
 
-      // Save credentials (encrypt refresh token in credentials field)
-      await supabase.from('broker_credentials').upsert({
+      // Always save credentials regardless of token success
+      const { error: upsertErr } = await supabase.from('broker_credentials').upsert({
         user_id,
         broker: 'tastytrade',
-        access_token: token.access_token,
         credentials: { 
           refresh_token,
           client_secret,
+          access_token: token?.access_token || null,
           account_number: accountNumber,
-          expires_at: new Date(Date.now() + token.expires_in * 1000).toISOString()
-        },
-        updated_at: new Date().toISOString()
+          expires_at: token ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null
+        }
       }, { onConflict: 'user_id,broker' });
+      if (upsertErr) throw new Error(`DB save failed: ${upsertErr.message}`);
+
+      if (!token) {
+        return new Response(JSON.stringify({ success: true, account: null, warning: 'Credentials saved but token refresh failed — check logs' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
 
       return new Response(JSON.stringify({ success: true, account: accountNumber }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -119,11 +179,9 @@ Deno.serve(async (req) => {
       const token = await getAccessToken(creds.credentials.refresh_token, creds.credentials.client_secret);
       if (!token) throw new Error('Token refresh failed');
 
-      // Update access token
+      // Update credentials with new access token
       await supabase.from('broker_credentials').update({
-        access_token: token.access_token,
-        credentials: { ...creds.credentials, expires_at: new Date(Date.now() + token.expires_in * 1000).toISOString() },
-        updated_at: new Date().toISOString()
+        credentials: { ...creds.credentials, access_token: token.access_token, expires_at: new Date(Date.now() + token.expires_in * 1000).toISOString() }
       }).eq('user_id', userId).eq('broker', 'tastytrade');
 
       return new Response(JSON.stringify({ access_token: token.access_token }), {

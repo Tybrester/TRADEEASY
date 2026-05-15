@@ -743,7 +743,7 @@
             const diff = pointDiff * multiplier * t.quantity;
             const entryCost = entryPrice * multiplier * t.quantity;
             const pct = entryCost > 0 ? ((diff / entryCost) * 100).toFixed(2) : '0.00';
-            pnlHtml = `<span class="${diff >= 0 ? 'pnl-pos' : 'pnl-neg'}">${diff >= 0 ? '+' : ''}$${diff.toFixed(2)} (${diff >= 0 ? '+' : ''}${pct}%)</span>`;
+            pnlHtml = `<span class="${diff >= 0 ? 'pnl-pos' : 'pnl-neg'}">${diff >= 0 ? '+' : ''}$${diff.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} (${diff >= 0 ? '+' : ''}${pct}%)</span>`;
           }
           const isFilled = t.status === 'filled';
           const filledAt = t.filled_at ? new Date(t.filled_at).toLocaleString() : '—';
@@ -830,7 +830,7 @@
           const entryCost = entryPrice * multiplier * qty;
           const pct = entryCost > 0 && pnl != null ? ((pnl / entryCost) * 100).toFixed(2) : '0.00';
           const pnlHtml = pnl != null
-            ? `<span class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}$${Number(pnl).toFixed(2)} (${pnl >= 0 ? '+' : ''}${pct}%)</span>`
+            ? `<span class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}$${Number(pnl).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} (${pnl >= 0 ? '+' : ''}${pct}%)</span>`
             : '—';
           return `<tr>
             <td style="color:var(--text);font-weight:600;">${t.symbol || '—'}</td>

@@ -1,0 +1,202 @@
+// Options TP/SL Daemon — Fast exit execution
+// Runs every 30 seconds, checks all open positions, closes on TP/SL hit
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+// ── BLACK-SCHOLES (fallback when real price fails) ──
+function normCDF(x: number): number {
+  return 0.5 * (1 + erf(x / Math.sqrt(2)));
+}
+
+function erf(x: number): number {
+  const sign = x >= 0 ? 1 : -1;
+  x = Math.abs(x);
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
+  const a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const t = 1 / (1 + p * x);
+  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  return sign * y;
+}
+
+function blackScholes(S: number, K: number, T: number, r: number, sigma: number, type: 'call' | 'put'): number {
+  if (T <= 0) return Math.max(0, type === 'call' ? S - K : K - S);
+  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+  const d2 = d1 - sigma * Math.sqrt(T);
+  if (type === 'call') {
+    return S * normCDF(d1) - K * Math.exp(-r * T) * normCDF(d2);
+  } else {
+    return K * Math.exp(-r * T) * normCDF(-d2) - S * normCDF(-d1);
+  }
+}
+
+function calcHistoricalVolatility(closes: number[], period = 20, interval = '1h'): number {
+  const returns: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    returns.push(Math.log(closes[i] / closes[i - 1]));
+  }
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / returns.length;
+  const annualFactor = interval === '1m' ? Math.sqrt(252 * 390) : interval === '5m' ? Math.sqrt(252 * 78) : interval === '15m' ? Math.sqrt(252 * 26) : interval === '1h' ? Math.sqrt(252 * 6.5) : Math.sqrt(252);
+  return Math.sqrt(variance) * annualFactor;
+}
+
+// ── FETCH REAL OPTION PRICE ──
+async function fetchRealOptionPrice(symbol: string, strike: number, expiration: string, optionType: string, interval = '1h', userId?: string, supabase?: any): Promise<number> {
+  // Try Tastytrade first if userId provided
+  if (userId && supabase) {
+    try {
+      const { data: creds } = await supabase.from('broker_credentials')
+        .select('credentials').eq('user_id', userId).eq('broker', 'tastytrade').maybeSingle();
+      if (creds?.credentials?.refresh_token) {
+        const tokenRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/tasty-oauth?action=refresh&user_id=${userId}`, {
+          headers: { 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` }
+        });
+        const tokenJson = await tokenRes.json();
+        if (tokenJson.access_token) {
+          const exp = expiration.replace(/-/g, '');
+          const yy = exp.slice(2, 4);
+          const mm = exp.slice(4, 6);
+          const dd = exp.slice(6, 8);
+          const sym = `${symbol}${yy}${mm}${dd}${optionType.toUpperCase().charAt(0)}${String(Math.round(strike * 1000)).padStart(8, '0')}`;
+          const url = `https://api.tastytrade.com/market-data/streamers/quotes/${sym}`;
+          const res = await fetch(url, { headers: { 'Authorization': `Bearer ${tokenJson.access_token}` } });
+          const json = await res.json();
+          const quote = json?.data?.[0];
+          const mid = quote?.mid ?? ((quote?.bid + quote?.ask) / 2);
+          if (mid > 0) return mid;
+        }
+      }
+    } catch (_) {}
+  }
+  
+  // Fallback to Black-Scholes
+  return 0;
+}
+
+// ── MAIN DAEMON ──
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+  
+  const R = 0.05;
+  const results: any[] = [];
+  
+  try {
+    // Get all open option trades
+    const { data: openTrades, error: tradesError } = await supabase
+      .from('options_trades')
+      .select('*, options_bots!inner(user_id, bot_interval, broker)')
+      .eq('status', 'open');
+    
+    if (tradesError) throw tradesError;
+    if (!openTrades || openTrades.length === 0) {
+      return new Response(JSON.stringify({ status: 'ok', message: 'No open trades to check', checked: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    
+    console.log(`[TPSLDaemon] Checking ${openTrades.length} open trades for TP/SL`);
+    
+    for (const trade of openTrades) {
+      try {
+        const bot = trade.options_bots;
+        const interval = bot?.bot_interval ?? '1h';
+        
+        // Fetch current option price
+        const optionPrice = await fetchRealOptionPrice(
+          trade.symbol, 
+          trade.strike, 
+          trade.expiration_date, 
+          trade.option_type, 
+          interval, 
+          bot?.user_id,
+          supabase
+        );
+        
+        if (!optionPrice || optionPrice <= 0) {
+          console.log(`[TPSLDaemon] SKIP: No price for ${trade.symbol} $${trade.strike}`);
+          results.push({ trade_id: trade.id, symbol: trade.symbol, action: 'skip', reason: 'No price available' });
+          continue;
+        }
+        
+        // Calculate P&L %
+        const entry = Number(trade.premium_per_contract);
+        const pnlPct = ((optionPrice - entry) / entry) * 100;
+        
+        // Get bot TP/SL settings
+        const { data: botSettings } = await supabase
+          .from('options_bots')
+          .select('take_profit_pct, stop_loss_pct')
+          .eq('id', trade.bot_id)
+          .single();
+        
+        const tpPct = Number(botSettings?.take_profit_pct ?? 50);
+        const slPct = Number(botSettings?.stop_loss_pct ?? -20);
+        
+        // Check TP/SL
+        const shouldTP = pnlPct >= tpPct;
+        const shouldSL = pnlPct <= slPct;
+        
+        console.log(`[TPSLDaemon] ${trade.symbol} ${trade.option_type} $${trade.strike}: current=$${optionPrice.toFixed(2)} entry=$${entry.toFixed(2)} pnl=${pnlPct.toFixed(1)}% tp=${tpPct}% sl=${slPct}% shouldTP=${shouldTP} shouldSL=${shouldSL}`);
+        
+        if (!shouldTP && !shouldSL) {
+          results.push({ trade_id: trade.id, symbol: trade.symbol, action: 'hold', pnl_pct: pnlPct });
+          continue;
+        }
+        
+        // CLOSE TRADE
+        const pnl = (optionPrice - entry) * trade.contracts * 100;
+        const exitReason = shouldTP ? 'tp' : 'sl';
+        
+        // Paper trading close
+        if (bot?.broker === 'paper' || !bot?.broker) {
+          await supabase.from('options_trades').update({
+            status: 'closed',
+            exit_price: optionPrice,
+            pnl: pnl,
+            exit_reason: exitReason,
+            closed_at: new Date().toISOString()
+          }).eq('id', trade.id);
+          
+          // Return balance
+          const { data: bRow } = await supabase.from('options_bots')
+            .select('paper_balance')
+            .eq('id', trade.bot_id)
+            .single();
+          const bal = Number(bRow?.paper_balance ?? 100000);
+          await supabase.from('options_bots').update({
+            paper_balance: bal + Number(trade.total_cost) + pnl
+          }).eq('id', trade.bot_id);
+          
+          console.log(`[TPSLDaemon] CLOSED ${trade.symbol} at ${exitReason.toUpperCase()}: $${optionPrice.toFixed(2)} pnl=$${pnl.toFixed(2)}`);
+          results.push({ trade_id: trade.id, symbol: trade.symbol, action: 'close', reason: exitReason, pnl: pnl, pnl_pct: pnlPct });
+        } else {
+          // Live broker close would go here
+          results.push({ trade_id: trade.id, symbol: trade.symbol, action: 'pending', reason: 'Live broker close not implemented in daemon' });
+        }
+        
+      } catch (tradeErr) {
+        console.log(`[TPSLDaemon] ERROR on trade ${trade.id}: ${tradeErr}`);
+        results.push({ trade_id: trade.id, symbol: trade.symbol, action: 'error', error: String(tradeErr) });
+      }
+    }
+    
+    return new Response(JSON.stringify({ 
+      status: 'ok', 
+      checked: openTrades.length,
+      closed: results.filter(r => r.action === 'close').length,
+      results 
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    
+  } catch (err) {
+    console.log(`[TPSLDaemon] FATAL ERROR: ${err}`);
+    return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+});

@@ -9,6 +9,17 @@ const corsHeaders = {
 // MATH HELPERS
 // ─────────────────────────────────────────────
 
+function calcVWAP(candles: Candle[]): number {
+  let cumTPV = 0, cumVol = 0;
+  for (const c of candles) {
+    const tp = (c.high + c.low + c.close) / 3;
+    const vol = c.volume || 1;
+    cumTPV += tp * vol;
+    cumVol += vol;
+  }
+  return cumVol > 0 ? cumTPV / cumVol : 0;
+}
+
 function calcEMA(data: number[], period: number): number[] {
   const k = 2 / (period + 1);
   const ema = new Array(data.length).fill(0);
@@ -265,14 +276,14 @@ function kMeansClustering(data: number[][], k: number, maxIterations = 100) {
   return { clusters, centroids };
 }
 
-function generateSignalBoof30(candles: Candle[], tradeDirection = 'both'): { signal: 'buy' | 'sell' | 'none', price: number, trend: number, ema: number, adx: number, reason: string } {
+function generateSignalBoof30(candles: Candle[], tradeDirection = 'both'): { signal: 'buy' | 'sell' | 'none', price: number, trend: number, ema: number, adx: number, reason: string, regime?: string, rsi?: number, slope?: number, atr?: number } {
   const highs = candles.map(c => c.high);
   const lows = candles.map(c => c.low);
   const closes = candles.map(c => c.close);
   const volumes = candles.map(c => (c as any).volume || 1000000);
   const n = closes.length;
 
-  if (n < 35) return { signal: 'none', price: closes[n - 1], trend: 0, ema: closes[n - 1], adx: 50, reason: 'Insufficient data' };
+  if (n < 35) return { signal: 'none', price: closes[n - 1], trend: 0, ema: closes[n - 1], adx: 50, reason: 'Insufficient data', regime: undefined, rsi: undefined, slope: undefined, atr: undefined };
 
   const lookback = 14;
 
@@ -291,8 +302,8 @@ function generateSignalBoof30(candles: Candle[], tradeDirection = 'both'): { sig
   // MA slope
   const maFast: number[] = new Array(n).fill(NaN);
   const maSlow: number[] = new Array(n).fill(NaN);
-  for (let i = 4; i < n; i++) maFast[i] = closes.slice(i - 4, i + 1).reduce((a, b) => a + b, 0) / 5;
-  for (let i = 19; i < n; i++) maSlow[i] = closes.slice(i - 19, i + 1).reduce((a, b) => a + b, 0) / 20;
+  for (let i = 8; i < n; i++) maFast[i] = closes.slice(i - 8, i + 1).reduce((a, b) => a + b, 0) / 9;  // 9-period (was 5)
+  for (let i = 20; i < n; i++) maSlow[i] = closes.slice(i - 20, i + 1).reduce((a, b) => a + b, 0) / 21; // 21-period (was 20)
   const maSlope = maFast.map((f, i) => !isNaN(f) && !isNaN(maSlow[i]) ? f - maSlow[i] : 0);
 
   // RSI
@@ -317,7 +328,7 @@ function generateSignalBoof30(candles: Candle[], tradeDirection = 'both'): { sig
     }
   }
 
-  if (features.length < 10) return { signal: 'none', price: closes[n - 1], trend: 0, ema: closes[n - 1], adx: 50, reason: 'Not enough data' };
+  if (features.length < 10) return { signal: 'none', price: closes[n - 1], trend: 0, ema: closes[n - 1], adx: 50, reason: 'Not enough data', regime: undefined, rsi: undefined, slope: undefined, atr: undefined };
 
   // KMeans clustering
   const { clusters } = kMeansClustering(features, 3, 50);
@@ -342,13 +353,16 @@ function generateSignalBoof30(candles: Candle[], tradeDirection = 'both'): { sig
     const i = validIndices[idx];
     const regime = regimeMap[clusters[idx]];
     let signal = 0;
+    const minSlope = closes[i] * 0.0003; // 0.03% min slope to avoid flat markets
     if (regime === 'Trend') {
-      signal = maSlope[i] > 0 ? 1 : -1;
+      if (maSlope[i] > minSlope) signal = 1;
+      else if (maSlope[i] < -minSlope) signal = -1;
     } else if (regime === 'Range') {
-      if (rsi[i] < 45) signal = 1;
-      else if (rsi[i] > 55) signal = -1;
+      if (rsi[i] < 35) signal = 1;       // tightened from 45
+      else if (rsi[i] > 65) signal = -1; // tightened from 55
     } else if (regime === 'HighVol') {
-      signal = maSlope[i] > 0 ? 1 : -1;
+      if (maSlope[i] > minSlope) signal = 1;
+      else if (maSlope[i] < -minSlope) signal = -1;
     }
     signals.push({ regime, signal });
   }
@@ -378,14 +392,295 @@ function generateSignalBoof30(candles: Candle[], tradeDirection = 'both'): { sig
   if (tradeDirection === 'long' && signal === 'sell') signal = 'none';
   if (tradeDirection === 'short' && signal === 'buy') signal = 'none';
 
-  return { signal, price: curClose, trend: maSlope[i] > 0 ? 1 : -1, ema: maSlow[i], adx: rsi[i], reason };
+  // Calculate ATR for ML features
+  const atr: number[] = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    const tr = Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i-1]), Math.abs(lows[i] - closes[i-1]));
+    atr[i] = i === 1 ? tr : (atr[i-1] * 13 + tr) / 14;
+  }
+
+  return { signal, price: curClose, trend: maSlope[i] > 0 ? 1 : -1, ema: maSlow[i], adx: rsi[i], reason, regime: current.regime, rsi: rsi[i], slope: maSlope[i], atr: atr[i] };
+}
+
+// ─────────────────────────────────────────────
+// BOOF 5.0 - QUANTITUTIONAL SIGNAL GENERATION
+// Six-Factor Model: Momentum, Mean Reversion, Volatility, Trend, Volume, Microstructure
+// ─────────────────────────────────────────────
+
+function generateSignalBoof50(candles: Candle[], tradeDirection = 'both', trendFilterCandles?: Candle[]): { 
+  signal: 'buy' | 'sell' | 'none', 
+  price: number, 
+  trend: number, 
+  ema: number, 
+  adx: number, 
+  reason: string, 
+  regime?: string, 
+  rsi?: number, 
+  slope?: number, 
+  atr?: number,
+  compositeScore?: number,
+  positionSize?: number
+} {
+  const highs = candles.map(c => c.high);
+  const lows = candles.map(c => c.low);
+  const closes = candles.map(c => c.close);
+  const opens = candles.map(c => c.open);
+  const volumes = (candles as any[]).map(c => (c as any).volume || 1000000);
+  const n = closes.length;
+
+  if (n < 50) return { signal: 'none', price: closes[n - 1], trend: 0, ema: closes[n - 1], adx: 0, reason: 'Insufficient data', compositeScore: 0, positionSize: 1 };
+
+  const i = n - 2; // Current bar
+
+  // ── FACTOR 1: MOMENTUM (Price Velocity & Acceleration) ──
+  const ema20 = calcEMA(closes, 20);
+  const ema50 = calcEMA(closes, 50);
+  const ema200 = calcEMA(closes, 200);
+  
+  // Price momentum (10-period)
+  const momentum = ((closes[i] - closes[i - 10]) / closes[i - 10]) * 100;
+  const momentumPrev = ((closes[i - 1] - closes[i - 11]) / closes[i - 11]) * 100;
+  const momentumAccel = momentum - momentumPrev;
+  
+  // Momentum score (-2 to +2)
+  let momScore = 0;
+  if (momentum > 1.5 && momentumAccel > 0) momScore = 2;
+  else if (momentum > 0.5) momScore = 1;
+  else if (momentum < -1.5 && momentumAccel < 0) momScore = -2;
+  else if (momentum < -0.5) momScore = -1;
+
+  // ── FACTOR 2: MEAN REVERSION (Z-Score & Bollinger Position) ──
+  const sma20 = boof50SMA(closes, 20);
+  const std20 = boof50StdDev(closes, 20);
+  const zScore = std20 > 0 ? (closes[i] - sma20[sma20.length - 1]) / std20 : 0;
+  
+  // Bollinger position (0-1)
+  const bbUpper = sma20[sma20.length - 1] + (2 * std20);
+  const bbLower = sma20[sma20.length - 1] - (2 * std20);
+  const bbPosition = bbUpper !== bbLower ? (closes[i] - bbLower) / (bbUpper - bbLower) : 0.5;
+  
+  // Mean reversion score (-1 to +1)
+  let mrScore = 0;
+  if (zScore < -1.5 && bbPosition < 0.1) mrScore = 1; // Oversold - bullish mean reversion
+  else if (zScore > 1.5 && bbPosition > 0.9) mrScore = -1; // Overbought - bearish mean reversion
+
+  // ── FACTOR 3: VOLATILITY REGIME ──
+  const returns: number[] = [];
+  for (let j = 1; j < n; j++) returns.push((closes[j] - closes[j - 1]) / closes[j - 1]);
+  const currentVol = boof50StdDev(returns.slice(-20), 20);
+  const volMean = boof50Mean(returns.slice(-50).map(r => Math.abs(r)));
+  const volPercentile = volMean > 0 ? Math.min(1, currentVol / (volMean * 2)) : 0.5;
+  
+  // Volatility regime
+  const highVol = volPercentile > 0.8;
+  const lowVol = volPercentile < 0.2;
+  
+  // ATR for position sizing
+  const atr = boof50ATR(highs, lows, closes, 14);
+  const atrPercent = atr / closes[i] * 100;
+
+  // ── FACTOR 4: TREND STRENGTH (ADX & Multi-Timeframe) ──
+  const adx = boof50ADX(highs, lows, closes, 14);
+  const strongTrend = adx > 25;
+  const weakTrend = adx < 20;
+  
+  // Price vs EMA alignment
+  const aboveEMA20 = closes[i] > ema20[ema20.length - 1];
+  const aboveEMA50 = closes[i] > ema50[ema50.length - 1];
+  const aboveEMA200 = closes[i] > ema200[ema200.length - 1];
+  
+  // Trend score (-2 to +2)
+  let trendScore = 0;
+  if (strongTrend && aboveEMA20 && aboveEMA50 && aboveEMA200) trendScore = 2;
+  else if (aboveEMA20 && aboveEMA50) trendScore = 1;
+  else if (strongTrend && !aboveEMA20 && !aboveEMA50 && !aboveEMA200) trendScore = -2;
+  else if (!aboveEMA20 && !aboveEMA50) trendScore = -1;
+  
+  // Trend filter check (if provided)
+  let trendAligned = true;
+  if (trendFilterCandles && trendFilterCandles.length >= 50) {
+    const tfCloses = trendFilterCandles.map(c => c.close);
+    const tfEma = boof50SMA(tfCloses, 20); // Use SMA as proxy for EMA
+    const tfPrice = tfCloses[tfCloses.length - 1];
+    const tfEmaVal = tfEma[tfEma.length - 1];
+    trendAligned = momScore > 0 ? tfPrice > tfEmaVal : tfPrice < tfEmaVal;
+  }
+
+  // ── FACTOR 5: VOLUME ANALYSIS ──
+  const volSMA = boof50SMA(volumes, 20);
+  const relVolume = volumes[i] / volSMA[volSMA.length - 1];
+  const volIncreasing = relVolume > 1.2;
+  
+  // OBV momentum (simplified - just check last few bars)
+  let obv = 0;
+  for (let j = Math.max(1, n - 20); j < n; j++) {
+    obv += closes[j] > closes[j - 1] ? volumes[j] : closes[j] < closes[j - 1] ? -volumes[j] : 0;
+  }
+  const obvMomentum = obv > 0;
+  
+  // Volume score (0 to 1)
+  const volScore = (volIncreasing && obvMomentum) ? 1 : 0;
+
+  // ── FACTOR 6: MARKET MICROSTRUCTURE ──
+  const body = Math.abs(closes[i] - opens[i]);
+  const wick = highs[i] - lows[i];
+  const bodyRatio = wick > 0 ? body / wick : 0;
+  
+  // Rejection patterns
+  const upperWick = highs[i] - Math.max(opens[i], closes[i]);
+  const lowerWick = Math.min(opens[i], closes[i]) - lows[i];
+  const upperRejection = wick > 0 ? upperWick / wick > 0.6 : false;
+  const lowerRejection = wick > 0 ? lowerWick / wick > 0.6 : false;
+  
+  // Microstructure score (-1 to +1)
+  let microScore = 0;
+  if (lowerRejection && bodyRatio > 0.3) microScore = 1;
+  else if (upperRejection && bodyRatio > 0.3) microScore = -1;
+
+  // ── REGIME CLASSIFICATION ──
+  let regime = 'UNCERTAIN';
+  if (strongTrend && !weakTrend) regime = aboveEMA50 ? 'TREND_UP' : 'TREND_DOWN';
+  else if (weakTrend && Math.abs(zScore) < 1) regime = 'RANGING';
+  else if (highVol) regime = 'VOLATILE';
+
+  // ── COMPOSITE SCORING ──
+  // Base composite (-5 to +5)
+  let composite = momScore + trendScore + mrScore + volScore + microScore;
+  
+  // Regime adjustments
+  if (regime === 'RANGING') {
+    // Mean reversion mode: fade extremes
+    composite = -composite * 0.5;
+  } else if (regime === 'VOLATILE' && !strongTrend) {
+    // Chop mode: reduce signals
+    composite = composite * 0.3;
+  }
+  
+  // Smooth the composite
+  const compositeSmooth = composite; // Could add EMA smoothing here
+
+  // ── SIGNAL GENERATION ──
+  const thresholdBuy = 1.5; // Lowered from 2.5 for 10-15 trades/day
+  const thresholdSell = -1.5;
+  
+  // Require confirmation (2 bars)
+  const rawBuy = compositeSmooth > thresholdBuy;
+  const rawSell = compositeSmooth < thresholdSell;
+  const prevBuy = i > 0 ? (momScore > 0 && trendScore > 0) : false;
+  const prevSell = i > 0 ? (momScore < 0 && trendScore < 0) : false;
+  
+  let signal: 'buy' | 'sell' | 'none' = 'none';
+  
+  if (rawBuy && trendAligned && !highVol && regime !== 'VOLATILE') {
+    signal = 'buy';
+  } else if (rawSell && trendAligned && !highVol && regime !== 'VOLATILE') {
+    signal = 'sell';
+  }
+  
+  // Apply trade direction filter
+  if (tradeDirection === 'long' && signal === 'sell') signal = 'none';
+  if (tradeDirection === 'short' && signal === 'buy') signal = 'none';
+
+  // ── POSITION SIZING (Kelly Criterion) ──
+  // Win rate assumption based on composite strength
+  const winRate = 0.55 + (Math.abs(compositeSmooth) / 10);
+  const avgWinLossRatio = 2.0;
+  const kelly = winRate - ((1 - winRate) / avgWinLossRatio);
+  
+  // Volatility adjustment
+  const volAdj = highVol ? 0.5 : lowVol ? 1.2 : 1.0;
+  const positionSize = Math.max(0.1, Math.min(1.0, kelly * volAdj));
+
+  // ── REASON STRING ──
+  const reason = `Boof 5.0 [${regime}] MOM=${momScore} TREND=${trendScore} MR=${mrScore} VOL=${volScore} MICRO=${microScore} COMPOSITE=${compositeSmooth.toFixed(2)} SIZE=${(positionSize * 100).toFixed(0)}%`;
+
+  return { 
+    signal, 
+    price: closes[i], 
+    trend: trendScore, 
+    ema: ema50[ema50.length - 1], 
+    adx, 
+    reason, 
+    regime, 
+    rsi: zScore * 10 + 50, // Approximate RSI from z-score
+    slope: momentum,
+    atr,
+    compositeScore: compositeSmooth,
+    positionSize
+  };
+}
+
+// ─────────────────────────────────────────────
+// HELPER FUNCTIONS FOR BOOF 5.0
+// ─────────────────────────────────────────────
+
+function boof50SMA(data: number[], period: number): number[] {
+  const result: number[] = [];
+  for (let i = period - 1; i < data.length; i++) {
+    const slice = data.slice(i - period + 1, i + 1);
+    result.push(slice.reduce((a, b) => a + b, 0) / period);
+  }
+  return result;
+}
+
+function boof50StdDev(data: number[], period: number): number {
+  if (data.length < period) return 0;
+  const slice = data.slice(-period);
+  const mean = slice.reduce((a, b) => a + b, 0) / period;
+  const variance = slice.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / period;
+  return Math.sqrt(variance);
+}
+
+function boof50Mean(data: number[]): number {
+  return data.length > 0 ? data.reduce((a, b) => a + b, 0) / data.length : 0;
+}
+
+function boof50ATR(highs: number[], lows: number[], closes: number[], period: number): number {
+  const trValues: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1])
+    );
+    trValues.push(tr);
+  }
+  return trValues.length >= period ? boof50Mean(trValues.slice(-period)) : 0;
+}
+
+function boof50ADX(highs: number[], lows: number[], closes: number[], period: number): number {
+  const dmPlus: number[] = [];
+  const dmMinus: number[] = [];
+  const trValues: number[] = [];
+  
+  for (let i = 1; i < closes.length; i++) {
+    const upMove = highs[i] - highs[i - 1];
+    const downMove = lows[i - 1] - lows[i];
+    dmPlus.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    dmMinus.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1])
+    );
+    trValues.push(tr);
+  }
+  
+  if (dmPlus.length < period) return 25;
+  
+  const diPlus = 100 * boof50Mean(dmPlus.slice(-period)) / boof50Mean(trValues.slice(-period));
+  const diMinus = 100 * boof50Mean(dmMinus.slice(-period)) / boof50Mean(trValues.slice(-period));
+  const dx = (diPlus + diMinus) > 0 ? 100 * Math.abs(diPlus - diMinus) / (diPlus + diMinus) : 0;
+  
+  return dx;
 }
 
 // ─────────────────────────────────────────────
 // FETCH CANDLES (Yahoo Finance - Free)
 // ─────────────────────────────────────────────
 
-interface Candle { time: number; open: number; high: number; low: number; close: number; }
+interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number; }
 
 async function fetchAlpacaSpotPrice(symbol: string, api_key: string, secret_key: string): Promise<number | null> {
   try {
@@ -404,27 +699,39 @@ async function fetchAlpacaSpotPrice(symbol: string, api_key: string, secret_key:
   return null;
 }
 
-async function fetchPolygonSpotPrice(symbol: string): Promise<number | null> {
-  try {
-    const polygonKey = Deno.env.get('POLYGON_API_KEY');
-    if (!polygonKey) return null;
-    const url = `https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers/${symbol}?apiKey=${polygonKey}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    const ticker = json?.ticker;
-    const p = ticker?.lastTrade?.p || ticker?.lastQuote?.P || ticker?.prevDay?.c;
-    if (p && p > 0) {
-      console.log(`[OptionsBot] Polygon stock spot ${symbol} = $${p} (delayed)`);
-      return p;
-    }
-  } catch (_) {}
-  return null;
-}
-
-// Sanity check: spot price must be positive and within 50% of candle close (catches truly bad API values)
+// Sanity check: spot price must be positive, within 50% of candle close, and within hard bounds for known symbols
 // referencePrice=0 skips cross-check
 function sanityCheckSpot(symbol: string, price: number, referencePrice = 0): boolean {
   if (!price || price <= 0) return false;
+  
+  // Hard bounds for major ETFs/stocks (catches stale data from months/years ago)
+  const hardBounds: Record<string, { min: number; max: number }> = {
+    'QQQ': { min: 350, max: 1000 },
+    'SPY': { min: 400, max: 1000 },
+    'AMD': { min: 50, max: 600 },
+    'NVDA': { min: 80, max: 600 },
+    'TSLA': { min: 150, max: 900 },
+    'IWM': { min: 150, max: 350 },
+    'DIA': { min: 300, max: 550 },
+    'AAPL': { min: 150, max: 350 },
+    'MSFT': { min: 300, max: 600 },
+    'GOOGL': { min: 130, max: 280 },
+    'AMZN': { min: 150, max: 350 },
+    'META': { min: 400, max: 800 },
+    'NFLX': { min: 500, max: 1200 },
+    'PLTR': { min: 15, max: 200 },
+    'MSTR': { min: 200, max: 2000 },
+    'COIN': { min: 100, max: 500 },
+  };
+  
+  const bounds = hardBounds[symbol.toUpperCase()];
+  if (bounds) {
+    if (price < bounds.min || price > bounds.max) {
+      console.log(`[OptionsBot] SANITY FAIL: ${symbol} price $${price.toFixed(2)} outside hard bounds $${bounds.min}-$${bounds.max} — stale data suspected, rejecting`);
+      return false;
+    }
+  }
+  
   if (referencePrice > 0) {
     const pct = Math.abs(price - referencePrice) / referencePrice;
     if (pct > 0.50) {
@@ -470,8 +777,7 @@ async function fetchSpotPrice(symbol: string, alpacaApiKey?: string, alpacaSecre
     const p = meta?.regularMarketPrice ?? meta?.price;
     if (p && p > 0) { console.log(`[OptionsBot] Yahoo spot ${symbol} = $${p}`); return p; }
   } catch (_) {}
-  // Last resort: Polygon delayed
-  return await fetchPolygonSpotPrice(symbol);
+  return null;
 }
 
 async function fetchCandles(symbol: string, interval = '1h', bars = 150): Promise<Candle[]> {
@@ -500,7 +806,7 @@ async function fetchCandles(symbol: string, interval = '1h', bars = 150): Promis
   const candles: Candle[] = [];
   for (let i = 0; i < timestamps.length; i++) {
     if (quote.open?.[i] && quote.high?.[i] && quote.low?.[i] && quote.close?.[i]) {
-      candles.push({ time: timestamps[i] * 1000, open: quote.open[i], high: quote.high[i], low: quote.low[i], close: quote.close[i] });
+      candles.push({ time: timestamps[i] * 1000, open: quote.open[i], high: quote.high[i], low: quote.low[i], close: quote.close[i], volume: quote.volume?.[i] ?? 0 });
     }
   }
   if (candles.length < 60) throw new Error(`Not enough data for ${symbol} (got ${candles.length} candles)`);
@@ -578,11 +884,47 @@ function calcHistoricalVolatility(closes: number[], period = 20, interval = '1d'
 }
 
 // ─────────────────────────────────────────────
-// OPTION PRICE via Polygon.io real options chain
+// OPTION PRICE: Alpaca OPRA → Black-Scholes
 // ─────────────────────────────────────────────
 
-async function fetchRealOptionPrice(symbol: string, strike: number, expiration: string, optionType: string, interval = '1h', userId?: string): Promise<number> {
-  // Try Tastytrade first for real-time data (if user connected)
+async function fetchRealOptionPrice(symbol: string, strike: number, expiration: string, optionType: string, interval = '1h', userId?: string, expiryType = 'weekly', alpacaApiKey?: string, alpacaSecretKey?: string): Promise<number> {
+  // 1. Try Alpaca options snapshot first (real-time OPRA data with Algo Trader Plus)
+  if (alpacaApiKey && alpacaSecretKey) {
+    try {
+      // Alpaca OCC symbol format: SPY260529C00745000
+      const exp = expiration.replace(/-/g, '').slice(2); // YYMMDD
+      const strikeStr = String(Math.round(strike * 1000)).padStart(8, '0');
+      const typeChar = optionType.toLowerCase() === 'call' ? 'C' : 'P';
+      const alpacaSymbol = `${symbol}${exp}${typeChar}${strikeStr}`;
+      // Try opra first (Algo Trader Plus), fall back to indicative (free)
+      for (const feed of ['opra', 'indicative']) {
+        const snapUrl = `https://data.alpaca.markets/v1beta1/options/snapshots?symbols=${encodeURIComponent(alpacaSymbol)}&feed=${feed}`;
+        const snapRes = await fetch(snapUrl, {
+          headers: { 'APCA-API-KEY-ID': alpacaApiKey, 'APCA-API-SECRET-KEY': alpacaSecretKey }
+        });
+        const snapJson = await snapRes.json();
+        console.log(`[OptionsBot] Alpaca snapshot ${alpacaSymbol} feed=${feed}: status=${snapRes.status} raw=${JSON.stringify(snapJson).slice(0,200)}`);
+        if (!snapRes.ok) continue; // try next feed
+        const snap = snapJson?.snapshots?.[alpacaSymbol];
+        const bid = snap?.latestQuote?.bp;
+        const ask = snap?.latestQuote?.ap;
+        if (bid > 0 && ask > 0) {
+          const mid = (bid + ask) / 2;
+          console.log(`[OptionsBot] Alpaca ${feed} price ${alpacaSymbol}: $${mid.toFixed(4)} (bid=$${bid} ask=$${ask})`);
+          return mid;
+        }
+        const lastTrade = snap?.latestTrade?.p;
+        if (lastTrade > 0) {
+          console.log(`[OptionsBot] Alpaca ${feed} last trade ${alpacaSymbol}: $${lastTrade}`);
+          return lastTrade;
+        }
+      }
+    } catch (err) {
+      console.log('[OptionsBot] Alpaca options snapshot failed:', err);
+    }
+  }
+
+  // 2. Try Tastytrade (token only — no option quotes via REST)
   if (userId) {
     try {
       const supabase = createClient(
@@ -599,26 +941,15 @@ async function fetchRealOptionPrice(symbol: string, strike: number, expiration: 
       if (creds?.credentials?.refresh_token) {
         // Get fresh access token
         const tokenRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/tasty-oauth?action=refresh&user_id=${userId}`, {
-          headers: { 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` }
+          headers: { 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, 'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '' }
         });
         const tokenJson = await tokenRes.json();
         
         if (tokenJson.access_token) {
-          // Format option symbol for Tastytrade
-          const expDate = expiration.replace(/-/g, '').slice(2); // YYMMDD
-          const optSymbol = `${symbol} ${expDate.slice(0,2)}${expDate.slice(2,4)}${expDate.slice(4)} ${Math.floor(strike)} ${optionType.toLowerCase() === 'call' ? 'C' : 'P'}`;
-          
-          const quoteRes = await fetch(`https://api.tastytrade.com/market-data/quotes?symbol=${encodeURIComponent(optSymbol)}`, {
-            headers: { Authorization: `Bearer ${tokenJson.access_token}` }
-          });
-          const quoteJson = await quoteRes.json();
-          const quote = quoteJson.data?.items?.[0];
-          
-          if (quote?.mid || quote?.last) {
-            const price = quote.mid || quote.last;
-            console.log(`[OptionsBot] Tastytrade real-time price for ${optSymbol}: $${price} (bid=$${quote.bid} ask=$${quote.ask})`);
-            return price;
-          }
+          // Note: Tastytrade REST API does not provide option quotes (only DXLink streaming does)
+          // We use Tastytrade only for: stock spot prices and order placement
+          // Option pricing falls through to Black-Scholes below
+          console.log(`[OptionsBot] Tastytrade token valid — using for spot price only (REST has no option quotes)`);
         }
       }
     } catch (err) {
@@ -626,46 +957,52 @@ async function fetchRealOptionPrice(symbol: string, strike: number, expiration: 
     }
   }
   
-  // Fallback to Polygon (15-min delayed)
+  // Black-Scholes with realistic IV — calibrated by VIX + expiry type
   try {
-    const polygonKey = Deno.env.get('POLYGON_API_KEY');
-    if (polygonKey) {
-      // Format: O:SPY260505C00725000
-      const exp = expiration.replace(/-/g, '').slice(2); // YYMMDD
-      const strikeStr = String(Math.round(strike * 1000)).padStart(8, '0');
-      const typeChar = optionType.toLowerCase() === 'call' ? 'C' : 'P';
-      const ticker = `O:${symbol}${exp}${typeChar}${strikeStr}`;
-      // Use direct single-contract snapshot endpoint
-      const snapUrl = `https://api.polygon.io/v3/snapshot/options/${symbol}/${ticker}?apiKey=${polygonKey}`;
-      const snapRes = await fetch(snapUrl);
-      const snapJson = await snapRes.json();
-      console.log(`[OptionsBot] Polygon snapshot ${ticker}: status=${snapJson?.status} error=${snapJson?.error} message=${snapJson?.message} hasResults=${!!snapJson?.results}`);
-      const r = snapJson?.results;
-      // last_trade.price is most recent (15-min delayed); day.vwap is intraday avg; day.close is yesterday's close
-      const bestPrice = r?.last_trade?.price || r?.day?.vwap || r?.day?.close;
-      if (bestPrice && bestPrice > 0) {
-        console.log(`[OptionsBot] Polygon snapshot price for ${ticker}: $${bestPrice} (last_trade=$${r?.last_trade?.price} day_close=$${r?.day?.close})`);
-        return bestPrice;
-      }
-    }
-  } catch (err) {
-    console.log('[OptionsBot] Polygon price fetch failed:', err);
-  }
-  // Black-Scholes with realistic IV (historical vol tends to overprice, use market-calibrated IV)
-  try {
+    // Always fetch candles for historical vol calculation
     const candles = await fetchCandles(symbol, interval, 60);
     if (!candles.length) return 0;
-    const spotPrice = candles[candles.length - 1].close;
-    // Use realistic implied vol: ETFs ~15%, large caps ~25%, small caps/volatile ~40%
+
+    // Use Alpaca live spot price if available (much more accurate than stale Yahoo candle close)
+    let spotPrice = candles[candles.length - 1].close;
+    if (alpacaApiKey && alpacaSecretKey) {
+      try {
+        const alpacaSpot = await fetchAlpacaSpotPrice(symbol, alpacaApiKey, alpacaSecretKey);
+        if (alpacaSpot && alpacaSpot > 0) {
+          console.log(`[OptionsBot] Using Alpaca live spot $${alpacaSpot.toFixed(2)} (Yahoo candle was $${spotPrice.toFixed(2)})`);
+          spotPrice = alpacaSpot;
+        }
+      } catch (_) {}
+    }
+
+    // Base IV by symbol type — calibrated to real market observed IVs
     const etfs = ['SPY','QQQ','IWM','DIA','GLD','TLT','XLF','XLE','XLK','XLV','EEM','VXX'];
     const highVol = ['TSLA','NVDA','AMD','MSTR','COIN','PLTR','GME','AMC','RIVN','LCID'];
-    const iv = etfs.includes(symbol) ? 0.15 : highVol.includes(symbol) ? 0.45 : 0.25;
+    let baseIv = etfs.includes(symbol) ? 0.18 : highVol.includes(symbol) ? 0.55 : 0.30;
+
+    // VIX adjustment skipped (Polygon removed)
+
+    // Blend with historical vol from candles (40% weight)
+    const closes = candles.map((c: any) => c.close);
+    const histVol = calcHistoricalVolatility(closes, 20, interval);
+    if (histVol > 0.01 && histVol < 5) {
+      baseIv = baseIv * 0.6 + histVol * 0.4;
+    }
+
+    // 0DTE IV boost: same-day expiry options carry higher IV due to gamma risk
+    let iv = baseIv;
+    if (expiryType === '0dte') {
+      iv = baseIv * 1.5; // 0DTE ~1.5x baseline IV
+    } else if (expiryType === 'weekly') {
+      iv = baseIv * 1.05; // minimal premium for weekly
+    }
+
     // Use 4PM ET (20:00 UTC) on expiry date as expiry time — not midnight
     const expParts = expiration.split('-');
     const expDate = new Date(Date.UTC(Number(expParts[0]), Number(expParts[1]) - 1, Number(expParts[2]), 20, 0, 0));
     const T = Math.max(1 / (365 * 24 * 60), (expDate.getTime() - Date.now()) / (365 * 24 * 60 * 60 * 1000));
     const price = blackScholes(spotPrice, strike, T, 0.05, iv, optionType as 'call' | 'put');
-    console.log(`[OptionsBot] BS price for ${symbol} ${optionType} $${strike} (IV=${(iv*100).toFixed(0)}% T=${(T*365*24).toFixed(1)}h): $${price.toFixed(4)}`);
+    console.log(`[OptionsBot] BS price for ${symbol} ${optionType} $${strike} (IV=${(iv*100).toFixed(0)}% histVol=${(histVol*100).toFixed(0)}% expiryType=${expiryType} T=${(T*365*24).toFixed(1)}h): $${price.toFixed(4)}`);
     return price;
   } catch (_) { return 0; }
 }
@@ -872,7 +1209,7 @@ async function placeTastytradeOptionOrder(
 
     // Get fresh access token
     const tokenRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/tasty-oauth?action=refresh&user_id=${userId}`, {
-      headers: { 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` }
+      headers: { 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, 'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '' }
     });
     const tokenJson = await tokenRes.json();
     if (!tokenJson.access_token) return { success: false, error: 'Failed to get access token' };
@@ -1091,9 +1428,15 @@ Deno.serve(async (req) => {
 
     // Fetch current option price for frontend P&L display
     if (action === 'get_option_price') {
-      const { symbol, strike, expiration, option_type } = body;
+      const { symbol, strike, expiration, option_type, user_id } = body;
       if (!symbol || !strike || !expiration || !option_type) return new Response(JSON.stringify({ price: null }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      const price = await fetchRealOptionPrice(symbol, Number(strike), expiration, option_type);
+      let alpacaKey, alpacaSecret;
+      if (user_id) {
+        const { data: ac } = await supabase.from('broker_credentials').select('credentials').eq('user_id', user_id).eq('broker', 'alpaca').maybeSingle();
+        alpacaKey = ac?.credentials?.api_key;
+        alpacaSecret = ac?.credentials?.secret_key;
+      }
+      const price = await fetchRealOptionPrice(symbol, Number(strike), expiration, option_type, '1h', user_id, 'weekly', alpacaKey, alpacaSecret);
       return new Response(JSON.stringify({ price }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -1114,7 +1457,9 @@ Deno.serve(async (req) => {
       const { data: openTrades } = await supabase.from('options_trades').select('*').eq('bot_id', botId).eq('status', 'open');
       for (const open of (openTrades || [])) {
         try {
-          let optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, interval, bot.user_id);
+          const { data: alpacaCredsForTpsl } = await supabase.from('broker_credentials').select('credentials').eq('user_id', bot.user_id).eq('broker', 'alpaca').maybeSingle();
+          const tpslExpiryType = bot.bot_expiry_type ?? 'weekly';
+          let optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, interval, bot.user_id, tpslExpiryType, alpacaCredsForTpsl?.credentials?.api_key, alpacaCredsForTpsl?.credentials?.secret_key);
           if (!optionPrice || optionPrice <= 0) {
             console.log(`[check_tpsl] SKIP: no real price for ${open.symbol} $${open.strike}`);
             continue;
@@ -1146,7 +1491,7 @@ Deno.serve(async (req) => {
       
       // Get all open trades with their bot settings
       const { data: openTrades } = await supabase.from('options_trades')
-        .select('*, options_bots!inner(take_profit_pct, stop_loss_pct, bot_interval, broker, user_id, name)')
+        .select('*, options_bots!inner(take_profit_pct, stop_loss_pct, bot_interval, broker, user_id, name, bot_expiry_type)')
         .eq('status', 'open');
       
       if (!openTrades || openTrades.length === 0) {
@@ -1156,7 +1501,9 @@ Deno.serve(async (req) => {
       console.log(`[TPSL_Daemon] Checking ${openTrades.length} open positions for TP/SL...`);
       const closed: object[] = [];
       const R = 0.05;
-      
+      // Cache Alpaca creds per user to avoid repeated DB queries
+      const alpacaCredsCache: Record<string, { api_key?: string; secret_key?: string }> = {};
+
       for (const open of openTrades) {
         try {
           const bot = (open as any).options_bots;
@@ -1165,9 +1512,17 @@ Deno.serve(async (req) => {
           const interval = bot?.bot_interval ?? '1h';
           const userId = bot?.user_id;
           
-          // Fetch real-time price — no Black-Scholes fallback
-          const optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, interval, userId);
-          const source = optionPrice > 0 ? 'tastytrade/polygon' : 'none';
+          // Fetch Alpaca creds once per user (cached)
+          if (userId && !alpacaCredsCache[userId]) {
+            const { data: alpacaCredsRow } = await supabase.from('broker_credentials').select('credentials').eq('user_id', userId).eq('broker', 'alpaca').maybeSingle();
+            alpacaCredsCache[userId] = alpacaCredsRow?.credentials ?? {};
+          }
+          const alpacaApiKey = alpacaCredsCache[userId]?.api_key;
+          const alpacaSecretKey = alpacaCredsCache[userId]?.secret_key;
+          const botExpiryType = bot?.bot_expiry_type ?? 'weekly';
+          // Fetch real-time price — Alpaca OPRA → Black-Scholes
+          const optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, interval, userId, botExpiryType, alpacaApiKey, alpacaSecretKey);
+          const source = optionPrice > 0 ? 'alpaca/bs' : 'none';
           
           if (!optionPrice || optionPrice <= 0) {
             console.log(`[TPSL_Daemon] SKIP: no real price for ${open.symbol} $${open.strike}`);
@@ -1181,16 +1536,23 @@ Deno.serve(async (req) => {
           const slThreshold = stopLossPct < 0 ? stopLossPct : -Math.abs(stopLossPct);
           const shouldTP = pctChange >= takeProfitPct;
           const shouldSL = pctChange <= slThreshold;
+
+          // EOD auto-close: force-close all 0DTE positions at 12:00 PM MST (18:00 UTC)
+          const utcHour = now.getUTCHours();
+          const utcMinute = now.getUTCMinutes();
+          const is0dte = botExpiryType === '0dte' || open.expiration_date === new Date().toISOString().slice(0, 10);
+          const shouldEOD = is0dte && (utcHour > 18 || (utcHour === 18 && utcMinute >= 0));
           
-          console.log(`[TPSL_Daemon] ${open.symbol} ${open.option_type} $${open.strike}: current=$${optionPrice.toFixed(2)} entry=$${Number(open.premium_per_contract).toFixed(2)} pct=${pctChange.toFixed(1)}% tp=${takeProfitPct}% sl=${slThreshold}% shouldTP=${shouldTP} shouldSL=${shouldSL} source=${source}`);
+          console.log(`[TPSL_Daemon] ${open.symbol} ${open.option_type} $${open.strike}: current=$${optionPrice.toFixed(2)} entry=$${Number(open.premium_per_contract).toFixed(2)} pct=${pctChange.toFixed(1)}% tp=${takeProfitPct}% sl=${slThreshold}% shouldTP=${shouldTP} shouldSL=${shouldSL} shouldEOD=${shouldEOD} source=${source}`);
           
-          if (shouldTP || shouldSL) {
+          if (shouldTP || shouldSL || shouldEOD) {
+            const exitReason = shouldEOD ? 'eod_close_noon_mst' : shouldTP ? 'take_profit' : 'stop_loss';
             await supabase.from('options_trades').update({ 
               status: 'closed', 
               exit_price: optionPrice, 
               pnl, 
               closed_at: now.toISOString(),
-              exit_reason: shouldTP ? 'take_profit' : 'stop_loss'
+              exit_reason: exitReason
             }).eq('id', open.id);
             
             // Update paper balance if paper trading
@@ -1207,7 +1569,7 @@ Deno.serve(async (req) => {
               strike: open.strike,
               pct_change: pctChange.toFixed(1) + '%', 
               pnl: pnl.toFixed(2), 
-              reason: shouldTP ? 'take_profit' : 'stop_loss',
+              reason: exitReason,
               source
             });
           }
@@ -1389,12 +1751,10 @@ Deno.serve(async (req) => {
       const delayMin = (bot.market_open_delay_min as number) ?? 0;
       const isAfterOpenBuffer = etHour > 9 || (etHour === 9 && etMinute >= (30 + delayMin));
       if (!forceRun && (!isOptionsMarketHours || !isAfterOpenBuffer)) {
-        console.log(`[OptionsBot] Skipping "${bot.name}" - markets closed or before ${30 + delayMin} min after open (ET=${etHour}:${etMinute}, delay=${delayMin}min)`);
+        console.log(`[OptionsBot] Skipping "${bot.name}" - markets closed or within open delay (ET=${etHour}:${etMinute}, delayMin=${delayMin})`);
+        results.push({ bot_id: bot.id, symbol: bot.bot_symbol, status: 'skipped', reason: `Markets closed (ET=${etHour}:${etMinute})` });
         continue;
       }
-      
-      // 0DTE cutoff: Don't trade 0DTE after 2:00 PM ET (12:00 PM MT)
-      // 0DTE options stop trading 2 hours before market close (4:00 PM ET)
       const expiryType = bot.bot_expiry_type ?? 'weekly';
       const isAfter2PM_ET = etHour >= 14; // 2:00 PM ET or later
       if (!forceRun && expiryType === '0dte' && isAfter2PM_ET) {
@@ -1437,6 +1797,9 @@ Deno.serve(async (req) => {
       console.log(`[OptionsBot] "${bot.name}" | scanMode=${scanMode} | symbols=${symbolList.length} | list=[${symbolList.slice(0,5).join(',')}...${symbolList.slice(-3).join(',')}]`);
 
       try {
+        // Fetch Alpaca creds once per bot run (used for both TP/SL and new trade pricing)
+        const alpacaCreds = await supabase.from('broker_credentials').select('credentials').eq('user_id', bot.user_id).eq('broker', 'alpaca').maybeSingle().then((r: any) => r.data?.credentials);
+
         // ── TP/SL check on all open positions using REAL option prices ──
         const { data: allOpen } = await supabase.from('options_trades').select('*').eq('bot_id', bot.id).eq('status', 'open');
         if (allOpen && allOpen.length > 0) {
@@ -1450,10 +1813,9 @@ Deno.serve(async (req) => {
               const strikeCents = Math.round(open.strike * 1000);
               const optSymbol = `${open.symbol}${yy}${mm}${dd}${open.option_type.toUpperCase().charAt(0)}${String(strikeCents).padStart(8, '0')}`;
               
-              // Fetch REAL option price from Tastytrade or Polygon only
-              // NEVER use Black-Scholes for TP/SL decisions — a bad estimate can cause false -99% exits
-              let optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, settings.interval, bot.user_id);
-              const source = optionPrice > 0 ? 'tastytrade/polygon' : 'none';
+              // Fetch REAL option price — Alpaca OPRA → Black-Scholes
+              let optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, settings.interval, bot.user_id, settings.expiryType, alpacaCreds?.api_key, alpacaCreds?.secret_key);
+              const source = optionPrice > 0 ? 'alpaca/bs' : 'none';
 
               if (!optionPrice || optionPrice <= 0) {
                 console.log(`[OptionsBot] SKIP TP/SL for ${open.symbol} $${open.strike} — no real price available, will retry next cycle`);
@@ -1569,6 +1931,27 @@ Deno.serve(async (req) => {
                 sigResult = generateSignalBoof20(candles, settings.tradeDirection, 0.003, -0.003);
               } else if (botSignal === 'boof30') {
                 sigResult = generateSignalBoof30(candles, settings.tradeDirection);
+              } else if (botSignal === 'boof50') {
+                // Boof 5.0: Six-Factor Quant Model with optional trend filter
+                const boof50TrendFilter = bot.trend_filter as string || 'none';
+                const tfCandles = boof50TrendFilter !== 'none' ? await fetchCandles(sym, boof50TrendFilter, 100) : undefined;
+                sigResult = generateSignalBoof50(candles, settings.tradeDirection, tfCandles);
+              } else if (botSignal === 'longer_swing') {
+                // For 30m swing, fetch more candles and use Boof 3.0 for regime detection
+                const swingCandles = await fetchCandles(sym, '30m', 200);
+                if (swingCandles.length < 60) {
+                  results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Not enough 30m candle data' });
+                  continue;
+                }
+                sigResult = generateSignalBoof30(swingCandles, settings.tradeDirection);
+              } else if (botSignal === 'test_always_buy') {
+                // TEST MODE: Always fires BUY signal to test trade execution
+                const lastClose = candles[candles.length - 1].close;
+                sigResult = { signal: 'buy', price: lastClose, reason: 'TEST MODE: Always BUY' };
+              } else if (botSignal === 'test_always_sell') {
+                // TEST MODE: Always fires SELL signal to test trade execution
+                const lastClose = candles[candles.length - 1].close;
+                sigResult = { signal: 'sell', price: lastClose, reason: 'TEST MODE: Always SELL' };
               } else {
                 sigResult = generateSignal(candles, settings);
               }
@@ -1576,74 +1959,156 @@ Deno.serve(async (req) => {
               price = sigResult.price;
               reason = sigResult.reason;
 
-              // Block entries on candles that formed before the bot was enabled/reset
-              // OR before the market open delay window — whichever is later
-              if (!forceRun && signal !== 'none') {
-                const sigCandleTime = candles[candles.length - 2].time * 1000;
-                const enabledAtMs = bot.enabled_at ? new Date(bot.enabled_at).getTime() : 0;
-                // Compute market open + delay as a timestamp for today
-                const delayMinutes = (bot.market_open_delay_min as number) ?? 0;
-                // Build today's market open + delay as UTC ms using ET offset
-                const etOffsetMs = (now.getTime() - etDate.getTime());
-                const openEt = new Date(etDate);
-                openEt.setHours(9, 30 + delayMinutes, 0, 0);
-                const todayOpenMs = openEt.getTime() + etOffsetMs;
-                // Gate: signal candle must be newer than both enabled_at and market open+delay
-                const gateMs = Math.max(enabledAtMs, todayOpenMs);
-                if (sigCandleTime < gateMs) {
-                  console.log(`[OptionsBot] "${bot.name}" SKIP ${sym} — signal candle ${new Date(sigCandleTime).toISOString()} is before gate ${new Date(gateMs).toISOString()}`);
-                  results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Waiting for first signal after enable/delay' });
+              console.log(`[OptionsBot] "${bot.name}" | ${sym} | SIGNAL: ${signal} | price=$${price.toFixed(2)} | signal_type=${botSignal} | ${reason}`);
+              console.log(`[OptionsBot] ${sym} STEP 1: Signal generated, proceeding to trend filter...`);
+
+              // Trend Filter: EMA 25 on selected timeframe (or EMA 150 on 1m) — 2-candle confirmation required
+              const trendFilter = bot.trend_filter as string || 'none';
+              console.log(`[OptionsBot] ${sym} trend filter check: trendFilter=${trendFilter}, signal=${signal}`);
+              
+              if (trendFilter !== 'none' && signal !== 'none') {
+                try {
+                  // VWAP 1m filter — uses today's 1m candles
+                  if (trendFilter === 'vwap_1m') {
+                    const vwapCandles: Candle[] = await Promise.race([
+                      fetchCandles(sym, '1m', 390),
+                      new Promise<Candle[]>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+                    ]) as Candle[];
+                    if (vwapCandles.length < 5) {
+                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'VWAP: not enough 1m candles' });
+                      continue;
+                    }
+                    const vwap = calcVWAP(vwapCandles);
+                    const lastClose = vwapCandles[vwapCandles.length - 1].close;
+                    const prevClose = vwapCandles[vwapCandles.length - 2].close;
+                    const lastAboveVwap = lastClose >= vwap;
+                    const prevAboveVwap = prevClose >= vwap;
+                    console.log(`[OptionsBot] ${sym} VWAP 1m: price=${lastClose.toFixed(2)} vwap=${vwap.toFixed(2)} last=${lastAboveVwap?'above':'below'} prev=${prevAboveVwap?'above':'below'}`);
+                    if (signal === 'buy' && !(lastAboveVwap && prevAboveVwap)) {
+                      console.log(`[OptionsBot] ${sym} BUY blocked — price not confirmed above VWAP`);
+                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'BUY blocked: price below VWAP' });
+                      continue;
+                    }
+                    if (signal === 'sell' && (lastAboveVwap || prevAboveVwap)) {
+                      console.log(`[OptionsBot] ${sym} SELL blocked — price not confirmed below VWAP`);
+                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'SELL blocked: price above VWAP' });
+                      continue;
+                    }
+                    console.log(`[OptionsBot] ${sym} VWAP filter passed — signal aligned with VWAP`);
+                  } else {
+                  const is1mEma150 = trendFilter === '1m_ema150';
+                  const tfToFetch = is1mEma150 ? '1m' : trendFilter;
+                  const emaPeriod = is1mEma150 ? 150 : 25;
+                  const minCandles = is1mEma150 ? 160 : 30;
+                  const candlesToFetch = is1mEma150 ? 300 : 120;
+                  console.log(`[OptionsBot] ${sym} fetching ${tfToFetch} candles for EMA${emaPeriod} trend check...`);
+                  const higherTfCandles: Candle[] = await Promise.race([
+                    fetchCandles(sym, tfToFetch, candlesToFetch),
+                    new Promise<Candle[]>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+                  ]) as Candle[];
+                  console.log(`[OptionsBot] ${sym} fetched ${higherTfCandles.length} ${tfToFetch} candles`);
+                  if (higherTfCandles.length < minCandles) {
+                    console.log(`[OptionsBot] ${sym} trend filter: not enough candles (${higherTfCandles.length}) — blocking trade`);
+                    results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `Trend filter: insufficient candles` });
+                    continue;
+                  }
+                  if (higherTfCandles.length >= minCandles) {
+                    const higherTfCloses = higherTfCandles.map((c: Candle) => c.close);
+                    const higherTfEma = calcEMA(higherTfCloses, emaPeriod);
+                    const emaLast = higherTfEma[higherTfEma.length - 1];
+                    const emaPrev = higherTfEma[higherTfEma.length - 2];
+                    const priceLast = higherTfCloses[higherTfCloses.length - 1];
+                    const pricePrev = higherTfCloses[higherTfCloses.length - 2];
+                    // 2-candle confirmation: both recent closes must be on same side of EMA
+                    const lastAbove = priceLast >= emaLast;
+                    const prevAbove = pricePrev >= emaPrev;
+                    let higherTfTrend: string;
+                    if (lastAbove && prevAbove) higherTfTrend = 'up';
+                    else if (!lastAbove && !prevAbove) higherTfTrend = 'down';
+                    else higherTfTrend = 'neutral'; // mixed — don't trade
+                    const higherTfEmaVal = emaLast;
+                    const currentPrice = priceLast;
+                    console.log(`[OptionsBot] ${sym} EMA25 ${trendFilter}: price=${priceLast.toFixed(2)} ema=${emaLast.toFixed(2)} trend=${higherTfTrend} (2-bar confirm: last=${lastAbove?'above':'below'} prev=${prevAbove?'above':'below'})`);
+                    if (higherTfTrend === 'neutral') {
+                      console.log(`[OptionsBot] ${sym} BLOCKED — price crossing EMA25, no confirmed trend`);
+                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Trend filter: no confirmed trend (crossing EMA25)' });
+                      continue;
+                    }
+                    
+                    // Filter signal: Only trade if aligned with higher timeframe
+                    if (signal === 'buy' && higherTfTrend === 'down') {
+                      console.log(`[OptionsBot] ${sym} BUY blocked - ${trendFilter} trend is DOWN (price ${currentPrice.toFixed(2)} < EMA ${higherTfEmaVal.toFixed(2)})`);
+                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `BUY blocked: ${trendFilter} trend is DOWN` });
+                      continue;
+                    }
+                    if (signal === 'sell' && higherTfTrend === 'up') {
+                      console.log(`[OptionsBot] ${sym} SELL blocked - ${trendFilter} trend is UP (price ${currentPrice.toFixed(2)} > EMA ${higherTfEmaVal.toFixed(2)})`);
+                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `SELL blocked: ${trendFilter} trend is UP` });
+                      continue;
+                    }
+                    console.log(`[OptionsBot] ${sym} ${signal} approved - ${trendFilter} trend aligned (${higherTfTrend})`);
+                  }
+                  } // end else (non-VWAP filter)
+                } catch (e) {
+                  console.log(`[OptionsBot] ${sym} trend filter error — blocking trade to be safe: ${e}`);
+                  results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `Trend filter error: ${e}` });
                   continue;
                 }
+              } else {
+                console.log(`[OptionsBot] ${sym} no trend filter or no signal, proceeding`);
               }
               
-              console.log(`[OptionsBot] "${bot.name}" | ${sym} | SIGNAL: ${signal} | price=$${price.toFixed(2)} | signal_type=${botSignal} | ${reason}`);
-              
+              console.log(`[OptionsBot] ${sym} STEP 2: Trend filter passed, checking signal validity...`);
               if (signal === 'none') {
+                console.log(`[OptionsBot] ${sym} signal is none, skipping`);
                 // Clear pending signal if trend reversed
                 if (bot.last_signal && bot.last_signal !== 'none') {
                   await supabase.from('options_bots').update({ last_signal: null, last_signal_at: null }).eq('id', bot.id);
                 }
                 results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'no_signal' }); continue;
               }
-              if (signal === 'buy'  && settings.tradeDirection === 'short') { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Direction filter' }); continue; }
-              if (signal === 'sell' && settings.tradeDirection === 'long')  { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Direction filter' }); continue; }
-
-              // Confirmation candle: on first crossover, store as pending and wait for next candle to confirm
-              const lastSignal = bot.last_signal as string | null;
-              const lastSignalAt = bot.last_signal_at ? new Date(bot.last_signal_at as string).getTime() : 0;
-              const sigCandleMs = candles[candles.length - 2].time * 1000;
-              if (lastSignal !== signal || lastSignalAt < sigCandleMs) {
-                // Fresh signal or new candle — store as pending, don't enter yet
-                await supabase.from('options_bots').update({ last_signal: signal, last_signal_at: now.toISOString() }).eq('id', bot.id);
-                console.log(`[OptionsBot] "${bot.name}" ${sym} — pending ${signal} signal, waiting for confirmation candle`);
-                results.push({ bot_id: bot.id, symbol: sym, status: 'pending_confirmation', reason: `${signal} signal pending confirmation` });
-                continue;
-              }
-              // Signal confirmed on this candle — proceed to entry
+              console.log(`[OptionsBot] ${sym} signal=${signal}, direction=${settings.tradeDirection}`);
+              
+              if (signal === 'buy'  && settings.tradeDirection === 'short') { console.log(`[OptionsBot] ${sym} blocked by direction filter (buy vs short)`); results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Direction filter' }); continue; }
+              if (signal === 'sell' && settings.tradeDirection === 'long')  { console.log(`[OptionsBot] ${sym} blocked by direction filter (sell vs long)`); results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Direction filter' }); continue; }
+              console.log(`[OptionsBot] ${sym} STEP 3: Direction filter passed, checking dedup...`);
 
               // In-memory dedup: prevent parallel batch from trading same symbol twice in one run
-              if (tradedThisRun.has(sym)) { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Already traded this symbol in this run' }); continue; }
+              console.log(`[OptionsBot] ${sym} checking tradedThisRun...`);
+              if (tradedThisRun.has(sym)) { console.log(`[OptionsBot] ${sym} blocked - already traded this run`); results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Already traded this symbol in this run' }); continue; }
               tradedThisRun.add(sym);
-
-              // Race condition prevention: check for any trade within 1 minute for this bot+symbol
+              console.log(`[OptionsBot] ${sym} STEP 4: Dedup passed, checking 1-min race...`);
+              console.log(`[OptionsBot] ${sym} checking 1-minute race condition...`);
               const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
               const { data: recent1m } = await supabase.from('options_trades').select('id').eq('bot_id', bot.id).eq('symbol', sym).gte('created_at', oneMinuteAgo).limit(1);
-              if (recent1m && recent1m.length > 0) { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `Duplicate trade within 1 minute (race condition)` }); continue; }
+              console.log(`[OptionsBot] ${sym} recent1m check: ${recent1m?.length || 0} trades found`);
+              if (recent1m && recent1m.length > 0) { console.log(`[OptionsBot] ${sym} STEP 4.5: Race condition hit, skipping`); results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Trade within 1 minute' }); continue; }
+              console.log(`[OptionsBot] ${sym} STEP 5: Race check passed, checking open positions...`);
+              if (recent1m && recent1m.length > 0) { console.log(`[OptionsBot] ${sym} blocked - 1min race condition`); results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `Duplicate trade within 1 minute (race condition)` }); continue; }
+              console.log(`[OptionsBot] ${sym} passed 1-minute check`);
 
               // Block if already in open position on this symbol for this bot
+              console.log(`[OptionsBot] ${sym} checking existing open positions...`);
               const { data: existingOpen } = await supabase.from('options_trades').select('id').eq('bot_id', bot.id).eq('symbol', sym).eq('status', 'open').limit(1);
-              if (existingOpen && existingOpen.length > 0) { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Already in open position' }); continue; }
+              console.log(`[OptionsBot] ${sym} existingOpen check: ${existingOpen?.length || 0} open trades`);
+              if (existingOpen && existingOpen.length > 0) { console.log(`[OptionsBot] ${sym} blocked - already in open position`); results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Already in open position' }); continue; }
+              console.log(`[OptionsBot] ${sym} passed existingOpen check`);
 
               // Distributed lock: check for any trade inserted in last 5 seconds (concurrent invocation guard)
+              console.log(`[OptionsBot] ${sym} checking 5-second lock...`);
               const fiveSecAgo = new Date(Date.now() - 5 * 1000).toISOString();
               const { data: veryRecent } = await supabase.from('options_trades').select('id').eq('bot_id', bot.id).eq('symbol', sym).gte('created_at', fiveSecAgo).limit(1);
-              if (veryRecent && veryRecent.length > 0) { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Concurrent invocation guard (5s lock)' }); continue; }
+              console.log(`[OptionsBot] ${sym} veryRecent check: ${veryRecent?.length || 0} recent trades`);
+              if (veryRecent && veryRecent.length > 0) { console.log(`[OptionsBot] ${sym} blocked - 5sec lock`); results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'Concurrent invocation guard (5s lock)' }); continue; }
+              console.log(`[OptionsBot] ${sym} passed 5-second check`);
 
-              // 5-minute cooldown between entries on same symbol for this bot
-              const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-              const { data: recent5m } = await supabase.from('options_trades').select('id').eq('bot_id', bot.id).eq('symbol', sym).eq('signal', 'buy').gte('created_at', fiveMinAgo).limit(1);
-              if (recent5m && recent5m.length > 0) { results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: '5-minute cooldown between entries' }); continue; }
+              // 2-minute cooldown between entries on same symbol for this bot (0DTE scalping)
+              console.log(`[OptionsBot] ${sym} checking 2-minute cooldown...`);
+              const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+              const { data: recent2m } = await supabase.from('options_trades').select('id').eq('bot_id', bot.id).eq('symbol', sym).eq('signal', 'buy').gte('created_at', twoMinAgo).limit(1);
+              console.log(`[OptionsBot] ${sym} recent2m check: ${recent2m?.length || 0} recent trades`);
+              if (recent2m && recent2m.length > 0) { console.log(`[OptionsBot] ${sym} blocked - 2min cooldown`); results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: '2-minute cooldown between entries' }); continue; }
+              console.log(`[OptionsBot] ${sym} passed ALL checks, proceeding to entry!`);
 
               // Close open opposite positions and return balance
               const { data: openTrades } = await supabase.from('options_trades').select('*').eq('bot_id', bot.id).eq('symbol', sym).eq('status', 'open');
@@ -1709,45 +2174,44 @@ Deno.serve(async (req) => {
               }
               const targetExpiration = getExpirationDate(settings.expiryType);
               const expirationDate = findValidExpiration(targetExpiration);
-              const alpacaCreds = bot.broker === 'alpaca' ? await supabase.from('broker_credentials').select('credentials').eq('user_id', bot.user_id).eq('broker', 'alpaca').maybeSingle().then((r: any) => r.data?.credentials) : null;
-
               // Fetch Tastytrade access token for ALL bots if user has Tastytrade connected
               // This ensures paper trading uses the same real data as live trading
               let tastyAccessToken: string | null = null;
               try {
                 const { data: tastyCreds } = await supabase.from('broker_credentials')
                   .select('credentials').eq('user_id', bot.user_id).eq('broker', 'tastytrade').maybeSingle();
+                console.log(`[OptionsBot] ${sym} Tastytrade creds check: has_creds=${!!tastyCreds}, has_refresh=${!!tastyCreds?.credentials?.refresh_token}`);
                 if (tastyCreds?.credentials?.refresh_token) {
                   const tokenRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/tasty-oauth?action=refresh&user_id=${bot.user_id}`, {
-                    headers: { 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` }
+                    headers: {
+                      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+                      'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+                    }
                   });
                   const tokenJson = await tokenRes.json();
+                  console.log(`[OptionsBot] ${sym} Tastytrade token refresh: status=${tokenRes.status}, has_access_token=${!!tokenJson.access_token}, error=${tokenJson.error || 'none'}`);
                   if (tokenJson.access_token) tastyAccessToken = tokenJson.access_token;
                 }
-              } catch (_) {}
+              } catch (e) {
+                console.log(`[OptionsBot] ${sym} Tastytrade token refresh error: ${e}`);
+              }
 
-              // Spot price priority: Tastytrade → Polygon → Alpaca → Yahoo
-              // Each source is sanity-checked. If no sane price found, SKIP the trade.
+              // Spot price priority: Alpaca → Tastytrade → Yahoo
+              // Alpaca is first — real-time SIP data, most accurate
               let spotPrice: number | null = null;
 
-              // 1. Try Tastytrade real-time
-              if (tastyAccessToken) {
-                spotPrice = await fetchTastytradeSpotPrice(sym, tastyAccessToken);
-              }
-
-              // 2. Try Polygon (reliable, near real-time for equities)
-              if (!spotPrice) {
-                spotPrice = await fetchPolygonSpotPrice(sym);
-                if (spotPrice && !sanityCheckSpot(sym, spotPrice, price)) spotPrice = null;
-              }
-
-              // 3. Try Alpaca if connected
-              if (!spotPrice && alpacaCreds?.api_key) {
+              // 1. Try Alpaca first (real-time SIP data, always accurate)
+              if (alpacaCreds?.api_key) {
                 spotPrice = await fetchAlpacaSpotPrice(sym, alpacaCreds.api_key, alpacaCreds.secret_key);
                 if (spotPrice && !sanityCheckSpot(sym, spotPrice, price)) spotPrice = null;
               }
 
-              // 4. Yahoo fallback — sanity check required
+              // 2. Try Tastytrade real-time
+              if (!spotPrice && tastyAccessToken) {
+                spotPrice = await fetchTastytradeSpotPrice(sym, tastyAccessToken);
+              }
+
+              // 3. Yahoo fallback — sanity check required
               if (!spotPrice) {
                 try {
                   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1m&range=1d`;
@@ -1776,8 +2240,8 @@ Deno.serve(async (req) => {
               // Hard minimum: $1.00/contract. Never buy cheap far-OTM garbage.
               const atmStrike = Math.round(spotPrice / strikeInterval) * strikeInterval;
               const MIN_PREMIUM = 1.00; // $100/contract minimum
-              const MAX_STRIKES_WALK = 5; // max 5 strikes OTM
-              const MAX_STRIKE_PCT_FROM_SPOT = 0.15; // never buy more than 15% OTM
+              const MAX_STRIKES_WALK = 10; // walk up to 10 strikes to find budget-fitting option
+              const MAX_STRIKE_PCT_FROM_SPOT = 0.10; // never buy more than 10% OTM
               // For 0DTE, start ITM (negative offset = ITM for calls, positive = ITM for puts)
               const startOffset = expiryType === '0dte' ? -2 : 0;
               const startStrike = optionType === 'call'
@@ -1785,24 +2249,35 @@ Deno.serve(async (req) => {
                 : atmStrike - startOffset * strikeInterval; // puts: go higher = ITM
               let strike = startStrike;
               let premium = 0;
+              let cheapestStrike = startStrike;
+              let cheapestPremium = 0;
 
+              console.log(`[OptionsBot] ${sym} starting strike selection: spot=$${spotPrice}, budget=$${dollarAmount}, startStrike=$${startStrike}, optionType=${optionType}`);
+              
               for (let offset = 0; offset <= MAX_STRIKES_WALK; offset++) {
                 const candidateStrike = optionType === 'call'
                   ? startStrike + offset * strikeInterval
                   : startStrike - offset * strikeInterval;
-                const candidatePremium = await fetchRealOptionPrice(sym, candidateStrike, expirationDate, optionType, settings.interval, bot.user_id);
-                // If Tastytrade credentials exist (paper or live): require a real price — no Black-Scholes estimates
+                console.log(`[OptionsBot] ${sym} trying strike $${candidateStrike} (offset=${offset})...`);
+                
+                const candidatePremium = await fetchRealOptionPrice(sym, candidateStrike, expirationDate, optionType, settings.interval, bot.user_id, expiryType, alpacaCreds?.api_key, alpacaCreds?.secret_key);
+                console.log(`[OptionsBot] ${sym} $${candidateStrike} premium=$${candidatePremium?.toFixed(2) ?? 'null'}, tastyAccessToken=${tastyAccessToken ? 'YES' : 'NO'}`);
+                
+                // If no price found, continue to next strike
                 if (!candidatePremium || candidatePremium <= 0) {
-                  if (tastyAccessToken) {
-                    console.log(`[OptionsBot] SKIP: No real-time price for ${sym} $${candidateStrike} ${optionType} — not trading on estimates (broker=${bot.broker})`);
-                    break;
-                  }
+                  console.log(`[OptionsBot] ${sym} CONTINUING: No price for $${candidateStrike}, trying next offset`);
                   continue;
                 }
 
-                // Too cheap — stop walking further OTM, it only gets worse
+                // Track cheapest valid strike seen (above min premium)
+                if (candidatePremium >= MIN_PREMIUM && (cheapestPremium === 0 || candidatePremium < cheapestPremium)) {
+                  cheapestStrike = candidateStrike;
+                  cheapestPremium = candidatePremium;
+                }
+
+                // Too cheap — stop walking further OTM (premiums only get cheaper from here)
                 if (candidatePremium < MIN_PREMIUM) {
-                  console.log(`[OptionsBot] $${candidateStrike} premium $${candidatePremium.toFixed(2)} fell below $${MIN_PREMIUM} min — stopping walk`);
+                  console.log(`[OptionsBot] $${candidateStrike} premium $${candidatePremium.toFixed(2)} below $${MIN_PREMIUM} min — stopping walk`);
                   break;
                 }
 
@@ -1823,7 +2298,16 @@ Deno.serve(async (req) => {
                 console.log(`[OptionsBot] $${candidateStrike} @ $${candidatePremium.toFixed(2)}/contract ($${(candidatePremium*100).toFixed(0)}) exceeds budget $${dollarAmount} — trying next strike`);
               }
 
+              // If nothing fit budget, buy 1 contract of the cheapest valid strike found
+              if ((!premium || premium < MIN_PREMIUM) && cheapestPremium >= MIN_PREMIUM) {
+                strike = cheapestStrike;
+                premium = cheapestPremium;
+                console.log(`[OptionsBot] ${sym} no strike fit budget — buying 1 contract of cheapest: $${strike} @ $${premium.toFixed(2)}`);
+              }
+
               // HARD STOP — never trade below $1.00 premium under any circumstance
+              console.log(`[OptionsBot] ${sym} strike selection complete: final strike=$${strike}, final premium=$${premium?.toFixed(2) ?? '0'}`);
+              
               if (!premium || premium < MIN_PREMIUM) {
                 console.log(`[OptionsBot] BLOCKED: ${sym} premium $${premium?.toFixed(2) ?? '0'} < $${MIN_PREMIUM} — refusing to trade`);
                 continue;
@@ -1888,6 +2372,7 @@ Deno.serve(async (req) => {
               }
 
               console.log(`[OptionsBot] Inserting trade: ${sym} ${optionType} strike=${strike} premium=$${premium.toFixed(2)} contracts=${contracts} total=$${totalCost.toFixed(2)} status=${tradeStatus}`);
+              const tradeNow = new Date();
               const { error: insertErr } = await supabase.from('options_trades').insert({
                 user_id: bot.user_id, bot_id: bot.id, symbol: sym,
                 option_type: optionType, strike, expiration_date: expirationDate,
@@ -1895,7 +2380,17 @@ Deno.serve(async (req) => {
                 entry_price: premium, status: tradeStatus, signal, reason,
                 broker: bot.broker || 'paper',
                 broker_error: brokerError,
-                created_at: new Date().toISOString(),
+                created_at: tradeNow.toISOString(),
+                // ML features for Boof 4.0 training
+                entry_regime: (sigResult as any).regime,
+                entry_rsi: (sigResult as any).rsi,
+                entry_slope: (sigResult as any).slope,
+                entry_atr: (sigResult as any).atr,
+                entry_spot: price,
+                entry_ema: sigResult.ema,
+                hour_of_day: tradeNow.getHours(),
+                day_of_week: tradeNow.getDay(),
+                signal_version: botSignal,
               });
               if (insertErr) console.error(`[OptionsBot] INSERT FAILED for ${sym}:`, insertErr.message);
 

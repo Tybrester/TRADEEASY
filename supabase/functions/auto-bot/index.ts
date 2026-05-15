@@ -686,55 +686,119 @@ function calcBoof30(
 }
 
 function generateSignalBoof30(candles: Candle[], tradeDirection = 'both'): SignalResult {
+  const highs = candles.map(c => c.high);
+  const lows = candles.map(c => c.low);
   const closes = candles.map(c => c.close);
+  const volumes = candles.map(c => (c as any).volume || 1000000);
   const n = closes.length;
 
-  if (n < 35) {
-    return { signal: 'none', price: closes[n - 1], trend: 0, ema: closes[n - 1], adx: 50, reason: 'Insufficient data for Boof 3.0' };
+  if (n < 35) return { signal: 'none', price: closes[n - 1], trend: 0, ema: closes[n - 1], adx: 50, reason: 'Insufficient data' };
+
+  const lookback = 14;
+
+  // Returns
+  const returns: number[] = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) returns[i] = (closes[i] - closes[i - 1]) / closes[i - 1];
+
+  // Return std
+  const returnStd: number[] = new Array(n).fill(0);
+  for (let i = lookback; i < n; i++) {
+    const slice = returns.slice(i - lookback + 1, i + 1);
+    const mean = slice.reduce((a, b) => a + b, 0) / lookback;
+    returnStd[i] = Math.sqrt(slice.reduce((a, b) => a + (b - mean) ** 2, 0) / lookback);
   }
 
-  const boofResults = calcBoof30(candles, 14);
-  const i = n - 2; // last completed bar
-  const current = boofResults[i];
+  // MA slope
+  const maFast: number[] = new Array(n).fill(NaN);
+  const maSlow: number[] = new Array(n).fill(NaN);
+  for (let i = 4; i < n; i++) maFast[i] = closes.slice(i - 4, i + 1).reduce((a, b) => a + b, 0) / 5;
+  for (let i = 19; i < n; i++) maSlow[i] = closes.slice(i - 19, i + 1).reduce((a, b) => a + b, 0) / 20;
+  const maSlope = maFast.map((f, i) => !isNaN(f) && !isNaN(maSlow[i]) ? f - maSlow[i] : 0);
+
+  // RSI
+  const rsi = calcRSI(closes, lookback);
+
+  // Volume std
+  const volumeStd: number[] = new Array(n).fill(0);
+  for (let i = lookback; i < n; i++) {
+    const slice = volumes.slice(i - lookback + 1, i + 1);
+    const mean = slice.reduce((a, b) => a + b, 0) / lookback;
+    volumeStd[i] = Math.sqrt(slice.reduce((a, b) => a + (b - mean) ** 2, 0) / lookback);
+  }
+
+  // Prepare features for clustering
+  const validStart = Math.max(lookback, 20);
+  const features: number[][] = [];
+  const validIndices: number[] = [];
+  for (let i = validStart; i < n; i++) {
+    if (!isNaN(rsi[i])) {
+      features.push([returnStd[i] * 100, maSlope[i], rsi[i], volumeStd[i] / 1000000]);
+      validIndices.push(i);
+    }
+  }
+
+  if (features.length < 10) return { signal: 'none', price: closes[n - 1], trend: 0, ema: closes[n - 1], adx: 50, reason: 'Not enough data' };
+
+  // KMeans clustering
+  const { clusters } = kMeansClustering(features, 3, 50);
+
+  // Map clusters to regimes by avg slope
+  const clusterStats: { cluster: number, avgSlope: number }[] = [];
+  for (let c = 0; c < 3; c++) {
+    const indices = validIndices.filter((_, idx) => clusters[idx] === c);
+    const avgSlope = indices.reduce((a, idx) => a + maSlope[idx], 0) / indices.length;
+    clusterStats.push({ cluster: c, avgSlope });
+  }
+  clusterStats.sort((a, b) => a.avgSlope - b.avgSlope);
+  const regimeMap: Record<number, MarketRegime> = {
+    [clusterStats[0].cluster]: 'Range',
+    [clusterStats[1].cluster]: 'HighVol',
+    [clusterStats[2].cluster]: 'Trend'
+  };
+
+  // Generate signals for each point
+  const signals: { regime: MarketRegime, signal: number }[] = [];
+  for (let idx = 0; idx < validIndices.length; idx++) {
+    const i = validIndices[idx];
+    const regime = regimeMap[clusters[idx]];
+    let signal = 0;
+    if (regime === 'Trend') {
+      signal = maSlope[i] > 0 ? 1 : -1;
+    } else if (regime === 'Range') {
+      if (rsi[i] < 45) signal = 1;
+      else if (rsi[i] > 55) signal = -1;
+    } else if (regime === 'HighVol') {
+      signal = maSlope[i] > 0 ? 1 : -1;
+    }
+    signals.push({ regime, signal });
+  }
+
+  // Current bar - only fire on crossover (signal changed from prev bar)
+  const i = n - 2;
+  const idx = validIndices.indexOf(i);
+  const prevIdx = validIndices.indexOf(i - 1);
+  const current = idx >= 0 ? signals[idx] : { regime: 'Range' as MarketRegime, signal: 0 };
+  const prev = prevIdx >= 0 ? signals[prevIdx] : { signal: 0 };
   const curClose = closes[i];
-
-  if (!current) {
-    return { signal: 'none', price: curClose, trend: 0, ema: curClose, adx: 50, reason: 'Boof 3.0 calculation error' };
-  }
-
-  // Track position state
-  let inLong = false;
-  for (let j = 20; j <= i; j++) {
-    if (boofResults[j].signal === 1 && !inLong) inLong = true;
-    else if (boofResults[j].signal === -1 && inLong) inLong = false;
-  }
+  const justFlipped = current.signal !== prev.signal;
 
   let signal: 'buy' | 'sell' | 'none' = 'none';
-  let reason = `regime=${current.regime}, rsi=${current.rsi?.toFixed(1)}, slope=${current.maSlope?.toFixed(4)}, ret_std=${current.returnStd?.toFixed(4)}, inLong=${inLong}`;
+  let reason = `regime=${current.regime}, rsi=${rsi[i]?.toFixed(1)}, slope=${maSlope[i]?.toFixed(4)}`;
 
-  // Generate signal based on regime and conditions
-  if (!inLong && current.signal === 1) {
+  if (current.signal === 1 && justFlipped) {
     signal = 'buy';
-    reason = `Boof 3.0 BUY [${current.regime}]. ${reason}`;
-  } else if (inLong && current.signal === -1) {
+    reason = `Boof 3.0 BUY CROSSOVER [${current.regime}]. ${reason}`;
+  } else if (current.signal === -1 && justFlipped) {
     signal = 'sell';
-    reason = `Boof 3.0 SELL [${current.regime}]. ${reason}`;
+    reason = `Boof 3.0 SELL CROSSOVER [${current.regime}]. ${reason}`;
   } else {
     reason = `Boof 3.0 NONE [${current.regime}]. ${reason}`;
   }
 
-  // Apply trade direction filter
   if (tradeDirection === 'long' && signal === 'sell') signal = 'none';
   if (tradeDirection === 'short' && signal === 'buy') signal = 'none';
 
-  return {
-    signal,
-    price: curClose,
-    trend: current.maSlope > 0 ? 1 : -1,
-    ema: closes.slice(i - 19, i + 1).reduce((a, b) => a + b, 0) / 20,
-    adx: current.rsi,
-    reason
-  };
+  return { signal, price: curClose, trend: maSlope[i] > 0 ? 1 : -1, ema: maSlow[i], adx: rsi[i], reason };
 }
 
 // ─────────────────────────────────────────────

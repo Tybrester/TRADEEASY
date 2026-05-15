@@ -1,0 +1,135 @@
+// @version=5
+indicator("Boof 3.0 - KMeans Regime Detection", overlay=true)
+
+// ─────────────────────────────────────────────
+// INPUTS
+// ─────────────────────────────────────────────
+lookback = input.int(50, minval=20, maxval=200, title="Lookback Period")
+regimeThreshold = input.float(0.02, minval=0.001, maxval=0.1, title="Regime Change Threshold")
+showSignals = input.bool(true, title="Show Signals")
+
+// ─────────────────────────────────────────────
+// FEATURE ENGINEERING (KMeans approximation)
+// ─────────────────────────────────────────────
+// Feature 1: Price returns (normalized)
+returns = ta.change(close) / close[1]
+
+// Feature 2: Rolling volatility
+volatility = ta.stdev(returns, lookback)
+
+// Feature 3: Price position relative to EMA
+ema20 = ta.ema(close, 20)
+ema50 = ta.ema(close, 50)
+priceAboveEMA20 = (close - ema20) / ema20
+priceAboveEMA50 = (close - ema50) / ema50
+
+// Feature 4: Trend strength (ADX approximation)
+diPlus = ta.rma(math.max(ta.change(high), 0), 14)
+diMinus = ta.rma(math.max(-ta.change(low), 0), 14)
+dx = math.abs(diPlus - diMinus) / (diPlus + diMinus) * 100
+adx = ta.rma(dx, 14)
+
+// ─────────────────────────────────────────────
+// REGIME DETECTION (3 clusters approximation)
+// ─────────────────────────────────────────────
+// Bull Regime: Price above EMA50, positive returns, high ADX
+// Bear Regime: Price below EMA50, negative returns, high ADX  
+// Range Regime: ADX low, price oscillating around EMA
+
+// Calculate regime scores
+bullScore = 0.0
+bearScore = 0.0
+rangeScore = 0.0
+
+// Bull components
+bullScore := priceAboveEMA50 > 0 ? 1 : 0
+bullScore := bullScore + (returns > 0 ? 1 : 0)
+bullScore := bullScore + (adx > 25 ? 1 : 0)
+bullScore := bullScore + (close > ema20 ? 1 : 0)
+
+// Bear components  
+bearScore := priceAboveEMA50 < 0 ? 1 : 0
+bearScore := bearScore + (returns < 0 ? 1 : 0)
+bearScore := bearScore + (adx > 25 ? 1 : 0)
+bearScore := bearScore + (close < ema20 ? 1 : 0)
+
+// Range components
+rangeScore := adx < 20 ? 1 : 0
+rangeScore := rangeScore + (math.abs(priceAboveEMA50) < 0.01 ? 1 : 0)
+rangeScore := rangeScore + (volatility < ta.sma(volatility, 20) ? 1 : 0)
+
+// Determine current regime
+var int currentRegime = 0 // 0=range, 1=bull, -1=bear
+if bullScore >= 3
+    currentRegime := 1
+if bearScore >= 3
+    currentRegime := -1
+if rangeScore >= 2 and bullScore < 3 and bearScore < 3
+    currentRegime := 0
+
+// ─────────────────────────────────────────────
+// SIGNAL GENERATION
+// ─────────────────────────────────────────────
+// Buy: Transition to bull regime or strong bull continuation
+// Sell: Transition to bear regime or strong bear continuation
+
+var int lastSignal = 0 // 1=buy, -1=sell, 0=none
+
+// Detect regime changes
+regimeChange = currentRegime != currentRegime[1]
+
+// Buy signal: Enter bull regime with momentum
+buySignal = (currentRegime == 1 and currentRegime[1] != 1 and returns > 0) or 
+            (currentRegime == 1 and close > ema20 and close[1] <= ema20)
+
+// Sell signal: Enter bear regime with momentum  
+sellSignal = (currentRegime == -1 and currentRegime[1] != -1 and returns < 0) or
+             (currentRegime == -1 and close < ema20 and close[1] >= ema20)
+
+// Avoid signals in ranging markets unless strong breakout
+buySignal := buySignal and not (currentRegime == 0 and adx < 15)
+sellSignal := sellSignal and not (currentRegime == 0 and adx < 15)
+
+// ─────────────────────────────────────────────
+// PLOTTING
+// ─────────────────────────────────────────────
+// Regime background coloring
+regimeColor = currentRegime == 1 ? color.new(color.green, 90) : 
+              currentRegime == -1 ? color.new(color.red, 90) : 
+              color.new(color.gray, 95)
+bgcolor(regimeColor)
+
+// Signals
+plotshape(showSignals and buySignal, title="Buy Signal", location=location.belowbar, 
+         color=color.new(#00d4ff, 0), style=shape.triangleup, size=size.normal, text="BUY")
+plotshape(showSignals and sellSignal, title="Sell Signal", location=location.abovebar, 
+         color=color.new(#ff5252, 0), style=shape.triangledown, size=size.normal, text="SELL")
+
+// EMAs for reference
+plot(ema20, title="EMA 20", color=color.new(#00d4ff, 50), linewidth=1)
+plot(ema50, title="EMA 50", color=color.new(#ffaa00, 50), linewidth=2)
+
+// ─────────────────────────────────────────────
+// INFO PANEL
+// ─────────────────────────────────────────────
+var table infoPanel = table.new(position.top_right, 2, 5, bgcolor=color.new(#1a1a2e, 10), 
+                               border_width=1, border_color=color.new(#00d4ff, 50))
+
+if barstate.islast
+    table.cell(infoPanel, 0, 0, "Regime:", text_color=color.white, text_size=size.small)
+    table.cell(infoPanel, 1, 0, currentRegime == 1 ? "BULL" : currentRegime == -1 ? "BEAR" : "RANGE", text_color=currentRegime == 1 ? color.green : currentRegime == -1 ? color.red : color.gray, text_size=size.small)
+    table.cell(infoPanel, 0, 1, "ADX:", text_color=color.white, text_size=size.small)
+    table.cell(infoPanel, 1, 1, str.tostring(adx, "#."), text_color=adx > 25 ? color.green : color.gray, text_size=size.small)
+    table.cell(infoPanel, 0, 2, "Trend:", text_color=color.white, text_size=size.small)
+    table.cell(infoPanel, 1, 2, close > ema50 ? "UP" : "DOWN", text_color=close > ema50 ? color.green : color.red, text_size=size.small)
+    table.cell(infoPanel, 0, 3, "Volatility:", text_color=color.white, text_size=size.small)
+    table.cell(infoPanel, 1, 3, volatility > ta.sma(volatility, 20) ? "HIGH" : "LOW", text_color=volatility > ta.sma(volatility, 20) ? color.orange : color.gray, text_size=size.small)
+    table.cell(infoPanel, 0, 4, "Signal:", text_color=color.white, text_size=size.small)
+    table.cell(infoPanel, 1, 4, buySignal ? "BUY" : sellSignal ? "SELL" : "HOLD", text_color=buySignal ? color.green : sellSignal ? color.red : color.gray, text_size=size.small)
+
+// ─────────────────────────────────────────────
+// ALERTS
+// ─────────────────────────────────────────────
+alertcondition(buySignal, title="Boof 3.0 Buy", message="Boof 3.0: BUY signal on {{ticker}} at {{close}}")
+alertcondition(sellSignal, title="Boof 3.0 Sell", message="Boof 3.0: SELL signal on {{ticker}} at {{close}}")
+alertcondition(regimeChange, title="Boof 3.0 Regime Change", message="Boof 3.0: Regime changed on {{ticker}}")
