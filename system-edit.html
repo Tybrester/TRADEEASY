@@ -193,6 +193,12 @@
             </label>
           </div>
           <div class="field" style="margin-top:16px;">
+            <label>Broker / Account</label>
+            <select id="edit-broker" style="width:100%;background:#111;border:1px solid #2a2a2a;color:var(--text);padding:9px 12px;border-radius:8px;font-family:inherit;font-size:0.85rem;outline:none;margin-top:6px;">
+              <option value="paper">EasyTrade Paper</option>
+            </select>
+          </div>
+          <div class="field" style="margin-top:16px;">
             <label>Trade Direction</label>
             <div style="display:flex;gap:8px;margin-top:8px;">
               <button type="button" id="td-both" class="td-btn" onclick="setTradeDirection('both')" style="flex:1;padding:10px 16px;background:#1a1a1a;border:2px solid #333;color:var(--text);border-radius:6px;font-size:0.85rem;font-weight:600;cursor:pointer;transition:all 0.15s;">Both</button>
@@ -295,6 +301,7 @@
         enabled: document.getElementById('edit-enabled').checked,
         auto_submit: document.getElementById('edit-auto-submit').checked,
         trade_direction: document.getElementById('edit-trade-direction').value,
+        broker: document.getElementById('edit-broker').value,
       };
       const { error } = await sbClient.from('systems').update(updates).eq('id', systemId);
       if (error) {
@@ -336,6 +343,7 @@
         // Set webhook URL as soon as we have the session
         webhookUrlValue = `${SUPABASE_URL}/functions/v1/trade-webhook?user_id=${session.user.id}&system_id=${systemId}`;
         document.getElementById('webhook-url').textContent = webhookUrlValue;
+        loadBrokers(session.user.id);
         try {
           const { data: supaData } = await sbClient.from('systems').select('*').eq('id', systemId).eq('user_id', session.user.id).maybeSingle();
           if (supaData) {
@@ -413,6 +421,25 @@
       document.getElementById('edit-enabled').checked = !!sys.enabled;
       document.getElementById('edit-auto-submit').checked = !!sys.auto_submit;
       setTradeDirection(sys.trade_direction || 'both');
+      if (sys.broker) {
+        const sel = document.getElementById('edit-broker');
+        if ([...sel.options].some(o => o.value === sys.broker)) sel.value = sys.broker;
+      }
+    }
+
+    async function loadBrokers(userId) {
+      const sel = document.getElementById('edit-broker');
+      try {
+        const { data: creds } = await sbClient.from('broker_credentials').select('broker').eq('user_id', userId);
+        (creds || []).forEach(c => {
+          if (![...sel.options].some(o => o.value === c.broker)) {
+            const opt = document.createElement('option');
+            opt.value = c.broker;
+            opt.textContent = c.broker.charAt(0).toUpperCase() + c.broker.slice(1);
+            sel.appendChild(opt);
+          }
+        });
+      } catch(_) {}
     }
 
     init();

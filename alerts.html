@@ -620,6 +620,18 @@
       document.getElementById('loading-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
 
+      // Load connected brokers into create modal dropdown
+      const { data: creds } = await sbClient.from('broker_credentials').select('broker').eq('user_id', currentUserId);
+      const sel = document.getElementById('cs-broker');
+      (creds || []).forEach(c => {
+        if (![...sel.options].some(o => o.value === c.broker)) {
+          const opt = document.createElement('option');
+          opt.value = c.broker;
+          opt.textContent = c.broker.charAt(0).toUpperCase() + c.broker.slice(1);
+          sel.appendChild(opt);
+        }
+      });
+
       loadSystems();
       buildJSONPreview();
 
