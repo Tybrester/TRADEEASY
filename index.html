@@ -552,9 +552,25 @@
     .cta-form input:focus { border-color: var(--accent); }
     .cta-form input::placeholder { color: var(--muted); }
 
+    .nav-mobile-btns {
+      display: none;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .nav-mobile-btns a {
+      font-size: 0.82rem;
+      font-weight: 700;
+      padding: 8px 16px;
+      border-radius: 6px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
     @media (max-width: 768px) {
       nav ul { display: none; }
       .stats { flex-direction: column; }
+      .nav-mobile-btns { display: flex; }
     }
   </style>
 </head>
@@ -568,6 +584,10 @@
       <li><a href="signup.html" class="nav-cta">Get Started</a></li>
       <li><a href="signin.html" class="nav-signin">Sign In</a></li>
     </ul>
+    <div class="nav-mobile-btns">
+      <a href="signup.html" style="background:var(--accent);color:#000;">Get Started</a>
+      <a href="signin.html" style="border:1px solid #333;color:var(--text);">Sign In</a>
+    </div>
   </nav>
 
   <!-- HERO -->
