@@ -886,9 +886,8 @@
         container.innerHTML = allBots.map(b => {
           const isRunning = b.enabled && b.auto_submit;
           const start = Number(b.paper_balance_start || 100000);
-          // Use stored paper_balance directly if set (not null/0), else calculate from trades
-          const calcBal = start + b.closedTrades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
-          const balance = (b.paper_balance != null && Number(b.paper_balance) !== 0) ? Number(b.paper_balance) : calcBal;
+          // Always use paper_balance from DB; only fall back to calculation if column is NULL
+          const balance = b.paper_balance != null ? Number(b.paper_balance) : (start + b.closedTrades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0));
           const realizedPnl = balance - start;
           const pct = start > 0 ? ((realizedPnl / start) * 100) : 0;
           const pnlColor = realizedPnl >= 0 ? 'var(--accent)' : 'var(--red)';
