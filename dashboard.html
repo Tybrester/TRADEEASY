@@ -557,14 +557,12 @@
       <div class="stats-row">
         <div class="stat-card" style="position:relative;">
           <div class="label" style="margin-bottom:0;">Account Balance</div>
-          <div class="value green" id="stat-balance">—</div>
-          <div class="sub" id="stat-balance-sub">Starting amount</div>
-        </div>
-
-        <div class="stat-card">
-          <div class="label">Total P&L</div>
-          <div class="value" id="stat-unrealized">$0.00</div>
-          <div class="sub" id="stat-unrealized-sub">No open positions</div>
+          <div style="display:flex;align-items:baseline;gap:10px;">
+            <div class="value green" id="stat-balance">—</div>
+            <span id="stat-pnl-pct" style="font-size:0.85rem;font-weight:700;"></span>
+          </div>
+          <div id="stat-pnl-abs" style="font-size:0.88rem;font-weight:700;margin-top:2px;"></div>
+          <div class="sub" id="stat-balance-sub">All Bots · Paper Balance</div>
         </div>
         <div class="stat-card">
           <div class="label">Active Trades</div>
@@ -645,6 +643,14 @@
       const paperBalance = allMyBots.length > 0
         ? allMyBots.reduce((sum, b) => sum + (Number(b.paper_balance) || Number(b.paper_balance_start) || 100000), 0)
         : 100000;
+      const totalStart = allMyBots.reduce((sum, b) => sum + (Number(b.paper_balance_start) || 100000), 0) || 100000;
+      const totalPnl = paperBalance - totalStart;
+      const totalPct = totalStart > 0 ? (totalPnl / totalStart) * 100 : 0;
+      const pnlColor = totalPnl >= 0 ? 'var(--accent)' : 'var(--red)';
+      const pnlPctEl = document.getElementById('stat-pnl-pct');
+      const pnlAbsEl = document.getElementById('stat-pnl-abs');
+      if (pnlPctEl) { pnlPctEl.textContent = (totalPct >= 0 ? '+' : '') + totalPct.toFixed(2) + '%'; pnlPctEl.style.color = pnlColor; }
+      if (pnlAbsEl) { pnlAbsEl.textContent = (totalPnl >= 0 ? '+$' : '-$') + Math.abs(totalPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); pnlAbsEl.style.color = pnlColor; }
 
       // Load tastytrade connection
       const { data: credRow } = await sbClient.from('broker_credentials').select('broker').eq('user_id', user.id).eq('broker', 'tastytrade').maybeSingle();
