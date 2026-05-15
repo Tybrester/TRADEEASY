@@ -883,6 +883,8 @@
           return;
         }
 
+        console.log('[Dashboard Bots Raw]', allBots.map(b => ({ name: b.name, paper_balance: b.paper_balance, paper_balance_start: b.paper_balance_start })));
+
         container.innerHTML = allBots.map(b => {
           const isRunning = b.enabled && b.auto_submit;
           const start = Number(b.paper_balance_start || 100000);
