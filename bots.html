@@ -2729,8 +2729,23 @@
             <div class="section-label">Auto Bot Settings</div>
             <div class="settings-lock-wrap">
             <div class="auto-settings">
-              <!-- Scan Markets -->
+              <!-- Scan Mode Toggle -->
               <div class="auto-settings-row" style="align-items:flex-start;">
+                <span style="padding-top:2px;">Mode</span>
+                <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+                  <div style="display:flex;gap:5px;">
+                    <button type="button" class="dir-pill ${!isScan?'active':''}" id="mode-single-${s.id}" onclick="setScanMode('${s.id}', false)">Single Symbol</button>
+                    <button type="button" class="dir-pill ${isScan?'active':''}" id="mode-scan-${s.id}" onclick="setScanMode('${s.id}', true)">Scan List</button>
+                  </div>
+                </div>
+              </div>
+              <!-- Symbol (single mode) -->
+              <div class="auto-settings-row" id="sym-row-${s.id}" style="display:${isScan?'none':'flex'}">
+                <span>Symbol</span>
+                <input class="auto-input wide" id="sym-${s.id}" type="text" value="${symbol}" placeholder="e.g. SPY" />
+              </div>
+              <!-- Scan Markets (scan mode) -->
+              <div class="auto-settings-row" id="scan-markets-row-${s.id}" style="display:${isScan?'flex':'none'};align-items:flex-start;">
                 <span style="padding-top:2px;">Scan Markets</span>
                 <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
                   <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;">
@@ -2740,11 +2755,6 @@
                   </div>
                   <div style="font-size:0.7rem;color:#555;text-align:right;">Select one or more markets to scan</div>
                 </div>
-              </div>
-              <!-- Symbol (hidden in scan mode) -->
-              <div class="auto-settings-row" id="sym-row-${s.id}" style="display:${isScan?'none':'flex'}">
-                <span>Symbol</span>
-                <input class="auto-input wide" id="sym-${s.id}" type="text" value="${symbol}" placeholder="e.g. SPY" />
               </div>
               <div class="auto-settings-row">
                 <span>$ Amount per Trade</span>
@@ -3021,6 +3031,22 @@
       
       // Store in data attributes for save
       btn.dataset.enabled = isActive ? 'true' : 'false';
+    }
+
+    function setScanMode(botId, isScanMode) {
+      // Toggle button states
+      const singleBtn = document.getElementById('mode-single-' + botId);
+      const scanBtn = document.getElementById('mode-scan-' + botId);
+      if (singleBtn) singleBtn.classList.toggle('active', !isScanMode);
+      if (scanBtn) scanBtn.classList.toggle('active', isScanMode);
+      
+      // Show/hide symbol row
+      const symRow = document.getElementById('sym-row-' + botId);
+      if (symRow) symRow.style.display = isScanMode ? 'none' : 'flex';
+      
+      // Show/hide scan markets row
+      const scanRow = document.getElementById('scan-markets-row-' + botId);
+      if (scanRow) scanRow.style.display = isScanMode ? 'flex' : 'none';
     }
 
     function setBotDir(systemId, direction) {
