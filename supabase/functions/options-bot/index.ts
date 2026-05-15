@@ -1938,6 +1938,15 @@ Deno.serve(async (req) => {
         if (allOpen && allOpen.length > 0) {
           for (const open of allOpen) {
             try {
+              // Minimum hold time: skip TP/SL for trades less than 2 minutes old
+              // Prevents immediate close caused by BS pricing on brand-new trades
+              const tradeAgeMs = Date.now() - new Date(open.created_at).getTime();
+              const minHoldMs = 2 * 60 * 1000; // 2 minutes
+              if (tradeAgeMs < minHoldMs) {
+                console.log(`[OptionsBot] SKIP TP/SL for ${open.symbol} — trade only ${Math.round(tradeAgeMs/1000)}s old, min hold=${minHoldMs/1000}s`);
+                continue;
+              }
+
               // Build Tradier option symbol format: SPY241231C00580000
               const expDate = new Date(open.expiration_date);
               const yy = String(expDate.getFullYear()).slice(-2);
