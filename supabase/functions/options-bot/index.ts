@@ -1977,8 +1977,8 @@ Deno.serve(async (req) => {
                       fetchCandles(sym, '1m', 390),
                       new Promise<Candle[]>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
                     ]) as Candle[];
-                    if (vwapCandles.length < 5) {
-                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'VWAP: not enough 1m candles' });
+                    if (vwapCandles.length < 30) {
+                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `VWAP: not enough 1m candles (${vwapCandles.length}/30) — waiting for 30min after open` });
                       continue;
                     }
                     const vwap = calcVWAP(vwapCandles);
