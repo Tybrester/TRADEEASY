@@ -39,9 +39,9 @@
     .bots-col { padding: 28px 28px; }
     .activity-toggle { background: none; border: 1px solid #2a2a2a; color: var(--muted); font-size: 0.75rem; font-weight: 700; padding: 5px 14px; border-radius: 6px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
     .activity-toggle:hover { border-color: var(--accent); color: var(--accent); }
-    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 500; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 500; align-items: flex-start; justify-content: center; backdrop-filter: blur(4px); overflow-y: auto; padding: 24px 0; }
     .modal-overlay.open { display: flex; }
-    .create-bot-modal { background: #111; border: 1px solid #222; border-radius: 16px; width: 92%; max-width: 420px; padding: 28px 28px 24px; display: flex; flex-direction: column; gap: 18px; }
+    .create-bot-modal { background: #111; border: 1px solid #222; border-radius: 16px; width: 92%; max-width: 420px; padding: 28px 28px 24px; display: flex; flex-direction: column; gap: 18px; max-height: none; margin: auto; }
     .create-bot-modal h2 { font-size: 1rem; font-weight: 800; }
     .create-bot-field { display: flex; flex-direction: column; gap: 6px; }
     .create-bot-field label { font-size: 0.72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
