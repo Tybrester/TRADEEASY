@@ -746,8 +746,30 @@
       const pctEl = document.getElementById('opt-paper-pct-' + botId);
       if (!el) return;
       try {
-        // Get bot's starting balance
-        const { data: bot } = await sbClient.from('options_bots').select('paper_balance_start,paper_balance').eq('id', botId).single();
+        // Get bot's starting balance and broker
+        const { data: bot } = await sbClient.from('options_bots').select('paper_balance_start,paper_balance,broker,user_id').eq('id', botId).single();
+
+        // For live Alpaca bots: fetch real account equity from Alpaca
+        if (bot?.broker === 'alpaca') {
+          try {
+            const { data: creds } = await sbClient.from('broker_credentials').select('credentials').eq('user_id', bot.user_id).eq('broker', 'alpaca').maybeSingle();
+            if (creds?.credentials?.api_key) {
+              const baseUrl = creds.credentials.env === 'live' ? 'https://api.alpaca.markets' : 'https://paper-api.alpaca.markets';
+              const acctRes = await fetch(`${baseUrl}/v2/account`, {
+                headers: { 'APCA-API-KEY-ID': creds.credentials.api_key, 'APCA-API-SECRET-KEY': creds.credentials.secret_key }
+              });
+              const acct = await acctRes.json();
+              const equity = parseFloat(acct.equity ?? acct.portfolio_value ?? '0');
+              el.textContent = '$' + equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              if (pctEl) pctEl.textContent = '';
+              return;
+            }
+          } catch (_) {}
+          el.textContent = '$0.00';
+          if (pctEl) pctEl.textContent = '';
+          return;
+        }
+
         const startBalance = Number(bot?.paper_balance_start ?? 100000);
         
         // Get realized P&L from closed trades
@@ -1100,8 +1122,8 @@
               <input type="number" id="opt-bal-input-${b.id}" placeholder="Set balance..." onkeydown="if(event.key==='Enter')setOptionsPaperBalance('${b.id}')" style="background:#111;border:1px solid #2a2a2a;color:var(--text);padding:5px 10px;border-radius:6px;font-family:inherit;font-size:0.82rem;width:130px;outline:none;flex:1;" />
               <button onclick="setOptionsPaperBalance('${b.id}')" class="reset-btn" style="white-space:nowrap;">Set</button>
               <button class="reset-btn" onclick="resetOptionsPaperBalance('${b.id}')">$100k</button>
-            </div>`}
-            <button onclick="resetOptionsBot('${b.id}')" style="width:100%;margin-top:4px;background:transparent;border:1px solid #2a1a1a;color:#664444;font-size:0.72rem;font-weight:700;padding:6px 0;border-radius:6px;cursor:pointer;font-family:inherit;letter-spacing:0.04em;transition:all 0.15s;" onmouseover="this.style.borderColor='#ff4444';this.style.color='#ff4444';this.style.background='rgba(255,68,68,0.06)'" onmouseout="this.style.borderColor='#2a1a1a';this.style.color='#664444';this.style.background='transparent'">↺ Reset Bot &amp; Clear Trades</button>
+            </div>
+            <button onclick="resetOptionsBot('${b.id}')" style="width:100%;margin-top:4px;background:transparent;border:1px solid #2a1a1a;color:#664444;font-size:0.72rem;font-weight:700;padding:6px 0;border-radius:6px;cursor:pointer;font-family:inherit;letter-spacing:0.04em;transition:all 0.15s;" onmouseover="this.style.borderColor='#ff4444';this.style.color='#ff4444';this.style.background='rgba(255,68,68,0.06)'" onmouseout="this.style.borderColor='#2a1a1a';this.style.color='#664444';this.style.background='transparent'">↺ Reset Bot &amp; Clear Trades</button>`}
           </div>
 
           <!-- Master toggle -->
