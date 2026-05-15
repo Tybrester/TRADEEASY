@@ -2015,13 +2015,14 @@ Deno.serve(async (req) => {
                     const prevAboveVwap = prevClose >= vwap;
                     console.log(`[OptionsBot] ${sym} VWAP 1m: price=${lastClose.toFixed(2)} vwap=${vwap.toFixed(2)} last=${lastAboveVwap?'above':'below'} prev=${prevAboveVwap?'above':'below'}`);
                     if (signal === 'buy' && !(lastAboveVwap && prevAboveVwap)) {
-                      console.log(`[OptionsBot] ${sym} BUY blocked — price not confirmed above VWAP`);
-                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'BUY blocked: price below VWAP' });
+                      console.log(`[OptionsBot] ${sym} BUY blocked — price not confirmed above VWAP (last=${lastAboveVwap} prev=${prevAboveVwap})`);
+                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'BUY blocked: price not confirmed above VWAP' });
                       continue;
                     }
-                    if (signal === 'sell' && (lastAboveVwap || prevAboveVwap)) {
-                      console.log(`[OptionsBot] ${sym} SELL blocked — price not confirmed below VWAP`);
-                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'SELL blocked: price above VWAP' });
+                    // Both candles must be below VWAP to allow a SELL/PUT — prevents puts on single-candle dips
+                    if (signal === 'sell' && !(!lastAboveVwap && !prevAboveVwap)) {
+                      console.log(`[OptionsBot] ${sym} SELL blocked — price not confirmed below VWAP (last=${lastAboveVwap} prev=${prevAboveVwap})`);
+                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'SELL blocked: price not confirmed below VWAP' });
                       continue;
                     }
                     console.log(`[OptionsBot] ${sym} VWAP filter passed — signal aligned with VWAP`);
