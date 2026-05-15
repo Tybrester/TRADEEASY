@@ -1817,8 +1817,18 @@ Deno.serve(async (req) => {
               const optSymbol = `${open.symbol}${yy}${mm}${dd}${open.option_type.toUpperCase().charAt(0)}${String(strikeCents).padStart(8, '0')}`;
               
               // Fetch REAL option price — Alpaca OPRA → Black-Scholes
-              let optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, settings.interval, bot.user_id, settings.expiryType, alpacaCreds?.api_key, alpacaCreds?.secret_key);
-              const source = optionPrice > 0 ? 'alpaca/bs' : 'none';
+              // Try Alpaca first to see if we get a real quote
+              let optionPrice = 0;
+              let source = 'none';
+              if (alpacaCreds?.api_key) {
+                optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, settings.interval, bot.user_id, settings.expiryType, alpacaCreds.api_key, alpacaCreds.secret_key);
+                source = optionPrice > 0 ? 'alpaca_real' : 'alpaca_miss';
+              }
+              // Fall back to Black-Scholes if Alpaca returned nothing
+              if (!optionPrice || optionPrice <= 0) {
+                optionPrice = await fetchRealOptionPrice(open.symbol, open.strike, open.expiration_date, open.option_type, settings.interval, bot.user_id, settings.expiryType, undefined, undefined);
+                source = optionPrice > 0 ? 'black_scholes' : 'none';
+              }
 
               if (!optionPrice || optionPrice <= 0) {
                 console.log(`[OptionsBot] SKIP TP/SL for ${open.symbol} $${open.strike} — no real price available, will retry next cycle`);
