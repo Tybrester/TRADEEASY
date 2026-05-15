@@ -647,7 +647,7 @@
       ]);
       const allBotsList = [...(sBots || []), ...(oBots || [])];
       const paperBalance = allBotsList.length > 0
-        ? allBotsList.reduce((sum, b) => sum + Number(b.paper_balance ?? b.paper_balance_start ?? 100000), 0)
+        ? allBotsList.reduce((sum, b) => sum + (b.paper_balance != null ? Number(b.paper_balance) : Number(b.paper_balance_start ?? 100000)), 0)
         : 100000;
 
       // Load tastytrade connection
@@ -710,7 +710,7 @@
         ]);
         const freshBotsList = [...(freshSBots || []), ...(freshOBots || [])];
         const storedBalance = freshBotsList.length > 0
-          ? freshBotsList.reduce((sum, b) => sum + Number(b.paper_balance ?? b.paper_balance_start ?? 100000), 0)
+          ? freshBotsList.reduce((sum, b) => sum + (b.paper_balance != null ? Number(b.paper_balance) : Number(b.paper_balance_start ?? 100000)), 0)
           : 100000;
 
         // Calculate unrealized P&L from open positions
@@ -892,10 +892,9 @@
         container.innerHTML = allBots.map(b => {
           const isRunning = b.enabled && b.auto_submit;
           const start = Number(b.paper_balance_start || 100000);
-          // Use stored paper_balance directly if valid (updated by daemon on every close), else calculate
-          const storedBal = Number(b.paper_balance);
+          // Use stored paper_balance directly if set (not null), else calculate from trades
           const calcBal = start + b.closedTrades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
-          const balance = storedBal > 0 ? storedBal : calcBal;
+          const balance = b.paper_balance != null ? Number(b.paper_balance) : calcBal;
           const realizedPnl = balance - start;
           const pct = start > 0 ? ((realizedPnl / start) * 100) : 0;
           const pnlColor = realizedPnl >= 0 ? 'var(--accent)' : 'var(--red)';
