@@ -640,14 +640,11 @@
       const balSub = document.getElementById('stat-balance-sub');
       const brokerSel = document.getElementById('broker-selector');
 
-      // Sum all bot paper balances (same source as bots page)
-      const [{ data: sBots }, { data: oBots }] = await Promise.all([
-        sbClient.from('stock_bots').select('paper_balance,paper_balance_start').eq('user_id', user.id),
-        sbClient.from('options_bots').select('paper_balance,paper_balance_start').eq('user_id', user.id),
-      ]);
-      const allBotsList = [...(sBots || []), ...(oBots || [])];
-      const paperBalance = allBotsList.length > 0
-        ? allBotsList.reduce((sum, b) => sum + (b.paper_balance != null ? Number(b.paper_balance) : Number(b.paper_balance_start ?? 100000)), 0)
+      // Show options bot paper balance (most recent options bot)
+      const { data: oBotsList } = await sbClient.from('options_bots').select('paper_balance,paper_balance_start').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1);
+      const oBot = oBotsList?.[0];
+      const paperBalance = oBot
+        ? (oBot.paper_balance != null ? Number(oBot.paper_balance) : Number(oBot.paper_balance_start ?? 100000))
         : 100000;
 
       // Load tastytrade connection
@@ -703,14 +700,11 @@
           .eq('user_id', user.id)
           .neq('source', 'auto-bot');
 
-        // Get stored paper balance from bots (same source as bots page)
-        const [{ data: freshSBots }, { data: freshOBots }] = await Promise.all([
-          sbClient.from('stock_bots').select('paper_balance,paper_balance_start').eq('user_id', user.id),
-          sbClient.from('options_bots').select('paper_balance,paper_balance_start').eq('user_id', user.id),
-        ]);
-        const freshBotsList = [...(freshSBots || []), ...(freshOBots || [])];
-        const storedBalance = freshBotsList.length > 0
-          ? freshBotsList.reduce((sum, b) => sum + (b.paper_balance != null ? Number(b.paper_balance) : Number(b.paper_balance_start ?? 100000)), 0)
+        // Get options bot paper balance (most recent)
+        const { data: freshOBots } = await sbClient.from('options_bots').select('paper_balance,paper_balance_start').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1);
+        const freshOBot = freshOBots?.[0];
+        const storedBalance = freshOBot
+          ? (freshOBot.paper_balance != null ? Number(freshOBot.paper_balance) : Number(freshOBot.paper_balance_start ?? 100000))
           : 100000;
 
         // Calculate unrealized P&L from open positions
@@ -765,7 +759,7 @@
         // Account Balance (stored/base balance)
         if (brokerSel.value === 'paper') {
           balEl.textContent = '$' + storedBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          balSub.textContent = 'Paper Trading · Starting amount';
+          balSub.textContent = 'Options Bot · Paper Balance';
         }
 
         // Unrealized P&L
@@ -892,9 +886,9 @@
         container.innerHTML = allBots.map(b => {
           const isRunning = b.enabled && b.auto_submit;
           const start = Number(b.paper_balance_start || 100000);
-          // Use stored paper_balance directly if set (not null), else calculate from trades
+          // Use stored paper_balance directly if set (not null/0), else calculate from trades
           const calcBal = start + b.closedTrades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
-          const balance = b.paper_balance != null ? Number(b.paper_balance) : calcBal;
+          const balance = (b.paper_balance != null && Number(b.paper_balance) !== 0) ? Number(b.paper_balance) : calcBal;
           const realizedPnl = balance - start;
           const pct = start > 0 ? ((realizedPnl / start) * 100) : 0;
           const pnlColor = realizedPnl >= 0 ? 'var(--accent)' : 'var(--red)';
