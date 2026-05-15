@@ -2111,21 +2111,38 @@
         const endIdx = startIdx + TRADES_PER_PAGE;
         const paginatedTrades = filteredTrades.slice(startIdx, endIdx);
 
-        // Fetch live prices via Supabase edge function (avoids CORS)
-        const openTrades = paginatedTrades.filter(t => (t.status === 'filled' || t.status === 'open') && t.pnl == null);
-        const uniqueSymbols = [...new Set(openTrades.map(t => t.symbol))];
+        // Fetch live prices for stock trades
+        const openStockTrades = paginatedTrades.filter(t => t.botType === 'stock' && (t.status === 'filled' || t.status === 'open') && t.pnl == null);
+        const uniqueSymbols = [...new Set(openStockTrades.map(t => t.symbol))];
         const livePrices = {};
-        await Promise.all(uniqueSymbols.map(async sym => {
-          try {
-            const { data: session } = await sbClient.auth.getSession();
-            const token = session?.session?.access_token || SUPABASE_ANON_KEY;
-            const res = await fetch(`${SUPABASE_URL}/functions/v1/get-price?symbol=${encodeURIComponent(sym)}`, {
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-            });
-            const json = await res.json();
-            if (json?.price) livePrices[sym] = json.price;
-          } catch (_) {}
-        }));
+        // Fetch live option prices for open options trades
+        const openOptionsTrades = paginatedTrades.filter(t => t.botType === 'options' && (t.status === 'filled' || t.status === 'open'));
+        const liveOptionPrices = {}; // key: trade.id
+        const { data: _feedSession } = await sbClient.auth.getSession();
+        const _feedToken = _feedSession?.session?.access_token || SUPABASE_ANON_KEY;
+        const _feedUserId = _feedSession?.session?.user?.id || currentUserId;
+        await Promise.all([
+          ...uniqueSymbols.map(async sym => {
+            try {
+              const res = await fetch(`${SUPABASE_URL}/functions/v1/get-price?symbol=${encodeURIComponent(sym)}`, {
+                headers: { 'Authorization': `Bearer ${_feedToken}`, 'Content-Type': 'application/json' }
+              });
+              const json = await res.json();
+              if (json?.price) livePrices[sym] = json.price;
+            } catch (_) {}
+          }),
+          ...openOptionsTrades.map(async t => {
+            try {
+              const res = await fetch(`${SUPABASE_URL}/functions/v1/options-bot`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${_feedToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'get_option_price', symbol: t.symbol, strike: t.strike, expiration: t.expiration, option_type: t.optionType, user_id: _feedUserId })
+              });
+              const json = await res.json();
+              if (json?.price && json.price > 0) liveOptionPrices[t.id] = json.price;
+            } catch (_) {}
+          })
+        ]);
         
         const rows = paginatedTrades.map(t => {
           const timeAgo = timeSince(new Date(t.createdAt));
@@ -2146,8 +2163,8 @@
           }
           
           // For open trades, show unrealized P&L from live price
-          if (isOpen && livePrice) {
-            if (t.botType === 'stock') {
+          if (isOpen) {
+            if (t.botType === 'stock' && livePrice) {
               const entryPrice = Number(t.entryPrice || t.price);
               const qty = Number(t.quantity);
               const action = t.action === 'buy' ? 'buy' : 'sell';
@@ -2155,13 +2172,14 @@
                 ? calcFuturesPnL(t.symbol, entryPrice, livePrice, qty, action)
                 : (action === 'buy' ? (livePrice - entryPrice) : (entryPrice - livePrice)) * qty;
               isUnrealized = true;
-            } else if (t.botType === 'options' && t.strike && t.optionType) {
-              const underlyingEntry = Number(t.strike);
-              const priceChange = livePrice - underlyingEntry;
-              const delta = t.optionType === 'call' ? 0.5 : -0.5;
-              const contracts = Number(t.quantity) || 1;
-              displayPnl = delta * priceChange * contracts * 100;
-              isUnrealized = true;
+            } else if (t.botType === 'options') {
+              const currentOptionPrice = liveOptionPrices[t.id];
+              if (currentOptionPrice && currentOptionPrice > 0) {
+                const entryPremium = Number(t.price);
+                const contracts = Number(t.quantity) || 1;
+                displayPnl = (currentOptionPrice - entryPremium) * contracts * 100;
+                isUnrealized = true;
+              }
             }
           }
 
