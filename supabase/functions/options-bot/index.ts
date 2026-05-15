@@ -1606,8 +1606,11 @@ Deno.serve(async (req) => {
         }
       }
       if (!optionPrice || optionPrice <= 0) optionPrice = Number(open.premium_per_contract);
+      // Sanity clamp: exit price can never be negative or produce loss > 100% of entry
+      const _entryPremium1 = Number(open.premium_per_contract);
+      optionPrice = Math.max(0, Math.min(optionPrice, _entryPremium1 * 10));
 
-      const pnl = (optionPrice - open.premium_per_contract) * open.contracts * 100;
+      const pnl = Math.max(-(Number(open.total_cost) || _entryPremium1 * open.contracts * 100), (optionPrice - _entryPremium1) * open.contracts * 100);
       await supabase.from('options_trades').update({ status: 'closed', exit_price: optionPrice, pnl, closed_at: new Date().toISOString() }).eq('id', tradeId);
 
       if (bot && bot.broker === 'paper') {
@@ -2118,8 +2121,12 @@ Deno.serve(async (req) => {
                   const optType: 'call' | 'put' = open.option_type;
                   const expDate = new Date(open.expiration_date);
                   const T = Math.max(0, (expDate.getTime() - Date.now()) / (365 * 24 * 60 * 60 * 1000));
-                  const exitPremium = blackScholes(price, open.strike, T, R, sigma, optType);
-                  const pnl = (exitPremium - open.premium_per_contract) * open.contracts * 100;
+                  const _rawExit = blackScholes(price, open.strike, T, R, sigma, optType);
+                  const _entry = Number(open.premium_per_contract);
+                  // Sanity clamp: exit price cannot produce loss > 100% of entry cost
+                  const exitPremium = Math.max(0, Math.min(_rawExit, _entry * 10));
+                  const _maxLoss = -(Number(open.total_cost) || _entry * open.contracts * 100);
+                  const pnl = Math.max(_maxLoss, (exitPremium - _entry) * open.contracts * 100);
                   
                   // Close via Alpaca if live trading
                   if (bot.broker === 'alpaca' && open.order_id) {
