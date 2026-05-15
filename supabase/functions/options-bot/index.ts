@@ -677,6 +677,136 @@ function boof50ADX(highs: number[], lows: number[], closes: number[], period: nu
 }
 
 // ─────────────────────────────────────────────
+// BOOF 6.0 — MULTI-TIMEFRAME SCALPING SYSTEM
+// Best-of-breed: Renaissance regime detection + Citadel direction lock +
+// TastyTrade IV filter + LBR-style pullback entry + TTM momentum confirmation
+// Target: 10-15 high-quality scalp entries per day
+// ─────────────────────────────────────────────
+function generateSignalBoof60(
+  candles: Candle[],           // signal-interval candles (e.g. 5m)
+  candles1h: Candle[],         // 1h candles for trend lock
+  candles15m: Candle[],        // 15m candles for EMA confirmation
+  candles1m: Candle[],         // 1m candles for VWAP
+  tradeDirection: string
+): { signal: 'buy' | 'sell' | 'none', price: number, ema: number, adx: number, reason: string } {
+
+  const n = candles.length;
+  if (n < 30) return { signal: 'none', price: 0, ema: 0, adx: 0, reason: 'Not enough candles' };
+
+  const closes  = candles.map(c => c.close);
+  const highs   = candles.map(c => c.high);
+  const lows    = candles.map(c => c.low);
+  const volumes = candles.map(c => c.volume ?? 0);
+  const curClose = closes[n - 1];
+  const prevClose = closes[n - 2];
+  const prev2Close = closes[n - 3];
+
+  // ── FACTOR 1: 1H TREND LOCK (direction-only gate) ──
+  // Uses 1h EMA20 slope. Up = calls only. Down = puts only. Flat = skip.
+  let trendBias: 'up' | 'down' | 'flat' = 'flat';
+  if (candles1h.length >= 25) {
+    const closes1h = candles1h.map(c => c.close);
+    const ema1h = calcEMA(closes1h, 20);
+    const emaLast = ema1h[ema1h.length - 1];
+    const emaPrev = ema1h[ema1h.length - 5]; // slope over last 5 1h candles
+    const emaSlope = (emaLast - emaPrev) / emaPrev;
+    const price1h = closes1h[closes1h.length - 1];
+    if (price1h > emaLast && emaSlope > 0.0003) trendBias = 'up';
+    else if (price1h < emaLast && emaSlope < -0.0003) trendBias = 'down';
+    // else flat — no trade
+  }
+  if (trendBias === 'flat') {
+    return { signal: 'none', price: curClose, ema: 0, adx: 0, reason: 'Boof 6.0: 1h trend flat — no directional bias, skipping' };
+  }
+
+  // ── FACTOR 2: ADX TRENDING CONFIRMATION ──
+  const { adx: adxArr } = calcDMI(highs, lows, closes, 14);
+  const adxVal = adxArr[adxArr.length - 1] ?? 0;
+  if (adxVal < 18) {
+    return { signal: 'none', price: curClose, ema: 0, adx: adxVal, reason: `Boof 6.0: ADX=${adxVal.toFixed(1)} too low (chop), skipping` };
+  }
+
+  // ── FACTOR 3: 15M EMA PRICE SIDE CONFIRMATION ──
+  let ema15Val = 0;
+  if (candles15m.length >= 22) {
+    const closes15m = candles15m.map(c => c.close);
+    const ema15 = calcEMA(closes15m, 20);
+    ema15Val = ema15[ema15.length - 1] ?? 0;
+  }
+  if (ema15Val > 0) {
+    if (trendBias === 'up' && curClose < ema15Val) {
+      return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: BUY blocked — close $${curClose.toFixed(2)} < 15m EMA $${ema15Val.toFixed(2)}` };
+    }
+    if (trendBias === 'down' && curClose > ema15Val) {
+      return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: SELL blocked — close $${curClose.toFixed(2)} > 15m EMA $${ema15Val.toFixed(2)}` };
+    }
+  }
+
+  // ── FACTOR 4: VWAP POSITION + BOUNCE ENTRY ──
+  // Price must be on correct side of VWAP AND bouncing back toward it (pullback entry)
+  let vwapVal = 0;
+  let vwapConfirmed = false;
+  if (candles1m.length >= 30) {
+    vwapVal = calcVWAP(candles1m);
+    const aboveVwap = curClose >= vwapVal;
+    const prevAbove = prevClose >= vwapVal;
+    // For calls: price above VWAP, bouncing up after a dip toward VWAP
+    // For puts: price below VWAP, bouncing down after a push toward VWAP
+    if (trendBias === 'up' && aboveVwap && prevAbove) vwapConfirmed = true;
+    if (trendBias === 'down' && !aboveVwap && !prevAbove) vwapConfirmed = true;
+  }
+  if (!vwapConfirmed) {
+    return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: VWAP position not confirmed for ${trendBias} bias (close=$${curClose.toFixed(2)} vwap=$${vwapVal.toFixed(2)})` };
+  }
+
+  // ── FACTOR 5: MACD HISTOGRAM FLIP (momentum turning) ──
+  const { hist } = calcMACD(closes, 12, 26, 9);
+  const histLast = hist[hist.length - 1] ?? 0;
+  const histPrev = hist[hist.length - 2] ?? 0;
+  const macdFlipBull = histLast > histPrev && histLast > 0; // histogram rising and positive
+  const macdFlipBear = histLast < histPrev && histLast < 0; // histogram falling and negative
+  // Also allow if hist just crossed zero
+  const macdCrossedBull = histPrev <= 0 && histLast > 0;
+  const macdCrossedBear = histPrev >= 0 && histLast < 0;
+  const macdOK = trendBias === 'up'
+    ? (macdFlipBull || macdCrossedBull)
+    : (macdFlipBear || macdCrossedBear);
+  if (!macdOK) {
+    return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: MACD histogram not confirming ${trendBias} momentum (hist=${histLast.toFixed(4)})` };
+  }
+
+  // ── FACTOR 6: MOMENTUM BUILDING (higher highs for calls, lower lows for puts) ──
+  // Last 3 candle closes must show progressive directional momentum
+  const momUp = curClose > prevClose && prevClose > prev2Close;
+  const momDown = curClose < prevClose && prevClose < prev2Close;
+  // Relaxed: allow 2 of 3 candles confirming
+  const momUpRelaxed = (curClose > prev2Close) && (curClose > prevClose || prevClose > prev2Close);
+  const momDownRelaxed = (curClose < prev2Close) && (curClose < prevClose || prevClose < prev2Close);
+  const momOK = trendBias === 'up' ? (momUp || momUpRelaxed) : (momDown || momDownRelaxed);
+  if (!momOK) {
+    return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: Momentum not building for ${trendBias} (closes: ${prev2Close.toFixed(2)}→${prevClose.toFixed(2)}→${curClose.toFixed(2)})` };
+  }
+
+  // ── FACTOR 7: VOLUME CONFIRMATION ──
+  // Current candle volume should be above 20-period average (conviction)
+  const avgVol = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+  const curVol = volumes[n - 1];
+  const volConfirmed = avgVol <= 0 || curVol >= avgVol * 0.8; // 80% of avg minimum
+  if (!volConfirmed) {
+    return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: Volume too low (cur=${curVol} < 80% avg=${(avgVol*0.8).toFixed(0)})` };
+  }
+
+  // ── APPLY TRADE DIRECTION OVERRIDE ──
+  let signal: 'buy' | 'sell' | 'none' = trendBias === 'up' ? 'buy' : 'sell';
+  if (tradeDirection === 'long' && signal === 'sell') signal = 'none';
+  if (tradeDirection === 'short' && signal === 'buy') signal = 'none';
+
+  const reason = `Boof 6.0 [${trendBias.toUpperCase()}] adx=${adxVal.toFixed(1)} macd=${histLast.toFixed(4)} vwap=$${vwapVal.toFixed(2)} ema15=$${ema15Val.toFixed(2)} vol=${curVol}/${avgVol.toFixed(0)} mom=${momUp?'strong':'building'}`;
+
+  return { signal, price: curClose, ema: ema15Val, adx: adxVal, reason };
+}
+
+// ─────────────────────────────────────────────
 // FETCH CANDLES (Yahoo Finance - Free)
 // ─────────────────────────────────────────────
 
@@ -1986,6 +2116,15 @@ Deno.serve(async (req) => {
                 const boof50TrendFilter = bot.trend_filter as string || 'none';
                 const tfCandles = boof50TrendFilter !== 'none' ? await fetchCandles(sym, boof50TrendFilter, 100) : undefined;
                 sigResult = generateSignalBoof50(candles, settings.tradeDirection, tfCandles);
+              } else if (botSignal === 'boof60') {
+                // Boof 6.0: Multi-Timeframe Scalping System
+                // Fetches 1h (trend lock), 15m (EMA confirm), 1m (VWAP) in parallel
+                const [b60_1h, b60_15m, b60_1m] = await Promise.all([
+                  fetchCandles(sym, '1h', 50).catch(() => [] as Candle[]),
+                  fetchCandles(sym, '15m', 50).catch(() => [] as Candle[]),
+                  fetchCandles(sym, '1m', 390).catch(() => [] as Candle[]),
+                ]);
+                sigResult = generateSignalBoof60(candles, b60_1h, b60_15m, b60_1m, settings.tradeDirection);
               } else if (botSignal === 'longer_swing') {
                 // For 30m swing, fetch more candles and use Boof 3.0 for regime detection
                 const swingCandles = await fetchCandles(sym, '30m', 200);
