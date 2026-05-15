@@ -793,10 +793,8 @@
         // Total Account Value = Starting Balance + Realized P&L + Unrealized P&L
         const totalValue = startBalance + realizedPnl + unrealizedPnl;
 
-        // Repair paper_balance if 0 in DB — write calculated value back
-        if (Number(bot?.paper_balance ?? 1) === 0) {
-          await sbClient.from('options_bots').update({ paper_balance: totalValue }).eq('id', botId);
-        }
+        // Always write back to DB so dashboard reads the same number
+        await sbClient.from('options_bots').update({ paper_balance: totalValue }).eq('id', botId);
         
         el.textContent = '$' + totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         if (pctEl) {
@@ -911,11 +909,9 @@
         
         // Total Account Value = Starting Balance + Realized P&L + Unrealized P&L
         const totalValue = startBalance + realizedPnl + unrealizedPnl;
-        
-        // Repair paper_balance if 0 in DB — write calculated value back
-        if (Number(bot?.paper_balance ?? 1) === 0) {
-          await sbClient.from('stock_bots').update({ paper_balance: totalValue }).eq('id', systemId);
-        }
+
+        // Always write back to DB so dashboard reads the same number
+        await sbClient.from('stock_bots').update({ paper_balance: totalValue }).eq('id', systemId);
 
         el.textContent = '$' + totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         if (pctEl) {
