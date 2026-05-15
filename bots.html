@@ -1255,9 +1255,6 @@
                   <option value="tastytrade" ${b.broker==='tastytrade'?'selected':''}>Tastytrade (Live)</option>
                 </select>
               </div>
-              <div id="obrk-warn-${b.id}" style="font-size:0.72rem;color:#ff7043;display:${b.broker==='tastytrade'||b.broker==='alpaca'?'flex':'none'};align-items:center;gap:6px;background:rgba(255,112,67,0.08);border:1px solid rgba(255,112,67,0.2);border-radius:6px;padding:8px 10px;">
-                <span>Live options trading — real orders will be placed on ${b.broker==='alpaca'?'Alpaca':'Tastytrade'}</span>
-              </div>
               <button onclick="saveOptionsSettings('${b.id}')" style="margin-top:10px;width:100%;padding:8px;background:rgba(0,230,118,0.07);border:1px solid rgba(0,230,118,0.25);color:#b2f5d4;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;font-size:0.85rem;transition:all 0.15s;" onmouseover="this.style.background='rgba(0,230,118,0.14)'" onmouseout="this.style.background='rgba(0,230,118,0.07)'">Save Settings</button>
               <div class="run-result" id="opt-run-result-${b.id}"></div>
             </div>
@@ -1354,12 +1351,6 @@
       const tradingStyle = document.getElementById('ostyle-' + botId)?.value || 'scalper';
       const trendFilter = document.getElementById('otrend-' + botId)?.value || 'none';
       console.log(`[SaveOptions] Bot ${botId}: sym=${sym}, $=${dol}, optionType=${optionType}, int=${int}, runInt=${runInt}min, dir=${dir}, signal=${botSignal}, scan=${scanMode}, style=${tradingStyle}, trend=${trendFilter}`);
-      const brkWarn = document.getElementById('obrk-warn-' + botId);
-      if (brkWarn) {
-        brkWarn.style.display = (broker === 'tastytrade' || broker === 'alpaca') ? 'flex' : 'none';
-        const span = brkWarn.querySelector('span');
-        if (span) span.textContent = `Live options trading — real orders will be placed on ${broker === 'alpaca' ? 'Alpaca' : 'Tastytrade'}`;
-      }
       const otmStrikes = parseInt(document.getElementById(`ootm-${botId}`)?.value ?? '0');
       const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_option_type: optionType, bot_interval: int, run_interval_min: runInt, market_open_delay_min: startDelay, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, max_loss_dollar: null, max_profit_dollar: null, broker, bot_signal: botSignal, bot_otm_strikes: otmStrikes, trading_style: tradingStyle, trend_filter: trendFilter, updated_at: new Date().toISOString() }).eq('id', botId);
       const r = document.getElementById('opt-run-result-' + botId);
