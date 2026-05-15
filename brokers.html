@@ -94,6 +94,10 @@
     .sidebar-drawer .drawer-close .logo { font-size: 1.2rem; font-weight: 900; color: var(--text); text-decoration: none; }
     .sidebar-drawer .drawer-close .logo span { color: var(--accent); }
     .sidebar-drawer .drawer-close button { background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; line-height: 1; }
+    .pw-wrap { position: relative; }
+    .pw-wrap input { padding-right: 42px !important; }
+    .pw-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #555; font-size: 0.95rem; padding: 0; line-height: 1; }
+    .pw-toggle:hover { color: var(--text); }
 
     .user-dropdown { position: relative; }
     .user-dropdown-toggle { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 0.88rem; color: var(--muted); font-weight: 500; cursor: pointer; transition: all 0.2s; }
@@ -307,7 +311,10 @@
         </div>
         <div class="field-group">
           <label>Secret Key</label>
-          <input type="password" id="alpaca-secret" placeholder="Your Alpaca secret key" autocomplete="off" />
+          <div class="pw-wrap">
+            <input type="password" id="alpaca-secret" placeholder="Your Alpaca secret key" autocomplete="off" />
+            <button type="button" class="pw-toggle" onclick="togglePw('alpaca-secret',this)" tabindex="-1">👁️</button>
+          </div>
         </div>
         <div class="field-group">
           <label>Environment</label>
@@ -340,7 +347,10 @@
         </div>
         <div class="field-group">
           <label>Client Secret</label>
-          <input type="password" id="tasty-client-secret" placeholder="From OAuth Application settings" autocomplete="off" />
+          <div class="pw-wrap">
+            <input type="password" id="tasty-client-secret" placeholder="From OAuth Application settings" autocomplete="off" />
+            <button type="button" class="pw-toggle" onclick="togglePw('tasty-client-secret',this)" tabindex="-1">👁️</button>
+          </div>
         </div>
         <div class="field-hint" style="color:#555;">
           1. Go to <a href="https://my.tastytrade.com" target="_blank" style="color:var(--accent);">my.tastytrade.com</a> > Manage > My Profile > API > OAuth Applications<br>
@@ -702,6 +712,12 @@
 
     function toggleDrawer() { document.getElementById('sidebar-drawer').classList.toggle('open'); document.getElementById('sidebar-overlay').classList.toggle('open'); }
     function closeDrawer() { document.getElementById('sidebar-drawer').classList.remove('open'); document.getElementById('sidebar-overlay').classList.remove('open'); }
+    function togglePw(id, btn) {
+      const inp = document.getElementById(id);
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      btn.textContent = show ? '🙈' : '👁️';
+    }
     async function signOut() {
       await sbClient.auth.signOut();
       window.location.href = 'index.html';

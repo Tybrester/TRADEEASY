@@ -140,6 +140,10 @@
 
     .form-group input:focus { border-color: var(--accent); }
     .form-group input::placeholder { color: #444; }
+    .pw-wrap { position: relative; }
+    .pw-wrap input { padding-right: 42px; }
+    .pw-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #555; font-size: 1rem; padding: 0; line-height: 1; transition: color 0.2s; }
+    .pw-toggle:hover { color: var(--text); }
 
     .form-row {
       display: grid;
@@ -247,11 +251,17 @@
         </div>
         <div class="form-group">
           <label>Password</label>
-          <input id="password" type="password" placeholder="Min. 8 characters" />
+          <div class="pw-wrap">
+            <input id="password" type="password" placeholder="Min. 8 characters" />
+            <button type="button" class="pw-toggle" onclick="togglePw('password',this)" tabindex="-1">👁️</button>
+          </div>
         </div>
         <div class="form-group">
           <label>Confirm Password</label>
-          <input id="confirm-password" type="password" placeholder="Repeat your password" />
+          <div class="pw-wrap">
+            <input id="confirm-password" type="password" placeholder="Repeat your password" />
+            <button type="button" class="pw-toggle" onclick="togglePw('confirm-password',this)" tabindex="-1">👁️</button>
+          </div>
         </div>
 
         <button type="submit" class="btn-submit">Create Account</button>
@@ -268,6 +278,13 @@
   </main>
 
   <script>
+    function togglePw(id, btn) {
+      const inp = document.getElementById(id);
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      btn.textContent = show ? '🙈' : '👁️';
+    }
+
     const SUPABASE_URL = 'https://isanhutzyctcjygjhzbn.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlzYW5odXR6eWN0Y2p5Z2poemJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMTYzNDYsImV4cCI6MjA5MTY5MjM0Nn0.L0ATp-IriR708C2n3as_YXDgjHvtn_CWubbzPeSxRi0';
     const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
