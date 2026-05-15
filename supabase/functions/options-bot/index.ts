@@ -1829,11 +1829,28 @@ Deno.serve(async (req) => {
               const currentValue = optionPrice * open.contracts * 100;
               const pnlNow = currentValue - totalCost;
               const pctChange = (pnlNow / totalCost) * 100;
+              const entryPremium = Number(open.premium_per_contract);
 
               // Sanity check: block if showing worse than -95% (likely bad price data)
               if (pctChange < -95) {
                 console.log(`[OptionsBot] SKIP TP/SL for ${open.symbol} $${open.strike} — pct ${pctChange.toFixed(1)}% looks wrong, skipping`);
                 continue;
+              }
+              // Sanity check: for 0DTE Black-Scholes, verify the option price is plausible
+              // Option price should never be more than 50% below entry on a <0.5% spot move
+              // This catches BS misfires where IV/T calculation is off near expiry
+              const isBlackScholes = !alpacaCreds?.api_key; // no alpaca creds = definitely BS
+              if (isBlackScholes && settings.expiryType === '0dte') {
+                try {
+                  const tpslCandles = await fetchCandles(open.symbol, settings.interval, 5);
+                  const spotNow = tpslCandles.length > 0 ? tpslCandles[tpslCandles.length - 1].close : 0;
+                  const roughSpotMove = spotNow > 0 ? Math.abs(spotNow - open.strike) / open.strike : 1;
+                  // If spot is within 1% of strike but BS shows >25% loss, price is unreliable
+                  if (roughSpotMove < 0.01 && pctChange < -25) {
+                    console.log(`[OptionsBot] SKIP TP/SL for ${open.symbol} $${open.strike} — BS price unreliable: spot only ${(roughSpotMove*100).toFixed(2)}% from strike but showing ${pctChange.toFixed(1)}% loss`);
+                    continue;
+                  }
+                } catch (_) {}
               }
 
               const slThreshold = settings.stopLossPct < 0 ? settings.stopLossPct : -Math.abs(settings.stopLossPct);
