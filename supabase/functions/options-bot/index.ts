@@ -1139,7 +1139,9 @@ async function fetchRealOptionPrice(symbol: string, strike: number, expiration: 
     // 0DTE IV boost: same-day expiry options carry higher IV due to gamma risk
     let iv = baseIv;
     if (expiryType === '0dte') {
-      iv = baseIv * 1.5; // 0DTE ~1.5x baseline IV
+      iv = baseIv * 1.5;  // 0DTE ~1.5x baseline IV (gamma risk)
+    } else if (expiryType === '1dte') {
+      iv = baseIv * 1.2;  // 1DTE elevated but less than same-day
     } else if (expiryType === 'weekly') {
       iv = baseIv * 1.05; // minimal premium for weekly
     }
@@ -1175,6 +1177,16 @@ function getExpirationDate(type: string): string {
     
     // Fallback to today if no valid day found (shouldn't happen)
     return target.toISOString().split('T')[0];
+  } else if (type === '1dte') {
+    // Next trading day (skip weekends, assume no holiday check needed — findValidExpiration handles it)
+    const target = new Date(now.getTime());
+    for (let i = 1; i <= 7; i++) {
+      const candidate = new Date(target.getTime());
+      candidate.setDate(candidate.getDate() + i);
+      const day = candidate.getDay();
+      if (day !== 0 && day !== 6) return candidate.toISOString().split('T')[0];
+    }
+    return new Date(now.getTime() + 86400000).toISOString().split('T')[0];
   } else if (type === 'weekly') {
     // Always pick NEXT Friday for consistent 7+ day holds (minimum 7 days)
     const thisFriday = new Date(now.getTime());
