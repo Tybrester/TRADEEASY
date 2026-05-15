@@ -657,7 +657,7 @@
       </div>
       <div class="create-bot-field">
         <label>Options Expiry</label>
-        <select id="new-options-expiry">
+        <select id="new-options-expiry" onchange="onOptionsExpiryChange()">
           <option value="0dte" selected>0DTE (Same Day)</option>
           <option value="weekly">Weekly (Next Friday)</option>
           <option value="biweekly">Bi-Weekly (2 Weeks Out)</option>
@@ -677,14 +677,15 @@
         <span id="test-signal-warning" style="font-size:0.7rem;color:var(--red);display:none;">⚠️ TEST MODE: Will trade EVERY scan cycle!</span>
       </div>
       <div class="create-bot-field">
-        <label>Trend Filter (Optional)</label>
+        <label>Trend Filter <span style="color:#00e676;font-size:0.7rem;font-weight:600;">(Recommended)</span></label>
         <select id="new-options-trend">
-          <option value="none" selected>No Filter (Trade All Signals)</option>
+          <option value="none">No Filter (Trade All Signals)</option>
           <option value="15m">15-Minute Trend (Fast - for 0DTE)</option>
-          <option value="1h">1-Hour Trend</option>
+          <option value="1h" selected>1-Hour Trend (Recommended)</option>
           <option value="4h">4-Hour Trend</option>
           <option value="1d">Daily Trend (1d candles)</option>
         </select>
+        <span style="font-size:0.7rem;color:#888;">Blocks trades against the higher timeframe trend — reduces bad signals on choppy days</span>
       </div>
       <div class="create-bot-field">
         <label>Take Profit %</label>
@@ -1522,6 +1523,15 @@
       // Show symbol row only if single is selected
       const symbolRow = document.getElementById('new-symbol-row');
       if (symbolRow) symbolRow.style.display = _newBotScanModes.has('single') ? 'block' : 'none';
+    }
+
+    function onOptionsExpiryChange() {
+      const expiry = document.getElementById('new-options-expiry')?.value;
+      const trendSel = document.getElementById('new-options-trend');
+      if (!trendSel) return;
+      if (expiry === '0dte') trendSel.value = '15m';
+      else if (expiry === 'weekly' || expiry === 'biweekly') trendSel.value = '1h';
+      else trendSel.value = '4h';
     }
 
     function toggleTestSignal() {
