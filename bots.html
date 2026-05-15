@@ -573,8 +573,6 @@
         <label>Broker</label>
         <select id="new-stock-broker" onchange="updateBrokerStatus()">
           <option value="paper">Paper Trading (Test)</option>
-          <option value="alpaca">Alpaca (Live)</option>
-          <option value="tastytrade">Tastytrade (Live)</option>
         </select>
         <span style="font-size:0.7rem;color:#888;">Both stock & options bot will use this broker</span>
       </div>
@@ -702,8 +700,6 @@
         <label>Broker</label>
         <select id="new-options-broker">
           <option value="paper">Paper Trading (Test)</option>
-          <option value="tastytrade">Tastytrade (Live)</option>
-          <option value="alpaca">Alpaca (Live)</option>
         </select>
       </div>
       <div class="create-bot-actions">
@@ -1861,7 +1857,27 @@
       document.getElementById('optcard-' + id)?.remove();
     }
 
+    async function populateBrokerDropdown(selectId) {
+      const sel = document.getElementById(selectId);
+      if (!sel) return;
+      // Clear existing options except paper
+      sel.innerHTML = '<option value="paper">Paper Trading (Test)</option>';
+      
+      try {
+        const { data: creds } = await sbClient.from('broker_credentials').select('broker').eq('user_id', currentUserId);
+        const connected = new Set((creds || []).map(c => c.broker));
+        
+        if (connected.has('alpaca')) {
+          sel.add(new Option('Alpaca (Live)', 'alpaca'));
+        }
+        if (connected.has('tastytrade')) {
+          sel.add(new Option('Tastytrade (Live)', 'tastytrade'));
+        }
+      } catch (_) {}
+    }
+
     function promptNewStockBot() {
+      populateBrokerDropdown('new-stock-broker');
       openCreateModal('create-stock-modal');
     }
 
@@ -1906,6 +1922,7 @@
     }
 
     function promptNewOptionsBot() {
+      populateBrokerDropdown('new-options-broker');
       openCreateModal('create-options-modal');
     }
 
