@@ -847,7 +847,7 @@
       if (!el) return;
       try {
         // Get bot's starting balance
-        const { data: bot } = await sbClient.from('stock_bots').select('paper_balance_start').eq('id', systemId).single();
+        const { data: bot } = await sbClient.from('stock_bots').select('paper_balance_start,paper_balance').eq('id', systemId).single();
         const startBalance = Number(bot?.paper_balance_start ?? 100000);
         
         // Get realized P&L from closed trades
@@ -907,6 +907,11 @@
         // Total Account Value = Starting Balance + Realized P&L + Unrealized P&L
         const totalValue = startBalance + realizedPnl + unrealizedPnl;
         
+        // Repair paper_balance if 0 in DB — write calculated value back
+        if (Number(bot?.paper_balance ?? 1) === 0) {
+          await sbClient.from('stock_bots').update({ paper_balance: totalValue }).eq('id', systemId);
+        }
+
         el.textContent = '$' + totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         if (pctEl) {
           const totalReturn = realizedPnl + unrealizedPnl;
