@@ -502,8 +502,10 @@
       <a href="alerts.html" class="sidebar-item">Systems</a>
       <a href="accounts.html" class="sidebar-item">Accounts</a>
       <a href="brokers.html" class="sidebar-item">Brokers</a>
-      <div class="sidebar-section" style="margin-top:24px;">Bots</div>
-      <a href="bots.html" class="sidebar-item">Bots</a>
+      <div id="drawer-bots-section" style="display:none;">
+        <div class="sidebar-section" style="margin-top:24px;">Bots</div>
+        <a href="bots.html" class="sidebar-item">Bots</a>
+      </div>
       <div class="sidebar-section" style="margin-top:24px;">Help</div>
       <a href="how-it-works.html" class="sidebar-item">How it Works</a>
     </div>
@@ -529,10 +531,12 @@
       <a href="brokers.html" class="sidebar-item">
         <span class="sidebar-icon"></span> Brokers
       </a>
-      <div class="sidebar-section" style="margin-top:24px;">Bots</div>
-      <a href="bots.html" class="sidebar-item">
-        <span class="sidebar-icon"></span> Bots
-      </a>
+      <div id="sidebar-bots-section" style="display:none;">
+        <div class="sidebar-section" style="margin-top:24px;">Bots</div>
+        <a href="bots.html" class="sidebar-item">
+          <span class="sidebar-icon"></span> Bots
+        </a>
+      </div>
       <div class="sidebar-section" style="margin-top:24px;">Help</div>
       <a href="how-it-works.html" class="sidebar-item">
         <span class="sidebar-icon"></span> How it Works
@@ -612,12 +616,28 @@
 
       document.getElementById('user-email').textContent = email;
       // Show admin link if admin
-      if (session.user.id === 'd0bb84ba-f968-446c-9792-9bcff8849e37') {
+      const isAdmin = session.user.id === 'd0bb84ba-f968-446c-9792-9bcff8849e37';
+      if (isAdmin) {
         const el = document.getElementById('admin-sidebar-link');
         const sec = document.getElementById('admin-sidebar-section');
         if (el) el.style.display = '';
         if (sec) sec.style.display = '';
       }
+
+      // Show Bots section only if enabled for this user (or admin)
+      (async () => {
+        let botsEnabled = isAdmin;
+        if (!botsEnabled) {
+          const { data: us } = await sbClient.from('user_settings').select('bots_enabled').eq('user_id', user.id).maybeSingle();
+          botsEnabled = !!us?.bots_enabled;
+        }
+        if (botsEnabled) {
+          const s = document.getElementById('sidebar-bots-section');
+          const d = document.getElementById('drawer-bots-section');
+          if (s) s.style.display = '';
+          if (d) d.style.display = '';
+        }
+      })();
       if (firstName) document.getElementById('user-first-name').textContent = firstName;
 
       document.getElementById('loading-screen').style.display = 'none';
