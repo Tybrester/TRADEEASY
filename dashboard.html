@@ -333,9 +333,69 @@
       gap: 16px;
     }
 
+    /* Hamburger button */
+    .hamburger {
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      gap: 5px;
+      width: 36px; height: 36px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+    }
+    .hamburger span {
+      display: block;
+      width: 22px; height: 2px;
+      background: var(--text);
+      border-radius: 2px;
+      transition: all 0.25s;
+    }
+
+    /* Mobile sidebar overlay */
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 200;
+    }
+    .sidebar-overlay.open { display: block; }
+
+    /* Mobile sidebar drawer */
+    .sidebar-drawer {
+      position: fixed;
+      top: 0; left: 0;
+      width: 260px;
+      height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      z-index: 201;
+      transform: translateX(-100%);
+      transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 0;
+      overflow-y: auto;
+    }
+    .sidebar-drawer.open { transform: translateX(0); }
+    .sidebar-drawer .drawer-close {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+    .sidebar-drawer .drawer-close .logo { font-size: 1.2rem; font-weight: 900; color: var(--text); text-decoration: none; }
+    .sidebar-drawer .drawer-close .logo span { color: var(--accent); }
+    .sidebar-drawer .drawer-close button { background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; line-height: 1; }
+
     @media (max-width: 900px) {
       .sidebar { display: none; }
       .panels { grid-template-columns: 1fr; }
+      .hamburger { display: flex; }
     }
 
     .panel {
@@ -410,6 +470,9 @@
 
   <div id="app">
     <nav>
+      <button class="hamburger" onclick="toggleDrawer()" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
       <a href="dashboard.html" class="logo">Boof<span style="color:var(--accent);">Capital</span></a>
       <div class="nav-right">
         <div class="user-dropdown" id="user-dropdown">
@@ -424,6 +487,26 @@
         </div>
       </div>
     </nav>
+
+    <!-- Mobile sidebar overlay + drawer -->
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeDrawer()"></div>
+    <div class="sidebar-drawer" id="sidebar-drawer">
+      <div class="drawer-close">
+        <a href="dashboard.html" class="logo">Boof<span>Capital</span></a>
+        <button onclick="closeDrawer()">✕</button>
+      </div>
+      <div class="sidebar-section">Menu</div>
+      <a href="dashboard.html" class="sidebar-item active">Dashboard</a>
+      <a href="trades.html" class="sidebar-item">Trades</a>
+      <a href="paper-market.html" class="sidebar-item">Paper Market</a>
+      <a href="alerts.html" class="sidebar-item">Systems</a>
+      <a href="accounts.html" class="sidebar-item">Accounts</a>
+      <a href="brokers.html" class="sidebar-item">Brokers</a>
+      <div class="sidebar-section" style="margin-top:24px;">Bots</div>
+      <a href="bots.html" class="sidebar-item">Bots</a>
+      <div class="sidebar-section" style="margin-top:24px;">Help</div>
+      <a href="how-it-works.html" class="sidebar-item">How it Works</a>
+    </div>
 
     <div class="layout">
     <aside class="sidebar">
@@ -919,6 +1002,15 @@
     }
     // Expose closeTrade globally for onclick handlers
     window.closeTrade = closeTrade;
+
+    function toggleDrawer() {
+      document.getElementById('sidebar-drawer').classList.toggle('open');
+      document.getElementById('sidebar-overlay').classList.toggle('open');
+    }
+    function closeDrawer() {
+      document.getElementById('sidebar-drawer').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('open');
+    }
 
     async function signOut() {
       await sbClient.auth.signOut();
