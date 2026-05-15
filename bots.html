@@ -2905,10 +2905,12 @@
       const runIntervalMin = parseInt(document.getElementById('runint-' + systemId)?.value) || 1;
       const broker = document.getElementById('brk-' + systemId)?.value || 'paper';
       const botTradeDir = document.getElementById('dir-' + systemId)?.value || 'both';
-      // Get scan market toggle states
+      // Get scan market toggle states and determine scan mode
       const scanStocks = document.getElementById('scan-stocks-' + systemId)?.dataset.enabled === 'true' || false;
       const scanCrypto = document.getElementById('scan-crypto-' + systemId)?.dataset.enabled === 'true' || false;
       const scanFutures = document.getElementById('scan-futures-' + systemId)?.dataset.enabled === 'true' || false;
+      const isScanMode = document.getElementById('mode-scan-' + systemId)?.classList.contains('active') || false;
+      const botScanMode = isScanMode ? (scanStocks ? 'scan_stocks' : scanCrypto ? 'scan_crypto' : scanFutures ? 'scan_futures' : 'scan_stocks') : 'single';
       const botSignal = document.getElementById('sig-' + systemId)?.value || 'supertrend';
       const trendFilter = document.getElementById('trend-' + systemId)?.value || 'none';
       const tradingStyle = document.getElementById('style-' + systemId)?.value || 'custom';
@@ -2926,6 +2928,7 @@
         run_interval_min: runIntervalMin,
         broker,
         bot_trade_direction: botTradeDir,
+        bot_scan_mode: botScanMode,
         scan_stocks: scanStocks,
         scan_crypto: scanCrypto,
         scan_futures: scanFutures,
