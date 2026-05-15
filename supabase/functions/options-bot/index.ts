@@ -701,6 +701,10 @@ function generateSignalBoof60(
   const prevClose = closes[n - 2];
   const prev2Close = closes[n - 3];
 
+  // Detect if running on 1m candles by checking average spacing between candles
+  const avgSpacingSec = n > 2 ? (candles[n-1].time - candles[n-10].time) / (9 * 1000) : 300;
+  const is1m = avgSpacingSec < 90; // < 90s between candles = 1m
+
   // ── FACTOR 1: 1H TREND LOCK (direction-only gate) ──
   // Uses 1h EMA20 slope. Up = calls only. Down = puts only. Flat = skip.
   let trendBias: 'up' | 'down' | 'flat' = 'flat';
@@ -720,25 +724,31 @@ function generateSignalBoof60(
   }
 
   // ── FACTOR 2: ADX TRENDING CONFIRMATION ──
+  // 1m candles have naturally lower ADX values — use 14 threshold instead of 18
   const { adx: adxArr } = calcDMI(highs, lows, closes, 14);
   const adxVal = adxArr[adxArr.length - 1] ?? 0;
-  if (adxVal < 18) {
-    return { signal: 'none', price: curClose, ema: 0, adx: adxVal, reason: `Boof 6.0: ADX=${adxVal.toFixed(1)} too low (chop), skipping` };
+  const adxMin = is1m ? 14 : 18;
+  if (adxVal < adxMin) {
+    return { signal: 'none', price: curClose, ema: 0, adx: adxVal, reason: `Boof 6.0: ADX=${adxVal.toFixed(1)} too low (chop, min=${adxMin}), skipping` };
   }
 
-  // ── FACTOR 3: 15M EMA PRICE SIDE CONFIRMATION ──
+  // ── FACTOR 3: EMA PRICE SIDE CONFIRMATION ──
+  // On 1m: use 5m EMA20 (from candles15m reused as 5m ref, or fall back to 1m EMA50)
+  // On 5m+: use 15m EMA20
   let ema15Val = 0;
+  const emaLabel = is1m ? '5m' : '15m';
   if (candles15m.length >= 22) {
     const closes15m = candles15m.map(c => c.close);
-    const ema15 = calcEMA(closes15m, 20);
+    const emaPeriod = is1m ? 50 : 20; // 1m uses EMA50 on signal candles as proxy for 5m trend
+    const ema15 = calcEMA(is1m ? closes : closes15m, emaPeriod);
     ema15Val = ema15[ema15.length - 1] ?? 0;
   }
   if (ema15Val > 0) {
     if (trendBias === 'up' && curClose < ema15Val) {
-      return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: BUY blocked — close $${curClose.toFixed(2)} < 15m EMA $${ema15Val.toFixed(2)}` };
+      return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: BUY blocked — close $${curClose.toFixed(2)} < ${emaLabel} EMA $${ema15Val.toFixed(2)}` };
     }
     if (trendBias === 'down' && curClose > ema15Val) {
-      return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: SELL blocked — close $${curClose.toFixed(2)} > 15m EMA $${ema15Val.toFixed(2)}` };
+      return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: SELL blocked — close $${curClose.toFixed(2)} > ${emaLabel} EMA $${ema15Val.toFixed(2)}` };
     }
   }
 
@@ -760,7 +770,8 @@ function generateSignalBoof60(
   }
 
   // ── FACTOR 5: MACD HISTOGRAM FLIP (momentum turning) ──
-  const { hist } = calcMACD(closes, 12, 26, 9);
+  // 1m uses faster MACD 5/13/4 to reduce lag on 1m candles
+  const { hist } = is1m ? calcMACD(closes, 5, 13, 4) : calcMACD(closes, 12, 26, 9);
   const histLast = hist[hist.length - 1] ?? 0;
   const histPrev = hist[hist.length - 2] ?? 0;
   const macdFlipBull = histLast > histPrev && histLast > 0; // histogram rising and positive
@@ -775,16 +786,22 @@ function generateSignalBoof60(
     return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: MACD histogram not confirming ${trendBias} momentum (hist=${histLast.toFixed(4)})` };
   }
 
-  // ── FACTOR 6: MOMENTUM BUILDING (higher highs for calls, lower lows for puts) ──
-  // Last 3 candle closes must show progressive directional momentum
-  const momUp = curClose > prevClose && prevClose > prev2Close;
-  const momDown = curClose < prevClose && prevClose < prev2Close;
-  // Relaxed: allow 2 of 3 candles confirming
-  const momUpRelaxed = (curClose > prev2Close) && (curClose > prevClose || prevClose > prev2Close);
-  const momDownRelaxed = (curClose < prev2Close) && (curClose < prevClose || prevClose < prev2Close);
-  const momOK = trendBias === 'up' ? (momUp || momUpRelaxed) : (momDown || momDownRelaxed);
+  // ── FACTOR 6: MOMENTUM BUILDING ──
+  // 1m: net direction over last 5 candles (less strict — 1m candles reverse constantly)
+  // 5m+: 3 consecutive closes in direction
+  let momOK = false;
+  if (is1m) {
+    const ref5 = closes[n - 6] ?? closes[0];
+    momOK = trendBias === 'up' ? curClose > ref5 : curClose < ref5;
+  } else {
+    const momUp = curClose > prevClose && prevClose > prev2Close;
+    const momDown = curClose < prevClose && prevClose < prev2Close;
+    const momUpRelaxed = (curClose > prev2Close) && (curClose > prevClose || prevClose > prev2Close);
+    const momDownRelaxed = (curClose < prev2Close) && (curClose < prevClose || prevClose < prev2Close);
+    momOK = trendBias === 'up' ? (momUp || momUpRelaxed) : (momDown || momDownRelaxed);
+  }
   if (!momOK) {
-    return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: Momentum not building for ${trendBias} (closes: ${prev2Close.toFixed(2)}→${prevClose.toFixed(2)}→${curClose.toFixed(2)})` };
+    return { signal: 'none', price: curClose, ema: ema15Val, adx: adxVal, reason: `Boof 6.0: Momentum not building for ${trendBias} (close=${curClose.toFixed(2)} is1m=${is1m})` };
   }
 
   // ── FACTOR 7: VOLUME CONFIRMATION ──
@@ -801,7 +818,7 @@ function generateSignalBoof60(
   if (tradeDirection === 'long' && signal === 'sell') signal = 'none';
   if (tradeDirection === 'short' && signal === 'buy') signal = 'none';
 
-  const reason = `Boof 6.0 [${trendBias.toUpperCase()}] adx=${adxVal.toFixed(1)} macd=${histLast.toFixed(4)} vwap=$${vwapVal.toFixed(2)} ema15=$${ema15Val.toFixed(2)} vol=${curVol}/${avgVol.toFixed(0)} mom=${momUp?'strong':'building'}`;
+  const reason = `Boof 6.0 [${trendBias.toUpperCase()}${is1m?'/1m':'/5m+'}] adx=${adxVal.toFixed(1)} macd=${histLast.toFixed(4)} vwap=$${vwapVal.toFixed(2)} ema=$${ema15Val.toFixed(2)} vol=${curVol}/${avgVol.toFixed(0)}${is1m?' (1m-tuned)':''}`;
 
   return { signal, price: curClose, ema: ema15Val, adx: adxVal, reason };
 }
