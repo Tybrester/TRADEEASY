@@ -2039,19 +2039,23 @@ Deno.serve(async (req) => {
                   const ema20 = calcEMA(candles.map(c => c.close), 20);
                   emaVal = ema20[ema20.length - 1] ?? 0;
                 }
-                if (emaVal > 0) {
-                  if (signal === 'buy' && curClose < emaVal) {
-                    console.log(`[OptionsBot] ${sym} EMA GATE: BUY blocked — close=$${curClose.toFixed(2)} < ema=$${emaVal.toFixed(2)} (price below EMA)`);
-                    results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `EMA gate: BUY blocked, close $${curClose.toFixed(2)} < EMA $${emaVal.toFixed(2)}` });
-                    continue;
-                  }
-                  if (signal === 'sell' && curClose > emaVal) {
-                    console.log(`[OptionsBot] ${sym} EMA GATE: SELL blocked — close=$${curClose.toFixed(2)} > ema=$${emaVal.toFixed(2)} (price above EMA)`);
-                    results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `EMA gate: SELL blocked, close $${curClose.toFixed(2)} > EMA $${emaVal.toFixed(2)}` });
-                    continue;
-                  }
-                  console.log(`[OptionsBot] ${sym} EMA GATE: ${signal.toUpperCase()} confirmed — close=$${curClose.toFixed(2)} ema=$${emaVal.toFixed(2)}`);
+                if (!emaVal || emaVal <= 0) {
+                  // Cannot compute EMA at all — block trade rather than silently pass
+                  console.log(`[OptionsBot] ${sym} EMA GATE: cannot compute EMA, blocking trade as precaution`);
+                  results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'EMA gate: EMA unavailable, trade blocked' });
+                  continue;
                 }
+                if (signal === 'buy' && curClose < emaVal) {
+                  console.log(`[OptionsBot] ${sym} EMA GATE: BUY blocked — close=$${curClose.toFixed(2)} < ema=$${emaVal.toFixed(2)} (price below EMA)`);
+                  results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `EMA gate: BUY blocked, close $${curClose.toFixed(2)} < EMA $${emaVal.toFixed(2)}` });
+                  continue;
+                }
+                if (signal === 'sell' && curClose > emaVal) {
+                  console.log(`[OptionsBot] ${sym} EMA GATE: SELL blocked — close=$${curClose.toFixed(2)} > ema=$${emaVal.toFixed(2)} (price above EMA)`);
+                  results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `EMA gate: SELL blocked, close $${curClose.toFixed(2)} > EMA $${emaVal.toFixed(2)}` });
+                  continue;
+                }
+                console.log(`[OptionsBot] ${sym} EMA GATE: ${signal.toUpperCase()} confirmed — close=$${curClose.toFixed(2)} ema=$${emaVal.toFixed(2)}`);
               }
 
               console.log(`[OptionsBot] "${bot.name}" | ${sym} | SIGNAL: ${signal} | price=$${price.toFixed(2)} | signal_type=${botSignal} | ${reason}`);
