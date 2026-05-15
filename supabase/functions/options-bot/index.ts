@@ -2028,6 +2028,32 @@ Deno.serve(async (req) => {
                 console.log(`[OptionsBot] ${sym} ADX GATE: adx=${adxVal.toFixed(1)} >= ${adxThreshold} — trending, allowing signal`);
               }
 
+              // ── EMA PRICE CONFIRMATION GATE ──
+              // Block BUY signals when current candle close is below EMA (price rolling over)
+              // Block SELL signals when current candle close is above EMA (price still rising)
+              // Applies to all strategies. Uses EMA returned by signal or calculates EMA20.
+              if (signal !== 'none' && botSignal !== 'test_always_buy' && botSignal !== 'test_always_sell') {
+                const curClose = candles[candles.length - 1].close;
+                let emaVal = sigResult.ema ?? 0;
+                if (!emaVal || emaVal <= 0) {
+                  const ema20 = calcEMA(candles.map(c => c.close), 20);
+                  emaVal = ema20[ema20.length - 1] ?? 0;
+                }
+                if (emaVal > 0) {
+                  if (signal === 'buy' && curClose < emaVal) {
+                    console.log(`[OptionsBot] ${sym} EMA GATE: BUY blocked — close=$${curClose.toFixed(2)} < ema=$${emaVal.toFixed(2)} (price below EMA)`);
+                    results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `EMA gate: BUY blocked, close $${curClose.toFixed(2)} < EMA $${emaVal.toFixed(2)}` });
+                    continue;
+                  }
+                  if (signal === 'sell' && curClose > emaVal) {
+                    console.log(`[OptionsBot] ${sym} EMA GATE: SELL blocked — close=$${curClose.toFixed(2)} > ema=$${emaVal.toFixed(2)} (price above EMA)`);
+                    results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `EMA gate: SELL blocked, close $${curClose.toFixed(2)} > EMA $${emaVal.toFixed(2)}` });
+                    continue;
+                  }
+                  console.log(`[OptionsBot] ${sym} EMA GATE: ${signal.toUpperCase()} confirmed — close=$${curClose.toFixed(2)} ema=$${emaVal.toFixed(2)}`);
+                }
+              }
+
               console.log(`[OptionsBot] "${bot.name}" | ${sym} | SIGNAL: ${signal} | price=$${price.toFixed(2)} | signal_type=${botSignal} | ${reason}`);
               console.log(`[OptionsBot] ${sym} STEP 1: Signal generated, proceeding to trend filter...`);
 
