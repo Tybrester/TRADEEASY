@@ -865,8 +865,8 @@
         if (!container) return;
 
         const [{ data: stockBots }, { data: optionsBots }] = await Promise.all([
-          sbClient.from('stock_bots').select('id,name,enabled,auto_submit,paper_balance_start,broker,trades(pnl,status)').eq('user_id', user.id).order('created_at', { ascending: false }),
-          sbClient.from('options_bots').select('id,name,enabled,auto_submit,paper_balance_start,broker,options_trades(pnl,status)').eq('user_id', user.id).order('created_at', { ascending: false }),
+          sbClient.from('stock_bots').select('id,name,enabled,auto_submit,paper_balance,paper_balance_start,broker,trades(pnl,status)').eq('user_id', user.id).order('created_at', { ascending: false }),
+          sbClient.from('options_bots').select('id,name,enabled,auto_submit,paper_balance,paper_balance_start,broker,options_trades(pnl,status)').eq('user_id', user.id).order('created_at', { ascending: false }),
         ]);
 
         const allBots = [
@@ -882,8 +882,9 @@
         container.innerHTML = allBots.map(b => {
           const isRunning = b.enabled && b.auto_submit;
           const start = Number(b.paper_balance_start || 100000);
-          const realizedPnl = b.closedTrades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
-          const balance = start + realizedPnl;
+          // Use stored paper_balance directly (updated by daemon on every close) — no recalculation needed
+          const balance = b.paper_balance != null ? Number(b.paper_balance) : (start + b.closedTrades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0));
+          const realizedPnl = balance - start;
           const pct = start > 0 ? ((realizedPnl / start) * 100) : 0;
           const pnlColor = realizedPnl >= 0 ? 'var(--accent)' : 'var(--red)';
           const pctStr = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
