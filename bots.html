@@ -666,12 +666,15 @@
       </div>
       <div class="create-bot-field">
         <label>Signal Strategy</label>
-        <select id="new-options-signal">
+        <select id="new-options-signal" onchange="toggleTestSignal()">
           <option value="supertrend">Boof 1.0 (Adaptive SuperTrend + EMA50 + ADX)</option>
           <option value="boof20">Boof 2.0 (ML-Style Predictive)</option>
           <option value="boof30">Boof 3.0 (KMeans Regime Detection)</option>
           <option value="boof50">Boof 5.0 (Quant Six-Factor)</option>
+          <option value="test_always_buy">🧪 TEST: Always Buy (Debug Mode)</option>
+          <option value="test_always_sell">🧪 TEST: Always Sell (Debug Mode)</option>
         </select>
+        <span id="test-signal-warning" style="font-size:0.7rem;color:var(--red);display:none;">⚠️ TEST MODE: Will trade EVERY scan cycle!</span>
       </div>
       <div class="create-bot-field">
         <label>Trend Filter (Optional)</label>
@@ -682,19 +685,6 @@
           <option value="4h">4-Hour Trend</option>
           <option value="1d">Daily Trend (1d candles)</option>
         </select>
-      </div>
-      <div class="create-bot-field">
-        <label>Signal Strategy</label>
-        <select id="new-options-signal" onchange="toggleTestSignal()">
-          <option value="supertrend">Boof 1.0 (Adaptive SuperTrend + EMA50 + ADX)</option>
-          <option value="boof20">Boof 2.0 (ML-Style Predictive)</option>
-          <option value="boof30">Boof 3.0 (KMeans Regime Detection)</option>
-          <option value="boof50">Boof 5.0 (Quant Six-Factor)</option>
-          <option value="test_always_buy">🧪 TEST: Always Buy (Debug Mode)</option>
-          <option value="test_always_sell">🧪 TEST: Always Sell (Debug Mode)</option>
-        </select>
-        <span id="test-signal-warning" style="font-size:0.7rem;color:var(--red);display:none;">⚠️ TEST MODE: Will trade EVERY scan cycle!</span>
-        <span style="font-size:0.7rem;color:#888;">Leave as "No Filter" to trade pure signals</span>
       </div>
       <div class="create-bot-field">
         <label>Take Profit %</label>
