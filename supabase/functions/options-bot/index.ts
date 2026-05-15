@@ -2148,7 +2148,8 @@ Deno.serve(async (req) => {
               if (botSignal === 'rsi_macd') {
                 sigResult = generateSignalRSIMACD(candles, settings.tradeDirection);
               } else if (botSignal === 'boof20') {
-                sigResult = generateSignalBoof20(candles, settings.tradeDirection, 0.003, -0.003);
+                // Tightened for 1m scalping: ~3 trades/hour target (0.8% threshold vs 0.3% default)
+                sigResult = generateSignalBoof20(candles, settings.tradeDirection, 0.008, -0.008);
               } else if (botSignal === 'boof30') {
                 sigResult = generateSignalBoof30(candles, settings.tradeDirection);
               } else if (botSignal === 'boof50') {
