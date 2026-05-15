@@ -1989,6 +1989,25 @@ Deno.serve(async (req) => {
               price = sigResult.price;
               reason = sigResult.reason;
 
+              // ── ADX GATE: Block all signals in choppy/ranging markets ──
+              // ADX < 20 = no trend = chop = skip. Applies to ALL strategies.
+              // Boof 5.0 & SuperTrend return adx in sigResult. For others, calculate it.
+              if (signal !== 'none' && botSignal !== 'test_always_buy' && botSignal !== 'test_always_sell') {
+                let adxVal = sigResult.adx ?? 0;
+                if (!adxVal || adxVal <= 0) {
+                  // Calculate ADX from current candles if not returned by signal
+                  const dmi = calcDMI(candles.map(c => c.high), candles.map(c => c.low), candles.map(c => c.close), 14);
+                  adxVal = dmi.adx[dmi.adx.length - 1] ?? 0;
+                }
+                const adxThreshold = 20;
+                if (adxVal > 0 && adxVal < adxThreshold) {
+                  console.log(`[OptionsBot] ${sym} ADX GATE: adx=${adxVal.toFixed(1)} < ${adxThreshold} — market is choppy, skipping signal`);
+                  results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: `ADX gate: ${adxVal.toFixed(1)} < ${adxThreshold} (choppy market)` });
+                  continue;
+                }
+                console.log(`[OptionsBot] ${sym} ADX GATE: adx=${adxVal.toFixed(1)} >= ${adxThreshold} — trending, allowing signal`);
+              }
+
               console.log(`[OptionsBot] "${bot.name}" | ${sym} | SIGNAL: ${signal} | price=$${price.toFixed(2)} | signal_type=${botSignal} | ${reason}`);
               console.log(`[OptionsBot] ${sym} STEP 1: Signal generated, proceeding to trend filter...`);
 
@@ -2015,14 +2034,13 @@ Deno.serve(async (req) => {
                     const prevAboveVwap = prevClose >= vwap;
                     console.log(`[OptionsBot] ${sym} VWAP 1m: price=${lastClose.toFixed(2)} vwap=${vwap.toFixed(2)} last=${lastAboveVwap?'above':'below'} prev=${prevAboveVwap?'above':'below'}`);
                     if (signal === 'buy' && !(lastAboveVwap && prevAboveVwap)) {
-                      console.log(`[OptionsBot] ${sym} BUY blocked — price not confirmed above VWAP (last=${lastAboveVwap} prev=${prevAboveVwap})`);
-                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'BUY blocked: price not confirmed above VWAP' });
+                      console.log(`[OptionsBot] ${sym} BUY blocked — price not confirmed above VWAP`);
+                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'BUY blocked: price below VWAP' });
                       continue;
                     }
-                    // Both candles must be below VWAP to allow a SELL/PUT — prevents puts on single-candle dips
-                    if (signal === 'sell' && !(!lastAboveVwap && !prevAboveVwap)) {
-                      console.log(`[OptionsBot] ${sym} SELL blocked — price not confirmed below VWAP (last=${lastAboveVwap} prev=${prevAboveVwap})`);
-                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'SELL blocked: price not confirmed below VWAP' });
+                    if (signal === 'sell' && (lastAboveVwap || prevAboveVwap)) {
+                      console.log(`[OptionsBot] ${sym} SELL blocked — price not confirmed below VWAP`);
+                      results.push({ bot_id: bot.id, symbol: sym, status: 'skipped', reason: 'SELL blocked: price above VWAP' });
                       continue;
                     }
                     console.log(`[OptionsBot] ${sym} VWAP filter passed — signal aligned with VWAP`);
