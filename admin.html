@@ -172,13 +172,7 @@
       });
       document.addEventListener('click', () => document.getElementById('user-dropdown').classList.remove('open'));
 
-      await loadStats();
       await loadUsers();
-    }
-
-    async function loadStats() {
-      const { count } = await sbClient.from('paper_accounts').select('*', { count: 'exact', head: true });
-      document.getElementById('stat-users').textContent = count ?? '—';
     }
 
     async function loadUsers() {
@@ -201,14 +195,28 @@
       const botsMap = {};
       (settings || []).forEach(s => { botsMap[s.user_id] = s.bots_enabled; });
 
-      allUsers = (accounts || []).map(a => ({
-        user_id: a.user_id,
-        email: emailMap[a.user_id] || '',
-        updated_at: a.updated_at,
-        systems: systemCounts[a.user_id] || 0,
-        bots_enabled: botsMap[a.user_id] || false,
-      }));
+      const accountMap = {};
+      (accounts || []).forEach(a => { accountMap[a.user_id] = a.updated_at; });
 
+      // Build from auth users so ALL signups appear, not just those with paper_accounts
+      const authUsers = emailRes.users || [];
+      // Merge in any paper_accounts users not in auth list
+      const seenIds = new Set(authUsers.map(u => u.id));
+      (accounts || []).forEach(a => {
+        if (!seenIds.has(a.user_id)) authUsers.push({ id: a.user_id, email: emailMap[a.user_id] || '' });
+      });
+
+      allUsers = authUsers
+        .filter(u => u.id !== 'd0bb84ba-f968-446c-9792-9bcff8849e37')
+        .map(u => ({
+          user_id: u.id,
+          email: u.email || '',
+          updated_at: accountMap[u.id] || u.created_at || null,
+          systems: systemCounts[u.id] || 0,
+          bots_enabled: botsMap[u.id] || false,
+        }));
+
+      document.getElementById('stat-users').textContent = allUsers.length;
       renderUsers(allUsers);
     }
 
