@@ -1144,7 +1144,7 @@
               <div class="auto-settings-row"><span>Trading Style</span>
                 <select class="auto-input wide" id="ostyle-${b.id}" onchange="updateOptionsBotStyle('${b.id}')">
                   <option value="hyper" ${b.trading_style==='hyper'?'selected':''}>Hyper Scalper (1m)</option>
-                  <option value="scalper" ${(!b.trading_style||b.trading_style==='scalper')?'selected':''}>Scalper (5m)</option>
+                  <option value="scalper" ${(!b.trading_style||b.trading_style==='scalper')?'selected':''}>Day Trader (5m)</option>
                   <option value="swing" ${b.trading_style==='swing'?'selected':''}>Swing (15m)</option>
                   <option value="longer_swing" ${b.trading_style==='longer_swing'?'selected':''}>Longer Swing (30m)</option>
                   <option value="position" ${b.trading_style==='position'?'selected':''}>Position (1h)</option>
@@ -1753,7 +1753,7 @@
       if (customEl) customEl.style.display = style === 'custom' ? '' : 'none';
       const descriptions = {
         hyper:   { title: 'Hyper Scalper Settings:', candle: '1 minute charts',  scan: 'Every 1 minute', trend: '1-hour EMA',  expiry: '0DTE (same day)',      best: 'Ultra-fast scalping' },
-        scalper: { title: 'Scalper Settings:',        candle: '5 minute charts',  scan: 'Every 1 minute', trend: '1-hour EMA',  expiry: '0DTE or Weekly',       best: 'Quick intraday moves' },
+        scalper: { title: 'Day Trader Settings:',     candle: '5 minute charts',  scan: 'Every 1 minute', trend: '1-hour EMA',  expiry: '0DTE or 1DTE',         best: 'Intraday day trades' },
         swing:   { title: 'Swing Settings:',          candle: '15 minute charts', scan: 'Every 1 minute', trend: '4-hour EMA',  expiry: 'Weekly (1-7 days)',     best: 'Medium-term swings' },
         longer_swing: { title: 'Longer Swing Settings:', candle: '30 minute charts', scan: 'Every 10 minutes', trend: '4-hour EMA', expiry: 'Weekly (1-7 days)',     best: 'Wider swing trades' },
         position:{ title: 'Position Settings:',       candle: '1 hour charts',    scan: 'Every 1 minute', trend: 'Daily EMA',   expiry: 'Monthly (30+ days)',    best: 'Long-term trends' },
@@ -2724,7 +2724,7 @@
                 <select class="auto-input" id="style-${s.id}" style="width:180px;" onchange="applyTradingStyle('${s.id}', this.value)">
                   <option value="custom" ${!s.trading_style||s.trading_style==='custom'?'selected':''}>Custom</option>
                   <option value="hyper" ${s.trading_style==='hyper'?'selected':''}>Hyper Scalper (1m candles)</option>
-                  <option value="scalper" ${s.trading_style==='scalper'?'selected':''}>Scalper (5m candles)</option>
+                  <option value="scalper" ${s.trading_style==='scalper'?'selected':''}>Day Trader (5m candles)</option>
                   <option value="swing" ${s.trading_style==='swing'?'selected':''}>Swing (15m candles)</option>
                   <option value="longer_swing" ${s.trading_style==='longer_swing'?'selected':''}>Longer Swing (30m candles)</option>
                   <option value="position" ${s.trading_style==='position'?'selected':''}>Position (1h candles)</option>
