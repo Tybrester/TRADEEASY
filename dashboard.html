@@ -874,8 +874,8 @@
         ]);
 
         const allBots = [
-          ...(stockBots || []).map(b => ({ ...b, type: 'Stock', closedTrades: (b.trades || []).filter(t => t.status === 'closed') })),
-          ...(optionsBots || []).map(b => ({ ...b, type: 'Options', closedTrades: (b.options_trades || []).filter(t => t.status === 'closed') })),
+          ...(stockBots || []).map(b => ({ ...b, type: 'Stock' })),
+          ...(optionsBots || []).map(b => ({ ...b, type: 'Options' })),
         ];
 
         if (allBots.length === 0) {
@@ -885,10 +885,7 @@
 
         container.innerHTML = allBots.map(b => {
           const isRunning = b.enabled && b.auto_submit;
-          const storedBal = Number(b.paper_balance);
-          const start = Number(b.paper_balance_start || 100000);
-          const calcBal = start + b.closedTrades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
-          const balance = (storedBal > 0) ? storedBal : calcBal;
+          const balance = Number(b.paper_balance) || Number(b.paper_balance_start) || 100000;
           const brokerLabel = b.broker === 'tastytrade' ? 'Tastytrade' : b.broker === 'alpaca' ? 'Alpaca' : 'Paper';
           return `<a href="bots.html" class="bot-overview-card ${isRunning ? 'running' : 'stopped'}">
             <div style="display:flex;align-items:center;justify-content:space-between;">
