@@ -888,21 +888,54 @@
 
         container.innerHTML = allBots.map(b => {
           const isRunning = b.enabled && b.auto_submit;
-          const balance = Number(b.paper_balance) || Number(b.paper_balance_start) || 100000;
+          const storedBal = Number(b.paper_balance) || Number(b.paper_balance_start) || 100000;
           const brokerLabel = b.broker === 'tastytrade' ? 'Tastytrade' : b.broker === 'alpaca' ? 'Alpaca' : 'Paper';
+          const table = b.type === 'Stock' ? 'trades' : 'options_trades';
           return `<a href="bots.html" class="bot-overview-card ${isRunning ? 'running' : 'stopped'}">
             <div style="display:flex;align-items:center;justify-content:space-between;">
               <div style="font-size:0.9rem;font-weight:900;color:var(--text);">${b.name}</div>
               <span style="font-size:0.68rem;font-weight:700;padding:3px 8px;border-radius:20px;background:${isRunning ? 'rgba(0,230,118,0.12)' : 'rgba(255,255,255,0.05)'};color:${isRunning ? 'var(--accent)' : '#555'};">${isRunning ? '● Running' : '○ Stopped'}</span>
             </div>
             <div style="margin-top:10px;">
-              <span class="bot-overview-bal">$${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span class="bot-overview-bal" id="dash-bal-${b.id}">$${storedBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div style="margin-top:6px;">
               <span style="background:rgba(255,255,255,0.04);padding:2px 7px;border-radius:4px;font-size:0.68rem;">${b.type} · ${brokerLabel}</span>
             </div>
           </a>`;
         }).join('');
+
+        // Update each bot with live balance (start + realizedPnl + unrealizedPnl) — same as bots page
+        allBots.forEach(async b => {
+          try {
+            const start = Number(b.paper_balance_start) || 100000;
+            const tradesTable = b.type === 'Stock' ? 'trades' : 'options_trades';
+            const { data: closed } = await sbClient.from(tradesTable).select('pnl').eq('bot_id', b.id).eq('status', 'closed');
+            const realizedPnl = (closed || []).reduce((s, t) => s + (Number(t.pnl) || 0), 0);
+            const { data: open } = await sbClient.from(tradesTable).select('symbol,price,entry_price,quantity,action,contracts,premium_per_contract').eq('bot_id', b.id).eq('status', b.type === 'Stock' ? 'filled' : 'open');
+            let unrealizedPnl = 0;
+            await Promise.all((open || []).map(async t => {
+              try {
+                const sym = t.symbol;
+                const res = await fetch(`${SUPABASE_URL}/functions/v1/get-price?symbol=${encodeURIComponent(sym)}`, { headers: { 'apikey': SUPABASE_ANON_KEY } });
+                const j = await res.json();
+                if (j?.price) {
+                  if (b.type === 'Stock') {
+                    const ep = Number(t.entry_price || t.price);
+                    const qty = Number(t.quantity);
+                    unrealizedPnl += (t.action === 'buy' ? j.price - ep : ep - j.price) * qty;
+                  } else {
+                    const contracts = Number(t.contracts) || 1;
+                    unrealizedPnl += (j.price - Number(t.premium_per_contract)) * contracts * 100;
+                  }
+                }
+              } catch(_) {}
+            }));
+            const liveBalance = start + realizedPnl + unrealizedPnl;
+            const el = document.getElementById('dash-bal-' + b.id);
+            if (el) el.textContent = '$' + liveBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          } catch(_) {}
+        });
       }
 
       // Contact footer
