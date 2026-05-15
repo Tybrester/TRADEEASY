@@ -1846,19 +1846,39 @@ Deno.serve(async (req) => {
                 console.log(`[OptionsBot] SKIP TP/SL for ${open.symbol} $${open.strike} — pct ${pctChange.toFixed(1)}% looks wrong, skipping`);
                 continue;
               }
-              // Sanity check: for 0DTE Black-Scholes, verify the option price is plausible
-              // Option price should never be more than 50% below entry on a <0.5% spot move
-              // This catches BS misfires where IV/T calculation is off near expiry
-              const isBlackScholes = !alpacaCreds?.api_key; // no alpaca creds = definitely BS
-              if (isBlackScholes && settings.expiryType === '0dte') {
+              // Sanity check: when using Black-Scholes (no Alpaca real quote),
+              // cross-check against delta-estimated P&L using actual spot movement.
+              // If BS shows >2x what delta math predicts, replace with delta estimate.
+              if (source === 'black_scholes' && open.entry_spot) {
                 try {
                   const tpslCandles = await fetchCandles(open.symbol, settings.interval, 5);
                   const spotNow = tpslCandles.length > 0 ? tpslCandles[tpslCandles.length - 1].close : 0;
-                  const roughSpotMove = spotNow > 0 ? Math.abs(spotNow - open.strike) / open.strike : 1;
-                  // If spot is within 1% of strike but BS shows >25% loss, price is unreliable
-                  if (roughSpotMove < 0.01 && pctChange < -25) {
-                    console.log(`[OptionsBot] SKIP TP/SL for ${open.symbol} $${open.strike} — BS price unreliable: spot only ${(roughSpotMove*100).toFixed(2)}% from strike but showing ${pctChange.toFixed(1)}% loss`);
-                    continue;
+                  if (spotNow > 0) {
+                    const spotMove = spotNow - Number(open.entry_spot);
+                    const delta = open.option_type === 'call' ? 0.5 : -0.5;
+                    const deltaEstPnl = delta * spotMove * open.contracts * 100;
+                    const deltaEstPct = (deltaEstPnl / totalCost) * 100;
+                    // If BS pctChange is more than 2x worse than delta estimate, it's wrong
+                    if (pctChange < -5 && deltaEstPct > pctChange * 2) {
+                      console.log(`[OptionsBot] BS price override for ${open.symbol}: BS=${pctChange.toFixed(1)}% but delta estimate=${deltaEstPct.toFixed(1)}% (spot moved $${spotMove.toFixed(2)}). Using delta estimate.`);
+                      const correctedPnl = deltaEstPnl;
+                      const correctedPct = deltaEstPct;
+                      // Re-evaluate TP/SL with corrected values
+                      const slThreshold2 = settings.stopLossPct < 0 ? settings.stopLossPct : -Math.abs(settings.stopLossPct);
+                      if (correctedPct < slThreshold2 || correctedPct >= settings.takeProfitPct) {
+                        // Corrected value still triggers — allow with corrected P&L
+                        const exitPrice2 = entryPremium + (delta * spotMove);
+                        await supabase.from('options_trades').update({ status: 'closed', exit_price: Math.max(0, exitPrice2), pnl: correctedPnl, closed_at: new Date().toISOString() }).eq('id', open.id);
+                        if (bot.broker === 'paper') {
+                          const bal2 = Number((await supabase.from('options_bots').select('paper_balance').eq('id', bot.id).single()).data?.paper_balance ?? 100000);
+                          await supabase.from('options_bots').update({ paper_balance: bal2 + totalCost + correctedPnl }).eq('id', bot.id);
+                        }
+                        results.push({ bot_id: bot.id, symbol: open.symbol, status: 'closed', pnl: correctedPnl.toFixed(2), reason: `TP/SL triggered (delta-corrected): ${correctedPct.toFixed(1)}%` });
+                      } else {
+                        console.log(`[OptionsBot] After delta correction, ${open.symbol} pct=${correctedPct.toFixed(1)}% — no TP/SL trigger`);
+                      }
+                      continue;
+                    }
                   }
                 } catch (_) {}
               }
