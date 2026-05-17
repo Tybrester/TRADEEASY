@@ -3023,10 +3023,10 @@
         candleSelect.value = presets[style].candle;
         scanSelect.value = presets[style].scan;
         if (trendSelect) trendSelect.value = presets[style].trend;
-        // Hide custom interval/trend rows (all auto-set by preset)
+        // Hide custom interval/scan rows (auto-set by preset), but keep trend filter visible
         if (candleRow) candleRow.style.display = 'none';
         if (scanRow) scanRow.style.display = 'none';
-        if (trendRow) trendRow.style.display = 'none';
+        if (trendRow) trendRow.style.display = 'flex';
         console.log(`[TradingStyle] Applied ${style}: candle=${presets[style].candle}, scan=${presets[style].scan}min, trend=${presets[style].trend}`);
       } else if (style === 'custom') {
         // Show custom rows for manual control
