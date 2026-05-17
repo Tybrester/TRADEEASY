@@ -635,6 +635,7 @@
           <option value="scan_top50">Top 50 Volatility</option>
           <option value="scan_duo">Duo (SPY & QQQ)</option>
           <option value="scan_boof">Boof List (QQQ, SPY, TSLA, NVDA, AMD)</option>
+          <option value="scan_crypto">Crypto (BTC, ETH, SOL, etc.)</option>
         </select>
       </div>
       <div class="create-bot-field">
@@ -1174,6 +1175,7 @@
                   <option value="scan_duo" ${b.bot_scan_mode==='scan_duo'?'selected':''}>Duo (SPY & QQQ)</option>
                   <option value="scan_boof" ${b.bot_scan_mode==='scan_boof'?'selected':''}>Boof List (QQQ, SPY, TSLA, NVDA, AMD)</option>
                   <option value="scan_futures" ${b.bot_scan_mode==='scan_futures'?'selected':''}>Top Futures (Overnight)</option>
+                  <option value="scan_crypto" ${b.bot_scan_mode==='scan_crypto'?'selected':''}>Crypto (BTC, ETH, SOL, etc.)</option>
                 </select>
               </div>
               <div id="osym-row-${b.id}" style="${b.bot_scan_mode&&b.bot_scan_mode!=='single'?'display:none':''}"><div class="auto-settings-row"><span>Symbol</span><input class="auto-input" id="osym-${b.id}" value="${b.bot_symbol||'SPY'}" placeholder="SPY"/></div></div>
