@@ -1888,6 +1888,11 @@ Deno.serve(async (req) => {
       'SPY','QQQ',
     ];
 
+    const SCAN_CRYPTO = [
+      'BTC/USD','ETH/USD','SOL/USD','AVAX/USD','LINK/USD',
+      'UNI/USD','AAVE/USD','CRV/USD','LDO/USD','MATIC/USD',
+    ];
+
     const SCAN_TOP50 = [
       'SNGX','HTCO','ERAS','BIYA','ACST','ACB','AIXI','AMST','EOSE','JBLU',
       'LAES','SLS','BE','CIFR','RDW','IREN','BRLS','EDSA','KNSA','OMCL',
@@ -1954,6 +1959,7 @@ Deno.serve(async (req) => {
         : scanMode === 'scan_top50' ? SCAN_TOP50
         : scanMode === 'scan_boof' ? SCAN_BOOF
         : scanMode === 'scan_duo' ? SCAN_DUO
+        : scanMode === 'scan_crypto' ? SCAN_CRYPTO
         : [settings.symbol];
 
       console.log(`[OptionsBot] "${bot.name}" | scanMode=${scanMode} | symbols=${symbolList.length} | list=[${symbolList.slice(0,5).join(',')}...${symbolList.slice(-3).join(',')}]`);
