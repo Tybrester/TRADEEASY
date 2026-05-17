@@ -802,10 +802,255 @@ function generateSignalBoof30(candles: Candle[], tradeDirection = 'both'): Signa
 }
 
 // ─────────────────────────────────────────────
+// BOOF 5.0 - SIX-FACTOR QUANT MODEL
+// ─────────────────────────────────────────────
+
+function b50SMA(data: number[], period: number): number[] {
+  const result: number[] = [];
+  for (let i = period - 1; i < data.length; i++) {
+    const slice = data.slice(i - period + 1, i + 1);
+    result.push(slice.reduce((a, b) => a + b, 0) / period);
+  }
+  return result;
+}
+
+function b50StdDev(data: number[], period: number): number {
+  if (data.length < period) return 0;
+  const slice = data.slice(-period);
+  const mean = slice.reduce((a, b) => a + b, 0) / period;
+  return Math.sqrt(slice.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / period);
+}
+
+function b50Mean(data: number[]): number {
+  return data.length > 0 ? data.reduce((a, b) => a + b, 0) / data.length : 0;
+}
+
+function b50ATR(highs: number[], lows: number[], closes: number[], period: number): number {
+  const tr: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    tr.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i-1]), Math.abs(lows[i] - closes[i-1])));
+  }
+  return tr.length >= period ? b50Mean(tr.slice(-period)) : 0;
+}
+
+function b50ADX(highs: number[], lows: number[], closes: number[], period: number): number {
+  const dmP: number[] = [], dmM: number[] = [], trV: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const up = highs[i] - highs[i-1], dn = lows[i-1] - lows[i];
+    dmP.push(up > dn && up > 0 ? up : 0);
+    dmM.push(dn > up && dn > 0 ? dn : 0);
+    trV.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i-1]), Math.abs(lows[i] - closes[i-1])));
+  }
+  if (dmP.length < period) return 25;
+  const diP = 100 * b50Mean(dmP.slice(-period)) / b50Mean(trV.slice(-period));
+  const diM = 100 * b50Mean(dmM.slice(-period)) / b50Mean(trV.slice(-period));
+  return (diP + diM) > 0 ? 100 * Math.abs(diP - diM) / (diP + diM) : 0;
+}
+
+function generateSignalBoof50(candles: any[], tradeDirection = 'both'): SignalResult {
+  const highs = candles.map(c => c.high);
+  const lows  = candles.map(c => c.low);
+  const closes = candles.map(c => c.close);
+  const opens  = candles.map(c => c.open);
+  const volumes = candles.map(c => c.volume || 1000000);
+  const n = closes.length;
+
+  if (n < 50) return { signal: 'none', price: closes[n-1], trend: 0, ema: closes[n-1], adx: 0, reason: 'Boof 5.0: insufficient data' };
+
+  const i = n - 2;
+
+  // Factor 1: Momentum
+  const momentum = ((closes[i] - closes[i-10]) / closes[i-10]) * 100;
+  const momentumAccel = momentum - ((closes[i-1] - closes[i-11]) / closes[i-11]) * 100;
+  let momScore = 0;
+  if (momentum > 1.5 && momentumAccel > 0) momScore = 2;
+  else if (momentum > 0.5) momScore = 1;
+  else if (momentum < -1.5 && momentumAccel < 0) momScore = -2;
+  else if (momentum < -0.5) momScore = -1;
+
+  // Factor 2: Mean Reversion
+  const sma20 = b50SMA(closes, 20);
+  const std20 = b50StdDev(closes, 20);
+  const zScore = std20 > 0 ? (closes[i] - sma20[sma20.length-1]) / std20 : 0;
+  const bbUpper = sma20[sma20.length-1] + 2*std20;
+  const bbLower = sma20[sma20.length-1] - 2*std20;
+  const bbPos = bbUpper !== bbLower ? (closes[i] - bbLower) / (bbUpper - bbLower) : 0.5;
+  let mrScore = 0;
+  if (zScore < -1.5 && bbPos < 0.1) mrScore = 1;
+  else if (zScore > 1.5 && bbPos > 0.9) mrScore = -1;
+
+  // Factor 3: Volatility
+  const returns: number[] = [];
+  for (let j = 1; j < n; j++) returns.push((closes[j] - closes[j-1]) / closes[j-1]);
+  const currentVol = b50StdDev(returns.slice(-20), 20);
+  const volMean = b50Mean(returns.slice(-50).map(r => Math.abs(r)));
+  const volPercentile = volMean > 0 ? Math.min(1, currentVol / (volMean * 2)) : 0.5;
+  const highVol = volPercentile > 0.85; // Relaxed from 0.8 for crypto
+  const lowVol  = volPercentile < 0.2;
+  const atr = b50ATR(highs, lows, closes, 14);
+
+  // Factor 4: Trend
+  const ema20 = calcEMA(closes, 20);
+  const ema50 = calcEMA(closes, 50);
+  const ema200 = n >= 200 ? calcEMA(closes, 200) : ema50;
+  const adx = b50ADX(highs, lows, closes, 14);
+  const strongTrend = adx > 20; // Relaxed from 25 for crypto
+  const weakTrend   = adx < 15;
+  const aboveEMA20  = closes[i] > ema20[ema20.length-1];
+  const aboveEMA50  = closes[i] > ema50[ema50.length-1];
+  const aboveEMA200 = closes[i] > ema200[ema200.length-1];
+  let trendScore = 0;
+  if (strongTrend && aboveEMA20 && aboveEMA50 && aboveEMA200) trendScore = 2;
+  else if (aboveEMA20 && aboveEMA50) trendScore = 1;
+  else if (strongTrend && !aboveEMA20 && !aboveEMA50 && !aboveEMA200) trendScore = -2;
+  else if (!aboveEMA20 && !aboveEMA50) trendScore = -1;
+
+  // Factor 5: Volume
+  const volSMA = b50SMA(volumes, 20);
+  const relVol = volumes[i] / (volSMA[volSMA.length-1] || 1);
+  let obv = 0;
+  for (let j = Math.max(1, n-20); j < n; j++) {
+    obv += closes[j] > closes[j-1] ? volumes[j] : closes[j] < closes[j-1] ? -volumes[j] : 0;
+  }
+  const volScore = (relVol > 1.2 && obv > 0) ? 1 : 0;
+
+  // Factor 6: Microstructure
+  const body = Math.abs(closes[i] - opens[i]);
+  const wick = highs[i] - lows[i];
+  const bodyRatio = wick > 0 ? body / wick : 0;
+  const upperWick = highs[i] - Math.max(opens[i], closes[i]);
+  const lowerWick = Math.min(opens[i], closes[i]) - lows[i];
+  let microScore = 0;
+  if (wick > 0 && lowerWick / wick > 0.6 && bodyRatio > 0.3) microScore = 1;
+  else if (wick > 0 && upperWick / wick > 0.6 && bodyRatio > 0.3) microScore = -1;
+
+  // Regime
+  let regime = 'UNCERTAIN';
+  if (strongTrend && !weakTrend) regime = aboveEMA50 ? 'TREND_UP' : 'TREND_DOWN';
+  else if (weakTrend && Math.abs(zScore) < 1) regime = 'RANGING';
+  else if (highVol) regime = 'VOLATILE';
+
+  // Composite
+  let composite = momScore + trendScore + mrScore + volScore + microScore;
+  if (regime === 'RANGING') composite = -composite * 0.5;
+  else if (regime === 'VOLATILE' && !strongTrend) composite = composite * 0.4; // Relaxed from 0.3
+
+  // Signal — relaxed threshold for crypto (1.2 instead of 1.5)
+  const threshold = 1.2;
+  let signal: 'buy' | 'sell' | 'none' = 'none';
+  if (composite > threshold && regime !== 'VOLATILE') signal = 'buy';
+  else if (composite < -threshold && regime !== 'VOLATILE') signal = 'sell';
+
+  if (tradeDirection === 'long'  && signal === 'sell') signal = 'none';
+  if (tradeDirection === 'short' && signal === 'buy')  signal = 'none';
+
+  const reason = `Boof 5.0 [${regime}] MOM=${momScore} TREND=${trendScore} MR=${mrScore} VOL=${volScore} MICRO=${microScore} COMPOSITE=${composite.toFixed(2)}`;
+  return { signal, price: closes[i], trend: trendScore, ema: ema50[ema50.length-1], adx, reason, regime, rsi: zScore*10+50, slope: momentum, atr };
+}
+
+// ─────────────────────────────────────────────
+// BOOF 6.0 - MULTI-TIMEFRAME SCALPING
+// ─────────────────────────────────────────────
+
+function generateSignalBoof60(candles: any[], candles1h: any[], candles15m: any[], candles1m: any[], tradeDirection: string): SignalResult {
+  const n = candles.length;
+  if (n < 30) return { signal: 'none', price: 0, trend: 0, ema: 0, adx: 0, reason: 'Boof 6.0: not enough candles' };
+
+  const closes  = candles.map(c => c.close);
+  const highs   = candles.map(c => c.high);
+  const lows    = candles.map(c => c.low);
+  const volumes = candles.map(c => c.volume ?? 0);
+  const curClose  = closes[n-1];
+  const prevClose = closes[n-2];
+  const prev2Close = closes[n-3];
+
+  const avgSpacingSec = n > 10 ? (candles[n-1].time - candles[n-10].time) / (9 * 1000) : 300;
+  const is1m = avgSpacingSec < 90;
+
+  // 1H trend lock
+  let trendBias: 'up' | 'down' | 'flat' = 'flat';
+  if (candles1h.length >= 25) {
+    const c1h = candles1h.map((c: any) => c.close);
+    const ema1h = calcEMA(c1h, 20);
+    const emaLast = ema1h[ema1h.length-1];
+    const emaPrev = ema1h[ema1h.length-5];
+    const slope = (emaLast - emaPrev) / emaPrev;
+    const price1h = c1h[c1h.length-1];
+    if (price1h > emaLast && slope > 0.0003) trendBias = 'up';
+    else if (price1h < emaLast && slope < -0.0003) trendBias = 'down';
+  }
+  if (trendBias === 'flat') return { signal: 'none', price: curClose, trend: 0, ema: 0, adx: 0, reason: 'Boof 6.0: 1h trend flat' };
+
+  // ADX filter
+  const { adx: adxArr } = calcDMI(highs, lows, closes, 14);
+  const adxVal = adxArr[adxArr.length-1] ?? 0;
+  const adxMin = is1m ? 14 : 18;
+  if (adxVal < adxMin) return { signal: 'none', price: curClose, trend: 0, ema: 0, adx: adxVal, reason: `Boof 6.0: ADX=${adxVal.toFixed(1)} too low` };
+
+  // EMA side
+  let ema15Val = 0;
+  if (candles15m.length >= 22) {
+    const c15m = candles15m.map((c: any) => c.close);
+    const ema15 = calcEMA(is1m ? closes : c15m, is1m ? 50 : 20);
+    ema15Val = ema15[ema15.length-1] ?? 0;
+  }
+  if (ema15Val > 0) {
+    if (trendBias === 'up'   && curClose < ema15Val) return { signal: 'none', price: curClose, trend: 0, ema: ema15Val, adx: adxVal, reason: 'Boof 6.0: close below EMA (up bias)' };
+    if (trendBias === 'down' && curClose > ema15Val) return { signal: 'none', price: curClose, trend: 0, ema: ema15Val, adx: adxVal, reason: 'Boof 6.0: close above EMA (down bias)' };
+  }
+
+  // VWAP
+  let vwapConfirmed = false;
+  let vwapVal = 0;
+  if (candles1m.length >= 30) {
+    vwapVal = calcVWAP(candles1m);
+    if (trendBias === 'up'   && curClose >= vwapVal && prevClose >= vwapVal) vwapConfirmed = true;
+    if (trendBias === 'down' && curClose <= vwapVal && prevClose <= vwapVal) vwapConfirmed = true;
+  } else {
+    vwapConfirmed = true; // Skip VWAP if no 1m data
+  }
+  if (!vwapConfirmed) return { signal: 'none', price: curClose, trend: 0, ema: ema15Val, adx: adxVal, reason: 'Boof 6.0: VWAP not confirmed' };
+
+  // MACD
+  const { hist } = is1m ? calcMACD(closes, 5, 13, 4) : calcMACD(closes, 12, 26, 9);
+  const histLast = hist[hist.length-1] ?? 0;
+  const histPrev = hist[hist.length-2] ?? 0;
+  const macdOK = trendBias === 'up'
+    ? ((histLast > histPrev && histLast > 0) || (histPrev <= 0 && histLast > 0))
+    : ((histLast < histPrev && histLast < 0) || (histPrev >= 0 && histLast < 0));
+  if (!macdOK) return { signal: 'none', price: curClose, trend: 0, ema: ema15Val, adx: adxVal, reason: 'Boof 6.0: MACD not confirming' };
+
+  // Momentum
+  let momOK = false;
+  if (is1m) {
+    const ref5 = closes[n-6] ?? closes[0];
+    momOK = trendBias === 'up' ? curClose > ref5 : curClose < ref5;
+  } else {
+    const momUp   = curClose > prevClose && prevClose > prev2Close;
+    const momDown  = curClose < prevClose && prevClose < prev2Close;
+    const momUpR   = curClose > prev2Close && (curClose > prevClose || prevClose > prev2Close);
+    const momDownR = curClose < prev2Close && (curClose < prevClose || prevClose < prev2Close);
+    momOK = trendBias === 'up' ? (momUp || momUpR) : (momDown || momDownR);
+  }
+  if (!momOK) return { signal: 'none', price: curClose, trend: 0, ema: ema15Val, adx: adxVal, reason: 'Boof 6.0: momentum not building' };
+
+  // Volume
+  const avgVol = volumes.slice(-20).reduce((a: number, b: number) => a + b, 0) / 20;
+  if (avgVol > 0 && volumes[n-1] < avgVol * 0.8) return { signal: 'none', price: curClose, trend: 0, ema: ema15Val, adx: adxVal, reason: 'Boof 6.0: volume too low' };
+
+  let signal: 'buy' | 'sell' | 'none' = trendBias === 'up' ? 'buy' : 'sell';
+  if (tradeDirection === 'long'  && signal === 'sell') signal = 'none';
+  if (tradeDirection === 'short' && signal === 'buy')  signal = 'none';
+
+  const reason = `Boof 6.0 [${trendBias.toUpperCase()}${is1m?'/1m':'/5m+'}] adx=${adxVal.toFixed(1)} macd=${histLast.toFixed(4)} vwap=$${vwapVal.toFixed(2)}`;
+  return { signal, price: curClose, trend: trendBias === 'up' ? 1 : -1, ema: ema15Val, adx: adxVal, reason };
+}
+
+// ─────────────────────────────────────────────
 // FETCH CANDLES (Yahoo Finance - Live)
 // ─────────────────────────────────────────────
 
-interface Candle { time: number; open: number; high: number; low: number; close: number; }
+interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number; }
 
 async function fetchCandles(symbol: string, interval = '1h', bars = 150, userId?: string): Promise<Candle[]> {
   // Use Yahoo Finance for all symbols (stocks, crypto, futures) - avoids Alpaca JWT issues
@@ -899,6 +1144,22 @@ interface SignalResult {
   ema: number;
   adx: number;
   reason: string;
+  regime?: string;
+  rsi?: number;
+  slope?: number;
+  atr?: number;
+  compositeScore?: number;
+}
+
+function calcVWAP(candles: any[]): number {
+  let cumTPV = 0, cumVol = 0;
+  for (const c of candles) {
+    const tp = (c.high + c.low + c.close) / 3;
+    const vol = c.volume ?? 1;
+    cumTPV += tp * vol;
+    cumVol += vol;
+  }
+  return cumVol > 0 ? cumTPV / cumVol : 0;
 }
 
 function generateSignal(candles: Candle[], settings: BotSettings): SignalResult {
@@ -1291,6 +1552,16 @@ Deno.serve(async (req) => {
           signalResult = generateSignalBoof20(candles, tradeDirection, 0.001, -0.001);
         } else if (botSignal === 'boof30') {
           signalResult = generateSignalBoof30(candles, tradeDirection);
+        } else if (botSignal === 'boof50') {
+          signalResult = generateSignalBoof50(candles, tradeDirection);
+        } else if (botSignal === 'boof60') {
+          const interval1 = settings.interval || '5m';
+          const [c1h, c15m, c1m] = await Promise.all([
+            fetchCandles(sym, '1h',  50, bot.user_id as string),
+            fetchCandles(sym, '15m', 50, bot.user_id as string),
+            fetchCandles(sym, '1m',  60, bot.user_id as string),
+          ]);
+          signalResult = generateSignalBoof60(candles, c1h, c15m, c1m, tradeDirection);
         } else {
           signalResult = generateSignal(candles, overrideSettings);
         }
