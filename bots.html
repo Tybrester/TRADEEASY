@@ -3111,12 +3111,18 @@
       const btn  = document.getElementById('default-tpsl-toggle-' + systemId) || document.getElementById('odefault-tpsl-toggle-' + systemId);
       if (wrap) wrap.style.display = 'none';
       if (btn) btn.textContent = 'Default TP/SL';
+      // Try to read symbol from the bot's symbol input (options: osym-ID, stock: sym-ID)
+      const symInput = document.getElementById('osym-' + systemId.replace('opt-','')) || document.getElementById('sym-' + systemId);
+      const existingSyms = Array.from(container.querySelectorAll('[data-rule-sym]')).map(el => el.value.trim().toUpperCase());
+      // Get next unused symbol from CSV list
+      const allSyms = symInput ? symInput.value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : [];
+      const nextSym = allSyms.find(s => !existingSyms.includes(s)) || '';
       const idx = container.querySelectorAll('[id^="symbol-rule-row-"]').length;
       const row = document.createElement('div');
       row.id = `symbol-rule-row-${systemId}-${idx}`;
       row.style.cssText = 'display:flex;gap:6px;align-items:center;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:5px;padding:5px 8px;';
       row.innerHTML = `
-        <input class="auto-input" value="" placeholder="SPY" style="width:58px;font-size:0.75rem;text-transform:uppercase;padding:4px 6px;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
+        <input class="auto-input" value="${nextSym}" placeholder="SPY" style="width:58px;font-size:0.75rem;text-transform:uppercase;padding:4px 6px;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
         <span style="color:#555;font-size:0.7rem;">TP</span>
         <input class="auto-input" type="number" value="50" min="1" max="500" step="1" style="width:46px;font-size:0.75rem;padding:4px 5px;" data-rule-tp/>
         <span style="color:#555;font-size:0.7rem;">% SL</span>
