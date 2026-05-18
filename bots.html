@@ -1265,7 +1265,7 @@
               </div>
 
               <!-- Default TP/SL (hidden when per-symbol rules cover everything) -->
-              <div id="odefault-tpsl-${b.id}" style="display:${(b.symbol_rules&&b.symbol_rules.length)?'none':'flex'};flex-direction:column;gap:12px;">
+              <div id="odefault-tpsl-${b.id}" style="display:${(b.symbol_rules&&b.symbol_rules.length&&b.bot_scan_mode==='single')?'none':'flex'};flex-direction:column;gap:12px;">
                 <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="otp-${b.id}" type="number" value="${b.take_profit_pct||50}" min="1" max="500" step="1" style="width:80px;"/></div>
                 <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||-20}" min="-100" max="0" step="1" style="width:80px;"/></div>
               </div>
@@ -2962,7 +2962,7 @@
                 <span style="font-size:0.7rem;color:#555;">Convert to market if not filled</span>
               </div>
               <!-- Default TP/SL (hidden when per-symbol rules cover everything) -->
-              <div id="default-tpsl-${s.id}" style="display:${(s.symbol_rules&&s.symbol_rules.length)?'none':'flex'};flex-direction:column;gap:12px;">
+              <div id="default-tpsl-${s.id}" style="display:${(s.symbol_rules&&s.symbol_rules.length&&s.bot_scan_mode==='single')?'none':'flex'};flex-direction:column;gap:12px;">
                 <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="tp-${s.id}" type="number" value="${s.take_profit_pct||50}" min="0.5" max="500" step="0.5" style="width:80px;"/></div>
                 <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="sl-${s.id}" type="number" value="${s.stop_loss_pct||-20}" min="-100" max="0" step="0.5" style="width:80px;"/></div>
               </div>
