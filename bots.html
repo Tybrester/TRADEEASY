@@ -1264,25 +1264,16 @@
                 </select>
               </div>
 
-              <!-- Default TP/SL (hidden when per-symbol rules cover everything) -->
-              <div id="odefault-tpsl-${b.id}" style="display:${(b.symbol_rules&&b.symbol_rules.length&&b.bot_scan_mode==='single')?'none':'flex'};flex-direction:column;gap:12px;">
-                <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="otp-${b.id}" type="number" value="${b.take_profit_pct||50}" min="1" max="500" step="1" style="width:80px;"/></div>
-                <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||-20}" min="-100" max="0" step="1" style="width:80px;"/></div>
-              </div>
-
-              <!-- Per-Symbol Rules — visible when multi-symbol or rules exist -->
-              <div id="oper-sym-section-${b.id}" style="margin-top:10px;border-top:1px solid #1a1a1a;padding-top:10px;display:${((b.symbol_rules&&b.symbol_rules.length)||(b.bot_symbol&&b.bot_symbol.includes(',')))?'block':'none'}">
+              <!-- Per-Symbol TP/SL Rules -->
+              <div id="oper-sym-section-${b.id}" style="margin-top:10px;border-top:1px solid #1a1a1a;padding-top:10px;">
                 <div style="font-size:0.75rem;font-weight:600;color:#888;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
-                  <span>Per-Symbol TP/SL Overrides</span>
-                  <div style="display:flex;gap:6px;align-items:center;">
-                    <button onclick="toggleDefaultTpsl('opt-${b.id}')" id="odefault-tpsl-toggle-${b.id}" style="padding:2px 8px;background:transparent;border:1px solid #2a2a2a;color:#555;border-radius:4px;cursor:pointer;font-size:0.68rem;font-family:inherit;">${(b.symbol_rules&&b.symbol_rules.length)?'Default TP/SL':'Hide'}</button>
-                    <button onclick="addSymbolRule('opt-${b.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">+ Add Symbol</button>
-                  </div>
+                  <span>TP/SL Rules</span>
+                  <button onclick="addSymbolRule('opt-${b.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">+ Add Symbol</button>
                 </div>
                 <div id="symbol-rules-opt-${b.id}" style="display:flex;flex-direction:column;gap:5px;">
                   ${(()=>{
                     const rules = b.symbol_rules || [];
-                    if (!rules.length) return '<div style="font-size:0.72rem;color:#444;padding:4px 0;">No overrides — all symbols use default TP/SL above</div>';
+                    if (!rules.length) return '<div style="font-size:0.72rem;color:#444;padding:4px 0;">No rules — click + Add Symbol to set TP/SL per symbol</div>';
                     return rules.map((r,i) => `
                       <div id="symbol-rule-row-opt-${b.id}-${i}" style="display:flex;gap:6px;align-items:center;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:5px;padding:5px 8px;">
                         <input class="auto-input" value="${r.symbol}" placeholder="SPY" style="width:58px;font-size:0.75rem;text-transform:uppercase;padding:4px 6px;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
@@ -1397,8 +1388,6 @@
       const scanModeEl = document.getElementById('oscan-' + botId);
       const scanMode = scanModeEl?.value || 'single';
       console.log(`[SaveOptions] Bot ${botId} - Scan dropdown value: "${scanModeEl?.value}", using: "${scanMode}"`);
-      const tp = parseFloat(document.getElementById('otp-' + botId)?.value) || 50;
-      const sl = parseFloat(document.getElementById('osl-' + botId)?.value) || -20;
       // Collect per-symbol rules
       const optRulesContainer = document.getElementById('symbol-rules-opt-' + botId);
       const optSymbolRules = [];
@@ -1411,6 +1400,9 @@
           if (rsym && !isNaN(rtp) && !isNaN(rsl)) optSymbolRules.push({ symbol: rsym, tp: rtp, sl: rsl, dir: rdir });
         });
       }
+      // Derive global tp/sl from first rule as fallback for edge function defaults
+      const tp = optSymbolRules[0]?.tp ?? 50;
+      const sl = optSymbolRules[0]?.sl ?? -20;
       const broker = document.getElementById('obrk-' + botId)?.value || 'paper';
       const botSignal = document.getElementById('osig-' + botId)?.value || 'supertrend';
       const tradingStyle = document.getElementById('ostyle-' + botId)?.value || 'scalper';
