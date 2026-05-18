@@ -1180,7 +1180,7 @@
                   <option value="scan_crypto" ${b.bot_scan_mode==='scan_crypto'?'selected':''}>Crypto (BTC, ETH, SOL, etc.)</option>
                 </select>
               </div>
-              <div id="osym-row-${b.id}" style="${b.bot_scan_mode&&b.bot_scan_mode!=='single'?'display:none':''}"><div class="auto-settings-row"><span>Symbol</span><input class="auto-input" id="osym-${b.id}" value="${b.bot_symbol||'SPY'}" placeholder="SPY, QQQ, NVDA" style="width:180px;" title="Single symbol or comma-separated list e.g. SPY, QQQ, NVDA"/></div></div>
+              <div id="osym-row-${b.id}" style="${b.bot_scan_mode&&b.bot_scan_mode!=='single'?'display:none':''}"><div class="auto-settings-row"><span>Symbol</span><input class="auto-input" id="osym-${b.id}" value="${b.bot_symbol||'SPY'}" placeholder="SPY, QQQ, NVDA" style="width:180px;" title="Single symbol or comma-separated list e.g. SPY, QQQ, NVDA" oninput="const s=document.getElementById('oper-sym-section-${b.id}');if(s)s.style.display=this.value.includes(',')?'block':'none';"/></div></div>
               <div class="auto-settings-row"><span>$ Per Trade</span><input class="auto-input" id="odol-${b.id}" type="number" value="${b.bot_dollar_amount||500}" min="100"/></div>
               <div class="auto-settings-row"><span>Trading Style</span>
                 <select class="auto-input wide" id="ostyle-${b.id}" onchange="updateOptionsBotStyle('${b.id}')">
@@ -1270,8 +1270,8 @@
                 <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||-20}" min="-100" max="0" step="1" style="width:80px;"/></div>
               </div>
 
-              <!-- Per-Symbol Rules -->
-              <div style="margin-top:10px;border-top:1px solid #1a1a1a;padding-top:10px;">
+              <!-- Per-Symbol Rules — visible when multi-symbol or rules exist -->
+              <div id="oper-sym-section-${b.id}" style="margin-top:10px;border-top:1px solid #1a1a1a;padding-top:10px;display:${((b.symbol_rules&&b.symbol_rules.length)||(b.bot_symbol&&b.bot_symbol.includes(',')))?'block':'none'}">
                 <div style="font-size:0.75rem;font-weight:600;color:#888;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
                   <span>Per-Symbol TP/SL Overrides</span>
                   <div style="display:flex;gap:6px;align-items:center;">
@@ -2836,7 +2836,7 @@
               <!-- Symbol (single mode) -->
               <div class="auto-settings-row" id="sym-row-${s.id}" style="display:${isScan?'none':'flex'}">
                 <span>Symbol</span>
-                <input class="auto-input wide" id="sym-${s.id}" type="text" value="${symbol}" placeholder="SPY or SPY,QQQ,NVDA" title="Single symbol or comma-separated list e.g. SPY,QQQ,NVDA" />
+                <input class="auto-input wide" id="sym-${s.id}" type="text" value="${symbol}" placeholder="SPY or SPY,QQQ,NVDA" title="Single symbol or comma-separated list e.g. SPY,QQQ,NVDA" oninput="const s=document.getElementById('per-sym-section-${s.id}');if(s)s.style.display=this.value.includes(',')?'block':'none';"/>
               </div>
               <!-- Scan Markets (scan mode) -->
               <div class="auto-settings-row" id="scan-markets-row-${s.id}" style="display:${isScan?'flex':'none'};align-items:flex-start;">
@@ -2967,8 +2967,8 @@
                 <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="sl-${s.id}" type="number" value="${s.stop_loss_pct||-20}" min="-100" max="0" step="0.5" style="width:80px;"/></div>
               </div>
 
-              <!-- Per-Symbol Rules -->
-              <div style="margin-top:10px;border-top:1px solid #1a1a1a;padding-top:10px;">
+              <!-- Per-Symbol Rules — visible when multi-symbol or rules exist -->
+              <div id="per-sym-section-${s.id}" style="margin-top:10px;border-top:1px solid #1a1a1a;padding-top:10px;display:${((s.symbol_rules&&s.symbol_rules.length)||(s.bot_symbol&&s.bot_symbol.includes(',')))?'block':'none'}">
                 <div style="font-size:0.75rem;font-weight:600;color:#888;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
                   <span>Per-Symbol TP/SL Overrides</span>
                   <div style="display:flex;gap:6px;align-items:center;">
@@ -3111,6 +3111,9 @@
       // Remove "no overrides" placeholder if present
       const placeholder = container.querySelector('div:not([id])');
       if (placeholder) placeholder.remove();
+      // Show per-symbol section
+      const section = document.getElementById('per-sym-section-' + systemId) || document.getElementById('oper-sym-section-' + systemId);
+      if (section) section.style.display = 'block';
       // Auto-hide default TP/SL when first rule is added
       const wrap = document.getElementById('default-tpsl-' + systemId) || document.getElementById('odefault-tpsl-' + systemId);
       const btn  = document.getElementById('default-tpsl-toggle-' + systemId) || document.getElementById('odefault-tpsl-toggle-' + systemId);
