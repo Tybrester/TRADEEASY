@@ -1280,10 +1280,6 @@
                   <span>Per-Symbol TP/SL Overrides</span>
                   <button onclick="addSymbolRule('opt-${b.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">+ Add Symbol</button>
                 </div>
-                <div style="display:flex;gap:5px;margin-bottom:6px;">
-                  <input id="csv-rules-opt-${b.id}" placeholder="SPY:50:-25, QQQ:60:-28, NVDA:80:-35" style="flex:1;font-size:0.72rem;padding:4px 7px;background:#0d0d0d;border:1px solid #2a2a2a;border-radius:4px;color:#ccc;font-family:inherit;" />
-                  <button onclick="bulkAddSymbolRules('opt-${b.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;white-space:nowrap;">Import CSV</button>
-                </div>
                 <div id="symbol-rules-opt-${b.id}" style="display:flex;flex-direction:column;gap:5px;">
                   ${(()=>{
                     const rules = b.symbol_rules || [];
@@ -2972,10 +2968,6 @@
                 <div style="font-size:0.75rem;font-weight:600;color:#888;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
                   <span>Per-Symbol TP/SL Overrides</span>
                   <button onclick="addSymbolRule('${s.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">+ Add Symbol</button>
-                </div>
-                <div style="display:flex;gap:5px;margin-bottom:6px;">
-                  <input id="csv-rules-${s.id}" placeholder="SPY:50:-25, QQQ:60:-28, NVDA:80:-35" style="flex:1;font-size:0.72rem;padding:4px 7px;background:#0d0d0d;border:1px solid #2a2a2a;border-radius:4px;color:#ccc;font-family:inherit;" />
-                  <button onclick="bulkAddSymbolRules('${s.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;white-space:nowrap;">Import CSV</button>
                 </div>
                 <div id="symbol-rules-${s.id}" style="display:flex;flex-direction:column;gap:5px;">
                   ${(()=>{
