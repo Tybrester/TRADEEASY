@@ -1895,8 +1895,11 @@
         custom:  { candle: document.getElementById('new-options-custom-candle')?.value || '5m', scan: 1, trend: '1h' },
       };
       const intervals = styleIntervals[style] || styleIntervals.scalper;
+      // Auto-create per-symbol rules from entered symbols
+      const symbolList = symbol !== 'SCAN' ? symbol.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : [];
+      const initSymbolRules = symbolList.map(sym => ({ symbol: sym, tp, sl: sl > 0 ? -sl : sl, dir: 'both' }));
       closeCreateModal('create-options-modal');
-      await createOptionsBot(name, symbol, intervals.candle, intervals.scan, intervals.trend, amount, optType, expiry, signal, tp, sl, broker, style, trend, botScanMode);
+      await createOptionsBot(name, symbol, intervals.candle, intervals.scan, intervals.trend, amount, optType, expiry, signal, tp, sl, broker, style, trend, botScanMode, initSymbolRules);
     }
 
     async function editBotName(id, currentName, type) {
@@ -2021,9 +2024,9 @@
       promptNewOptionsBot();
     }
 
-    async function createOptionsBot(name, symbol='SPY', candle='5m', scan=1, trend='1h', amount=1000, optType='both', expiry='weekly', signal='supertrend', tp=50, sl=25, broker='paper', style='scalper', trendFilter='none', botScanMode='single') {
-      console.log(`[CreateOptionsBot] Creating options bot: ${name} with trend_filter=${trendFilter}, scan_mode=${botScanMode}`);
-      const { data, error } = await sbClient.from('options_bots').insert({ user_id: currentUserId, name, enabled: false, auto_submit: false, paper_balance: 100000, paper_balance_start: 100000, bot_dollar_amount: amount, bot_symbol: symbol, bot_interval: candle, run_interval_min: scan, bot_option_type: optType, bot_expiry_type: expiry, bot_signal: signal, take_profit_pct: tp, stop_loss_pct: sl, broker, trading_style: style, trend_filter: trendFilter, bot_scan_mode: botScanMode }).select();
+    async function createOptionsBot(name, symbol='SPY', candle='5m', scan=1, trend='1h', amount=1000, optType='both', expiry='weekly', signal='supertrend', tp=50, sl=25, broker='paper', style='scalper', trendFilter='none', botScanMode='single', symbolRules=[]) {
+      console.log(`[CreateOptionsBot] Creating options bot: ${name} with trend_filter=${trendFilter}, scan_mode=${botScanMode}, symbolRules=${JSON.stringify(symbolRules)}`);
+      const { data, error } = await sbClient.from('options_bots').insert({ user_id: currentUserId, name, enabled: false, auto_submit: false, paper_balance: 100000, paper_balance_start: 100000, bot_dollar_amount: amount, bot_symbol: symbol, bot_interval: candle, run_interval_min: scan, bot_option_type: optType, bot_expiry_type: expiry, bot_signal: signal, take_profit_pct: tp, stop_loss_pct: sl, broker, trading_style: style, trend_filter: trendFilter, bot_scan_mode: botScanMode, symbol_rules: symbolRules }).select();
       if (error) { console.error('[CreateOptionsBot] Error:', error); alert('Error: ' + error.message); return; }
       console.log('[CreateOptionsBot] Created:', data?.[0]?.id);
       await loadOptionsBots();
