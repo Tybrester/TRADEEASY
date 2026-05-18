@@ -2379,9 +2379,19 @@ Deno.serve(async (req) => {
         console.log(`[AutoBot] Skipping stocks for "${bot.name}" - stock markets closed (${etNow.toLocaleTimeString('en-US', {timeZone: 'America/New_York'})} ET)`);
       }
       
-      console.log(`[AutoBot] Running "${bot.name}" | stocks=${scanStocks}${skipStocks?' (skipped)':''}, crypto=${scanCrypto}, futures=${scanFutures} | ${settings.interval} | interval=${runIntervalMin}m`);
+      // Single mode: parse bot_symbol as CSV list e.g. "SPY, QQQ, NVDA"
+      const singleSymbols = (settings.symbol as string).split(',').map((s:string) => s.trim().toUpperCase()).filter(Boolean);
+      const isSingleMode = !scanStocks && !scanCrypto && !scanFutures;
+
+      console.log(`[AutoBot] Running "${bot.name}" | ${isSingleMode ? `single=[${singleSymbols.join(',')}]` : `stocks=${scanStocks}${skipStocks?' (skipped)':''}, crypto=${scanCrypto}, futures=${scanFutures}`} | ${settings.interval} | interval=${runIntervalMin}m`);
 
       try {
+        if (isSingleMode) {
+          for (const sym of singleSymbols) {
+            const result = await processSymbol(bot, sym, settings);
+            results.push(result);
+          }
+        }
         if (scanStocks && !skipStocks) {
           for (const sym of SCAN_STOCKS) {
             const result = await processSymbol(bot, sym, settings);

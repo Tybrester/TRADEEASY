@@ -1180,7 +1180,7 @@
                   <option value="scan_crypto" ${b.bot_scan_mode==='scan_crypto'?'selected':''}>Crypto (BTC, ETH, SOL, etc.)</option>
                 </select>
               </div>
-              <div id="osym-row-${b.id}" style="${b.bot_scan_mode&&b.bot_scan_mode!=='single'?'display:none':''}"><div class="auto-settings-row"><span>Symbol</span><input class="auto-input" id="osym-${b.id}" value="${b.bot_symbol||'SPY'}" placeholder="SPY"/></div></div>
+              <div id="osym-row-${b.id}" style="${b.bot_scan_mode&&b.bot_scan_mode!=='single'?'display:none':''}"><div class="auto-settings-row"><span>Symbol</span><input class="auto-input" id="osym-${b.id}" value="${b.bot_symbol||'SPY'}" placeholder="SPY, QQQ, NVDA" style="width:180px;" title="Single symbol or comma-separated list e.g. SPY, QQQ, NVDA"/></div></div>
               <div class="auto-settings-row"><span>$ Per Trade</span><input class="auto-input" id="odol-${b.id}" type="number" value="${b.bot_dollar_amount||500}" min="100"/></div>
               <div class="auto-settings-row"><span>Option Type</span>
                 <select class="auto-input" id="otype-${b.id}" title="Trade CALLS only, PUTS only, or BOTH based on signal">
@@ -2839,7 +2839,7 @@
               <!-- Symbol (single mode) -->
               <div class="auto-settings-row" id="sym-row-${s.id}" style="display:${isScan?'none':'flex'}">
                 <span>Symbol</span>
-                <input class="auto-input wide" id="sym-${s.id}" type="text" value="${symbol}" placeholder="e.g. SPY" />
+                <input class="auto-input wide" id="sym-${s.id}" type="text" value="${symbol}" placeholder="SPY or SPY,QQQ,NVDA" title="Single symbol or comma-separated list e.g. SPY,QQQ,NVDA" />
               </div>
               <!-- Scan Markets (scan mode) -->
               <div class="auto-settings-row" id="scan-markets-row-${s.id}" style="display:${isScan?'flex':'none'};align-items:flex-start;">

@@ -1957,6 +1957,8 @@ Deno.serve(async (req) => {
       const scanMode: string = (bot.bot_scan_mode as string) || 'single';
       
       // INDEPENDENT MODE: Build symbol list from bot's scan mode
+      // Single mode supports CSV: "SPY, QQQ, NVDA" → scans all three
+      const singleSymbols = (settings.symbol as string).split(',').map((s:string) => s.trim().toUpperCase()).filter(Boolean);
       const symbolList: string[] = scanMode === 'scan_stocks' ? SCAN_STOCKS
         : scanMode === 'scan_etfs' ? SCAN_ETFS
         : scanMode === 'scan_top10' ? SCAN_TOP10
@@ -1964,7 +1966,7 @@ Deno.serve(async (req) => {
         : scanMode === 'scan_boof' ? SCAN_BOOF
         : scanMode === 'scan_duo' ? SCAN_DUO
         : scanMode === 'scan_crypto' ? SCAN_CRYPTO
-        : [settings.symbol];
+        : singleSymbols;
 
       console.log(`[OptionsBot] "${bot.name}" | scanMode=${scanMode} | symbols=${symbolList.length} | list=[${symbolList.slice(0,5).join(',')}...${symbolList.slice(-3).join(',')}]`);
 
