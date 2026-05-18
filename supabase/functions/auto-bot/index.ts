@@ -1940,6 +1940,7 @@ Deno.serve(async (req) => {
             const originalAmount = settings.dollarAmount;
             settings.dollarAmount = Math.round(settings.dollarAmount * boof7Result.positionSizePct);
             console.log(`[Boof7.0] Position size: ${(boof7Result.positionSizePct*100).toFixed(0)}% → $${originalAmount} → $${settings.dollarAmount}`);
+            await supabase.from('stock_bots').update({ last_position_size_pct: boof7Result.positionSizePct }).eq('id', bot.id as string);
           }
         } else {
           signalResult = generateSignal(candles, overrideSettings);

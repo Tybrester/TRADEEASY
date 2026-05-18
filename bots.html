@@ -2844,7 +2844,16 @@
               </div>
               <div class="auto-settings-row">
                 <span>$ Amount per Trade</span>
-                <input class="auto-input" id="amt-${s.id}" type="number" value="${dollarAmt}" min="1" />
+                <div style="display:flex;align-items:center;gap:6px;">
+                  ${(()=>{
+                    const pct = s.last_position_size_pct;
+                    if (!pct || pct === null) return '';
+                    if (pct > 1.0) return `<span title="Boof 7.0 scaling up (${Math.round(pct*100)}%)" style="font-size:1rem;color:#00e676;line-height:1;">&#x2191;</span>`;
+                    if (pct < 1.0) return `<span title="Boof 7.0 scaling down (${Math.round(pct*100)}%)" style="font-size:1rem;color:#ff5252;line-height:1;">&#x2193;</span>`;
+                    return `<span title="Boof 7.0 at full size (100%)" style="font-size:0.85rem;color:#555;line-height:1;">&minus;</span>`;
+                  })()}
+                  <input class="auto-input" id="amt-${s.id}" type="number" value="${dollarAmt}" min="1" />
+                </div>
               </div>
               <div class="auto-settings-row">
                 <span>Trading Style</span>
