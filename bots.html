@@ -1280,6 +1280,10 @@
                   <span>Per-Symbol TP/SL Overrides</span>
                   <button onclick="addSymbolRule('opt-${b.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">+ Add Symbol</button>
                 </div>
+                <div style="display:flex;gap:5px;margin-bottom:6px;">
+                  <input id="csv-rules-opt-${b.id}" placeholder="SPY:50:-25, QQQ:60:-28, NVDA:80:-35" style="flex:1;font-size:0.72rem;padding:4px 7px;background:#0d0d0d;border:1px solid #2a2a2a;border-radius:4px;color:#ccc;font-family:inherit;" />
+                  <button onclick="bulkAddSymbolRules('opt-${b.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;white-space:nowrap;">Import CSV</button>
+                </div>
                 <div id="symbol-rules-opt-${b.id}" style="display:flex;flex-direction:column;gap:5px;">
                   ${(()=>{
                     const rules = b.symbol_rules || [];
@@ -2969,6 +2973,10 @@
                   <span>Per-Symbol TP/SL Overrides</span>
                   <button onclick="addSymbolRule('${s.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">+ Add Symbol</button>
                 </div>
+                <div style="display:flex;gap:5px;margin-bottom:6px;">
+                  <input id="csv-rules-${s.id}" placeholder="SPY:50:-25, QQQ:60:-28, NVDA:80:-35" style="flex:1;font-size:0.72rem;padding:4px 7px;background:#0d0d0d;border:1px solid #2a2a2a;border-radius:4px;color:#ccc;font-family:inherit;" />
+                  <button onclick="bulkAddSymbolRules('${s.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;white-space:nowrap;">Import CSV</button>
+                </div>
                 <div id="symbol-rules-${s.id}" style="display:flex;flex-direction:column;gap:5px;">
                   ${(()=>{
                     const rules = s.symbol_rules || [];
@@ -3123,6 +3131,52 @@
       if (container && !container.querySelectorAll('[id^="symbol-rule-row-"]').length) {
         container.innerHTML = '<div style="font-size:0.72rem;color:#444;padding:4px 0;">No overrides — all symbols use default TP/SL above</div>';
       }
+    }
+
+    function bulkAddSymbolRules(systemId) {
+      const csvInput = document.getElementById('csv-rules-' + systemId);
+      if (!csvInput) return;
+      const raw = csvInput.value.trim();
+      if (!raw) return;
+      const container = document.getElementById('symbol-rules-' + systemId);
+      if (!container) return;
+      // Remove placeholder
+      const placeholder = container.querySelector('div:not([id])');
+      if (placeholder) placeholder.remove();
+      // Parse: SPY:50:-25 or SPY:50:-25:long  — comma or newline separated
+      const entries = raw.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
+      let added = 0;
+      for (const entry of entries) {
+        const parts = entry.split(':');
+        if (parts.length < 3) continue;
+        const sym = parts[0].trim().toUpperCase();
+        const tp  = parseFloat(parts[1]);
+        const sl  = parseFloat(parts[2]);
+        const dir = parts[3]?.trim().toLowerCase() || 'both';
+        if (!sym || isNaN(tp) || isNaN(sl)) continue;
+        const idx = container.querySelectorAll('[id^="symbol-rule-row-"]').length;
+        const row = document.createElement('div');
+        row.id = `symbol-rule-row-${systemId}-${idx}`;
+        row.style.cssText = 'display:flex;gap:6px;align-items:center;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:5px;padding:5px 8px;';
+        row.innerHTML = `
+          <input class="auto-input" value="${sym}" placeholder="SPY" style="width:62px;font-size:0.78rem;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
+          <span style="color:#555;font-size:0.72rem;">TP</span>
+          <input class="auto-input" type="number" value="${tp}" min="1" max="500" step="1" style="width:52px;font-size:0.78rem;" data-rule-tp/>
+          <span style="color:#555;font-size:0.72rem;">%&nbsp;&nbsp;SL</span>
+          <input class="auto-input" type="number" value="${sl}" min="-100" max="0" step="1" style="width:52px;font-size:0.78rem;" data-rule-sl/>
+          <span style="color:#555;font-size:0.72rem;">%</span>
+          <select class="auto-input" style="width:66px;font-size:0.72rem;" data-rule-dir>
+            <option value="both" ${dir==='both'?'selected':''}>Both</option>
+            <option value="long" ${dir==='long'?'selected':''}>Long</option>
+            <option value="short" ${dir==='short'?'selected':''}>Short</option>
+          </select>
+          <button onclick="this.closest('[id^=symbol-rule-row]').remove()" style="margin-left:auto;padding:1px 6px;background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.2);color:#ff5252;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">✕</button>
+        `;
+        container.appendChild(row);
+        added++;
+      }
+      csvInput.value = '';
+      if (!added) alert('No valid entries found. Format: SYMBOL:TP:SL  e.g. SPY:50:-25, NVDA:80:-35');
     }
 
     function applyTradingStyle(systemId, style) {
