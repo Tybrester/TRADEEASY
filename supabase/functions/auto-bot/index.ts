@@ -1935,6 +1935,12 @@ Deno.serve(async (req) => {
           if (boof7Result.killSwitch) {
             console.log(`[Boof7.0] Kill-switch for bot ${bot.id}: ${boof7Result.killReason}`);
           }
+          // Apply adaptive position sizing to dollar amount
+          if (boof7Result.positionSizePct && boof7Result.positionSizePct > 0) {
+            const originalAmount = settings.dollarAmount;
+            settings.dollarAmount = Math.round(settings.dollarAmount * boof7Result.positionSizePct);
+            console.log(`[Boof7.0] Position size: ${(boof7Result.positionSizePct*100).toFixed(0)}% → $${originalAmount} → $${settings.dollarAmount}`);
+          }
         } else {
           signalResult = generateSignal(candles, overrideSettings);
         }
@@ -2170,6 +2176,7 @@ Deno.serve(async (req) => {
 
         let orderId: string | undefined;
         let quantity = Math.max(1, Math.round(settings.dollarAmount / price));
+        console.log(`[AutoBot] Trade size: $${settings.dollarAmount} → ${quantity} shares @ $${price.toFixed(2)}`);
         let tradeStatus = 'filled';
         let brokerError: string | undefined;
 
