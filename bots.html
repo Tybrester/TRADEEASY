@@ -1182,13 +1182,6 @@
               </div>
               <div id="osym-row-${b.id}" style="${b.bot_scan_mode&&b.bot_scan_mode!=='single'?'display:none':''}"><div class="auto-settings-row"><span>Symbol</span><input class="auto-input" id="osym-${b.id}" value="${b.bot_symbol||'SPY'}" placeholder="SPY, QQQ, NVDA" style="width:180px;" title="Single symbol or comma-separated list e.g. SPY, QQQ, NVDA"/></div></div>
               <div class="auto-settings-row"><span>$ Per Trade</span><input class="auto-input" id="odol-${b.id}" type="number" value="${b.bot_dollar_amount||500}" min="100"/></div>
-              <div class="auto-settings-row"><span>Option Type</span>
-                <select class="auto-input" id="otype-${b.id}" title="Trade CALLS only, PUTS only, or BOTH based on signal">
-                  <option value="both" ${(!b.bot_option_type||b.bot_option_type==='both')?'selected':''}>Both (Follow Signal)</option>
-                  <option value="call" ${b.bot_option_type==='call'?'selected':''}>CALLS Only</option>
-                  <option value="put" ${b.bot_option_type==='put'?'selected':''}>PUTS Only</option>
-                </select>
-              </div>
               <div class="auto-settings-row"><span>Trading Style</span>
                 <select class="auto-input wide" id="ostyle-${b.id}" onchange="updateOptionsBotStyle('${b.id}')">
                   <option value="hyper" ${b.trading_style==='hyper'?'selected':''}>Hyper Scalper (1m)</option>
@@ -1420,12 +1413,11 @@
       }
       const broker = document.getElementById('obrk-' + botId)?.value || 'paper';
       const botSignal = document.getElementById('osig-' + botId)?.value || 'supertrend';
-      const optionType = document.getElementById('otype-' + botId)?.value || 'both';
       const tradingStyle = document.getElementById('ostyle-' + botId)?.value || 'scalper';
       const trendFilter = document.getElementById('otrend-' + botId)?.value || 'none';
-      console.log(`[SaveOptions] Bot ${botId}: sym=${sym}, $=${dol}, optionType=${optionType}, int=${int}, runInt=${runInt}min, dir=${dir}, signal=${botSignal}, scan=${scanMode}, style=${tradingStyle}, trend=${trendFilter}`);
+      console.log(`[SaveOptions] Bot ${botId}: sym=${sym}, $=${dol}, int=${int}, runInt=${runInt}min, dir=${dir}, signal=${botSignal}, scan=${scanMode}, style=${tradingStyle}, trend=${trendFilter}`);
       const otmStrikes = parseInt(document.getElementById(`ootm-${botId}`)?.value ?? '0');
-      const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_option_type: optionType, bot_interval: int, run_interval_min: runInt, market_open_delay_min: startDelay, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, symbol_rules: optSymbolRules, max_loss_dollar: null, max_profit_dollar: null, broker, bot_signal: botSignal, bot_otm_strikes: otmStrikes, trading_style: tradingStyle, trend_filter: trendFilter, updated_at: new Date().toISOString() }).eq('id', botId);
+      const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_interval: int, run_interval_min: runInt, market_open_delay_min: startDelay, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, symbol_rules: optSymbolRules, max_loss_dollar: null, max_profit_dollar: null, broker, bot_signal: botSignal, bot_otm_strikes: otmStrikes, trading_style: tradingStyle, trend_filter: trendFilter, updated_at: new Date().toISOString() }).eq('id', botId);
       const r = document.getElementById('opt-run-result-' + botId);
       if (error) {
         console.error('[SaveOptions] Error:', error);
