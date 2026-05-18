@@ -1047,6 +1047,354 @@ function generateSignalBoof60(candles: any[], candles1h: any[], candles15m: any[
 }
 
 // ─────────────────────────────────────────────
+// BOOF 7.0 — THE ADAPTIVE SCALPER
+// "Only trade when the market is in the right mood"
+//
+// Features:
+//   1. Regime detection (Trend/Range/HighVol/LowVol/Explosive)
+//   2. Dynamic TP/SL from ATR × regime multiplier
+//   3. Volatility-adjusted + drawdown-aware position sizing
+//   4. Trade filters (volume, liquidity windows, kill-switch)
+//   5. Strategy switching per regime
+//   6. No-trade zones (dead market hours)
+// ─────────────────────────────────────────────
+
+interface Boof70Regime {
+  type: 'TREND_UP' | 'TREND_DOWN' | 'RANGE' | 'HIGH_VOL' | 'LOW_VOL' | 'EXPLOSIVE';
+  adx: number;
+  atr: number;
+  atrPercent: number;
+  bbWidth: number;
+  maSlope: number;
+  volatilityPercentile: number;
+  shouldTrade: boolean;
+  noTradeReason?: string;
+}
+
+interface Boof70Result extends SignalResult {
+  regime: string;
+  dynamicTP: number;
+  dynamicSL: number;
+  positionSizePct: number;
+  killSwitch: boolean;
+  killReason?: string;
+  regimeDetails: Boof70Regime;
+}
+
+// ── Regime Detector ──────────────────────────────────────────────────────────
+function detectRegime70(
+  highs: number[], lows: number[], closes: number[], volumes: number[]
+): Boof70Regime {
+  const n = closes.length;
+
+  // ATR (14)
+  const atrVals: number[] = [];
+  for (let i = 1; i < n; i++) {
+    atrVals.push(Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i-1]),
+      Math.abs(lows[i] - closes[i-1])
+    ));
+  }
+  const atr = b50Mean(atrVals.slice(-14));
+  const atrPercent = atr / closes[n-1] * 100;
+
+  // ADX (14)
+  const adx = b50ADX(highs, lows, closes, 14);
+
+  // Bollinger Band width (20)
+  const sma20 = b50SMA(closes, 20);
+  const std20 = b50StdDev(closes, 20);
+  const bbUpper = sma20[sma20.length-1] + 2 * std20;
+  const bbLower = sma20[sma20.length-1] - 2 * std20;
+  const bbWidth = sma20[sma20.length-1] > 0
+    ? (bbUpper - bbLower) / sma20[sma20.length-1]
+    : 0;
+
+  // MA slope (20-period SMA slope, normalized)
+  const maRecent = sma20[sma20.length-1];
+  const maOld    = sma20[Math.max(0, sma20.length-6)];
+  const maSlope  = maOld > 0 ? (maRecent - maOld) / maOld * 100 : 0;
+
+  // Volatility percentile: current ATR vs 50-period rolling ATR
+  const atrHistory: number[] = [];
+  for (let i = Math.max(1, n-50); i < n; i++) {
+    atrHistory.push(Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i-1]),
+      Math.abs(lows[i] - closes[i-1])
+    ));
+  }
+  const atrMed = b50Mean(atrHistory);
+  const volPercentile = atrMed > 0 ? Math.min(1, atr / (atrMed * 2)) : 0.5;
+
+  // Volume check: current vs 20-period avg
+  const avgVol = b50Mean(volumes.slice(-20));
+  const curVol = volumes[n-1] || 0;
+  const relVol = avgVol > 0 ? curVol / avgVol : 1;
+
+  // ── Classify Regime ────────────────────────────────────────────────────────
+  let type: Boof70Regime['type'];
+  let shouldTrade = true;
+  let noTradeReason: string | undefined;
+
+  const isExplosive = bbWidth > 0.08 && adx > 35 && volPercentile > 0.85;
+  const isHighVol   = volPercentile > 0.75 || atrPercent > 3.5;
+  const isLowVol    = volPercentile < 0.20 && bbWidth < 0.02;
+  const isTrending  = adx > 22 && Math.abs(maSlope) > 0.15;
+  const isRange     = adx < 18 && bbWidth < 0.04;
+
+  if (isExplosive) {
+    type = 'EXPLOSIVE';
+    // Explosive: trade with reduced size, wide stops
+  } else if (isHighVol && !isTrending) {
+    type = 'HIGH_VOL';
+    // High vol + no trend = choppy spikes — skip
+    shouldTrade = false;
+    noTradeReason = `HIGH_VOL chop: ATR=${atrPercent.toFixed(2)}% ADX=${adx.toFixed(1)}`;
+  } else if (isLowVol) {
+    type = 'LOW_VOL';
+    // Dead market — not worth scalping
+    shouldTrade = false;
+    noTradeReason = `LOW_VOL dead zone: bbWidth=${bbWidth.toFixed(4)} volPct=${volPercentile.toFixed(2)}`;
+  } else if (isTrending) {
+    type = maSlope > 0 ? 'TREND_UP' : 'TREND_DOWN';
+  } else if (isRange) {
+    type = 'RANGE';
+  } else {
+    type = maSlope > 0 ? 'TREND_UP' : 'TREND_DOWN';
+  }
+
+  // Volume filter — skip if volume too thin (except crypto 24/7)
+  if (relVol < 0.4 && avgVol > 0) {
+    shouldTrade = false;
+    noTradeReason = `Low volume: ${curVol.toFixed(0)} = ${(relVol*100).toFixed(0)}% of avg`;
+  }
+
+  return { type, adx, atr, atrPercent, bbWidth, maSlope, volatilityPercentile: volPercentile, shouldTrade, noTradeReason };
+}
+
+// ── Dynamic TP/SL from ATR × Regime Multiplier ───────────────────────────────
+function calcDynamicTPSL(regime: Boof70Regime, entryPrice: number): { tp: number; sl: number; tpPct: number; slPct: number } {
+  // Base ATR multipliers per regime
+  const multipliers: Record<string, { tp: number; sl: number }> = {
+    TREND_UP:   { tp: 3.0, sl: 1.2 },  // Ride the trend, tight SL
+    TREND_DOWN: { tp: 3.0, sl: 1.2 },
+    RANGE:      { tp: 1.5, sl: 1.0 },  // Mean reversion = smaller targets
+    HIGH_VOL:   { tp: 4.0, sl: 2.0 },  // Wide stops, big targets
+    LOW_VOL:    { tp: 1.0, sl: 0.8 },  // Tiny moves
+    EXPLOSIVE:  { tp: 5.0, sl: 2.5 },  // Let explosive moves run
+  };
+
+  const m = multipliers[regime.type] || multipliers['TREND_UP'];
+  const atr = regime.atr;
+
+  const tpPrice = entryPrice + atr * m.tp;
+  const slPrice = entryPrice - atr * m.sl;
+  const tpPct   = ((tpPrice - entryPrice) / entryPrice) * 100;
+  const slPct   = ((slPrice - entryPrice) / entryPrice) * 100;
+
+  // Enforce minimum/maximum guardrails
+  const tpFinal = Math.max(1.5, Math.min(30, tpPct));
+  const slFinal = Math.max(-20, Math.min(-0.8, slPct));
+
+  return {
+    tp: entryPrice * (1 + tpFinal / 100),
+    sl: entryPrice * (1 + slFinal / 100),
+    tpPct: tpFinal,
+    slPct: slFinal,
+  };
+}
+
+// ── Position Sizing: Volatility + Drawdown Aware ─────────────────────────────
+function calcPositionSize70(
+  regime: Boof70Regime,
+  recentWinRate: number,   // 0-1, last 20 trades
+  consecutiveLosses: number
+): number {
+  // Base size by regime
+  const baseSizes: Record<string, number> = {
+    TREND_UP:   1.0,
+    TREND_DOWN: 1.0,
+    RANGE:      0.75,  // Smaller in ranging — more uncertain
+    HIGH_VOL:   0.5,   // Half size in high vol
+    LOW_VOL:    0.5,
+    EXPLOSIVE:  0.6,   // Reduced — explosive moves reverse hard
+  };
+  let size = baseSizes[regime.type] || 1.0;
+
+  // Win rate adjustment
+  if (recentWinRate >= 0.60) size *= 1.25;       // Hot streak → slightly more
+  else if (recentWinRate < 0.40) size *= 0.60;   // Cold streak → back off
+  else if (recentWinRate < 0.30) size *= 0.40;   // Really cold → very small
+
+  // Consecutive loss kill-switch levels
+  if (consecutiveLosses >= 5) size *= 0.25;      // 5 losses → quarter size
+  else if (consecutiveLosses >= 3) size *= 0.50; // 3 losses → half size
+
+  // Volatility percentile adjustment
+  if (regime.volatilityPercentile > 0.80) size *= 0.70;
+  else if (regime.volatilityPercentile < 0.25) size *= 0.85;
+
+  return Math.max(0.10, Math.min(1.50, size));
+}
+
+// ── Time-Based No-Trade Zone (UTC) ────────────────────────────────────────────
+function isNoTradeZone(isCrypto: boolean): { skip: boolean; reason: string } {
+  const utcHour = new Date().getUTCHours();
+  if (isCrypto) {
+    // Crypto: skip 3-5 AM UTC (dead zone, Sunday night US = thin liquidity)
+    if (utcHour >= 3 && utcHour < 5) {
+      return { skip: true, reason: 'Crypto dead zone: 03-05 UTC thin liquidity' };
+    }
+    return { skip: false, reason: '' };
+  }
+  // Stocks: only trade 13:30-20:00 UTC (NYSE hours)
+  if (utcHour < 13 || utcHour >= 20) {
+    return { skip: true, reason: `Outside NYSE hours (UTC ${utcHour}:00)` };
+  }
+  return { skip: false, reason: '' };
+}
+
+// ── Strategy per Regime ───────────────────────────────────────────────────────
+function runRegimeStrategy(
+  regime: Boof70Regime,
+  candles: any[],
+  tradeDirection: string
+): { signal: 'buy' | 'sell' | 'none'; reason: string } {
+  const closes  = candles.map((c: any) => c.close);
+  const highs   = candles.map((c: any) => c.high);
+  const lows    = candles.map((c: any) => c.low);
+  const volumes = candles.map((c: any) => c.volume || 1);
+  const n = closes.length;
+  const i = n - 2;
+
+  if (regime.type === 'TREND_UP' || regime.type === 'TREND_DOWN' || regime.type === 'EXPLOSIVE') {
+    // ── BREAKOUT / MOMENTUM STRATEGY ──
+    // Enter on EMA crossover + MACD confirmation in trend direction
+    const ema9  = calcEMA(closes, 9);
+    const ema21 = calcEMA(closes, 21);
+    const { hist } = calcMACD(closes, 12, 26, 9);
+    const histLast = hist[hist.length-1] ?? 0;
+    const histPrev = hist[hist.length-2] ?? 0;
+
+    const emaUp   = ema9[ema9.length-1] > ema21[ema21.length-1];
+    const emaCrossedUp   = ema9[ema9.length-2] <= ema21[ema21.length-2] && emaUp;
+    const emaCrossedDown = ema9[ema9.length-2] >= ema21[ema21.length-2] && !emaUp;
+    const macdBull = histLast > 0 && histLast > histPrev;
+    const macdBear = histLast < 0 && histLast < histPrev;
+
+    // Also allow continuation entries (not just crossover)
+    const contBull = emaUp && macdBull && closes[i] > closes[i-1];
+    const contBear = !emaUp && macdBear && closes[i] < closes[i-1];
+
+    let signal: 'buy' | 'sell' | 'none' = 'none';
+    if ((emaCrossedUp || contBull) && regime.type !== 'TREND_DOWN') signal = 'buy';
+    else if ((emaCrossedDown || contBear) && regime.type !== 'TREND_UP') signal = 'sell';
+
+    if (tradeDirection === 'long'  && signal === 'sell') signal = 'none';
+    if (tradeDirection === 'short' && signal === 'buy')  signal = 'none';
+
+    return { signal, reason: `Boof7.0 BREAKOUT [${regime.type}] ema9>${ema9[ema9.length-1].toFixed(2)} macd=${histLast.toFixed(4)}` };
+
+  } else if (regime.type === 'RANGE') {
+    // ── MEAN REVERSION STRATEGY ──
+    // Buy oversold at lower BB, sell overbought at upper BB
+    const sma20 = b50SMA(closes, 20);
+    const std20 = b50StdDev(closes, 20);
+    const bbUpper = sma20[sma20.length-1] + 2 * std20;
+    const bbLower = sma20[sma20.length-1] - 2 * std20;
+    const rsi = calcRSI(closes, 14);
+    const curRSI = rsi[rsi.length-2] ?? 50;
+
+    let signal: 'buy' | 'sell' | 'none' = 'none';
+    // Price touching lower band + RSI oversold → buy bounce
+    if (closes[i] <= bbLower * 1.005 && curRSI < 38) signal = 'buy';
+    // Price touching upper band + RSI overbought → sell fade
+    else if (closes[i] >= bbUpper * 0.995 && curRSI > 62) signal = 'sell';
+
+    if (tradeDirection === 'long'  && signal === 'sell') signal = 'none';
+    if (tradeDirection === 'short' && signal === 'buy')  signal = 'none';
+
+    return { signal, reason: `Boof7.0 MEAN_REV [RANGE] rsi=${curRSI.toFixed(1)} bb=[${bbLower.toFixed(2)}-${bbUpper.toFixed(2)}]` };
+
+  } else {
+    return { signal: 'none', reason: `Boof7.0 NO_STRATEGY for regime=${regime.type}` };
+  }
+}
+
+// ── MAIN BOOF 7.0 ENTRY POINT ─────────────────────────────────────────────────
+function generateSignalBoof70(
+  candles: any[],
+  tradeDirection = 'both',
+  recentWinRate = 0.50,
+  consecutiveLosses = 0,
+  isCrypto = false
+): Boof70Result {
+  const closes  = candles.map((c: any) => c.close);
+  const highs   = candles.map((c: any) => c.high);
+  const lows    = candles.map((c: any) => c.low);
+  const volumes = candles.map((c: any) => c.volume || 1000000);
+  const n = closes.length;
+  const curPrice = closes[n-2] ?? closes[n-1];
+
+  const noResult = (reason: string, kill = false, killReason?: string): Boof70Result => ({
+    signal: 'none', price: curPrice, trend: 0, ema: curPrice, adx: 0,
+    reason, regime: 'NONE', dynamicTP: 0, dynamicSL: 0, positionSizePct: 0,
+    killSwitch: kill, killReason,
+    regimeDetails: { type: 'RANGE', adx: 0, atr: 0, atrPercent: 0, bbWidth: 0, maSlope: 0, volatilityPercentile: 0.5, shouldTrade: false }
+  });
+
+  if (n < 50) return noResult('Boof 7.0: insufficient data (need 50 bars)');
+
+  // ── 1. KILL-SWITCH CHECK ──────────────────────────────────────────────────
+  if (consecutiveLosses >= 7) {
+    return noResult(`Kill-switch: ${consecutiveLosses} consecutive losses — paused`, true, `${consecutiveLosses} consecutive losses`);
+  }
+
+  // ── 2. TIME-BASED NO-TRADE ZONE ───────────────────────────────────────────
+  const timeCheck = isNoTradeZone(isCrypto);
+  if (timeCheck.skip) return noResult(`Boof 7.0: ${timeCheck.reason}`);
+
+  // ── 3. REGIME DETECTION ───────────────────────────────────────────────────
+  const regime = detectRegime70(highs, lows, closes, volumes);
+
+  if (!regime.shouldTrade) {
+    return noResult(`Boof 7.0: skipping — ${regime.noTradeReason}`, false, undefined);
+  }
+
+  // ── 4. DYNAMIC TP/SL ─────────────────────────────────────────────────────
+  const { tpPct, slPct } = calcDynamicTPSL(regime, curPrice);
+
+  // ── 5. POSITION SIZING ────────────────────────────────────────────────────
+  const positionSizePct = calcPositionSize70(regime, recentWinRate, consecutiveLosses);
+
+  // ── 6. REGIME-BASED STRATEGY ─────────────────────────────────────────────
+  const { signal, reason } = runRegimeStrategy(regime, candles, tradeDirection);
+
+  // ── 7. EMA for display ────────────────────────────────────────────────────
+  const ema21 = calcEMA(closes, 21);
+  const ema21Val = ema21[ema21.length-1] ?? curPrice;
+
+  const fullReason = `${reason} | regime=${regime.type} adx=${regime.adx.toFixed(1)} atr=${regime.atrPercent.toFixed(2)}% tp=+${tpPct.toFixed(1)}% sl=${slPct.toFixed(1)}% size=${(positionSizePct*100).toFixed(0)}%`;
+
+  return {
+    signal,
+    price:  curPrice,
+    trend:  regime.maSlope > 0 ? 1 : -1,
+    ema:    ema21Val,
+    adx:    regime.adx,
+    reason: fullReason,
+    regime: regime.type,
+    dynamicTP: tpPct,
+    dynamicSL: slPct,
+    positionSizePct,
+    killSwitch: false,
+    regimeDetails: regime,
+  };
+}
+
+// ─────────────────────────────────────────────
 // FETCH CANDLES (Yahoo Finance - Live)
 // ─────────────────────────────────────────────
 
@@ -1555,13 +1903,38 @@ Deno.serve(async (req) => {
         } else if (botSignal === 'boof50') {
           signalResult = generateSignalBoof50(candles, tradeDirection);
         } else if (botSignal === 'boof60') {
-          const interval1 = settings.interval || '5m';
           const [c1h, c15m, c1m] = await Promise.all([
             fetchCandles(sym, '1h',  50, bot.user_id as string),
             fetchCandles(sym, '15m', 50, bot.user_id as string),
             fetchCandles(sym, '1m',  60, bot.user_id as string),
           ]);
           signalResult = generateSignalBoof60(candles, c1h, c15m, c1m, tradeDirection);
+        } else if (botSignal === 'boof70') {
+          // Fetch last 20 closed trades for this bot to compute win rate + consecutive losses
+          const { data: recentTrades } = await supabase
+            .from('trades')
+            .select('pnl')
+            .eq('bot_id', bot.id)
+            .eq('status', 'closed')
+            .not('pnl', 'is', null)
+            .order('closed_at', { ascending: false })
+            .limit(20);
+          const pnls = (recentTrades || []).map((t: any) => Number(t.pnl));
+          const wins = pnls.filter((p: number) => p > 0).length;
+          const recentWinRate = pnls.length > 0 ? wins / pnls.length : 0.5;
+          // Count consecutive losses from most recent
+          let consecutiveLosses = 0;
+          for (const p of pnls) {
+            if (p <= 0) consecutiveLosses++;
+            else break;
+          }
+          const isCryptoSym = sym.includes('-USD') || sym.includes('/USD');
+          const boof7Result = generateSignalBoof70(candles, tradeDirection, recentWinRate, consecutiveLosses, isCryptoSym);
+          signalResult = boof7Result;
+          // If kill-switch triggered, log it
+          if (boof7Result.killSwitch) {
+            console.log(`[Boof7.0] Kill-switch for bot ${bot.id}: ${boof7Result.killReason}`);
+          }
         } else {
           signalResult = generateSignal(candles, overrideSettings);
         }
