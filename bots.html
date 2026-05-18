@@ -2918,8 +2918,38 @@
                 </select>
                 <span style="font-size:0.7rem;color:#555;">Convert to market if not filled</span>
               </div>
-              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="tp-${s.id}" type="number" value="${s.take_profit_pct||50}" min="0.5" max="100" step="0.5" style="width:80px;" title="Close trade when profit hits this %"/></div>
-              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="sl-${s.id}" type="number" value="${s.stop_loss_pct||-20}" min="-50" max="0" step="0.5" style="width:80px;" title="Close trade when P&L drops to this % (e.g. -20)"/></div>
+              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="tp-${s.id}" type="number" value="${s.take_profit_pct||50}" min="0.5" max="500" step="0.5" style="width:80px;" title="Default TP% for all symbols (overridden per-symbol below)"/></div>
+              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="sl-${s.id}" type="number" value="${s.stop_loss_pct||-20}" min="-100" max="0" step="0.5" style="width:80px;" title="Default SL% for all symbols (overridden per-symbol below)"/></div>
+
+              <!-- Per-Symbol Rules -->
+              <div style="margin-top:10px;border-top:1px solid #1a1a1a;padding-top:10px;">
+                <div style="font-size:0.75rem;font-weight:600;color:#888;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+                  <span>Per-Symbol TP/SL Overrides</span>
+                  <button onclick="addSymbolRule('${s.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">+ Add Symbol</button>
+                </div>
+                <div id="symbol-rules-${s.id}" style="display:flex;flex-direction:column;gap:5px;">
+                  ${(()=>{
+                    const rules = s.symbol_rules || [];
+                    if (!rules.length) return '<div style="font-size:0.72rem;color:#444;padding:4px 0;">No overrides — all symbols use default TP/SL above</div>';
+                    return rules.map((r,i) => `
+                      <div id="symbol-rule-row-${s.id}-${i}" style="display:flex;gap:6px;align-items:center;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:5px;padding:5px 8px;">
+                        <input class="auto-input" value="${r.symbol}" placeholder="SPY" style="width:62px;font-size:0.78rem;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
+                        <span style="color:#555;font-size:0.72rem;">TP</span>
+                        <input class="auto-input" type="number" value="${r.tp}" min="1" max="500" step="1" style="width:52px;font-size:0.78rem;" data-rule-tp/>
+                        <span style="color:#555;font-size:0.72rem;">%&nbsp;&nbsp;SL</span>
+                        <input class="auto-input" type="number" value="${r.sl}" min="-100" max="0" step="1" style="width:52px;font-size:0.78rem;" data-rule-sl/>
+                        <span style="color:#555;font-size:0.72rem;">%</span>
+                        <select class="auto-input" style="width:66px;font-size:0.72rem;" data-rule-dir>
+                          <option value="both" ${r.dir==='both'?'selected':''}>Both</option>
+                          <option value="long" ${r.dir==='long'?'selected':''}>Long</option>
+                          <option value="short" ${r.dir==='short'?'selected':''}>Short</option>
+                        </select>
+                        <button onclick="removeSymbolRule('${s.id}',${i})" style="margin-left:auto;padding:1px 6px;background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.2);color:#ff5252;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">✕</button>
+                      </div>`).join('');
+                  })()}
+                </div>
+              </div>
+
               <button onclick="saveAutoSettings('${s.id}')" style="margin-top:10px;width:100%;padding:8px;background:rgba(0,230,118,0.07);border:1px solid rgba(0,230,118,0.25);color:#b2f5d4;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;font-size:0.85rem;transition:all 0.15s;" onmouseover="this.style.background='rgba(0,230,118,0.14)'" onmouseout="this.style.background='rgba(0,230,118,0.07)'">Save Settings</button>
               <div class="run-result" id="run-result-${s.id}"></div>
             </div>
@@ -2972,6 +3002,19 @@
       const limitTimeMin = parseInt(document.getElementById('limit-time-' + systemId)?.value) || 2;
       const takeProfitPct = parseFloat(document.getElementById('tp-' + systemId)?.value) || 50;
       const stopLossPct = parseFloat(document.getElementById('sl-' + systemId)?.value) || -20;
+      // Collect per-symbol rules
+      const rulesContainer = document.getElementById('symbol-rules-' + systemId);
+      const symbolRules = [];
+      if (rulesContainer) {
+        const rows = rulesContainer.querySelectorAll('[id^="symbol-rule-row-"]');
+        rows.forEach(row => {
+          const sym = row.querySelector('[data-rule-sym]')?.value?.trim().toUpperCase();
+          const tp  = parseFloat(row.querySelector('[data-rule-tp]')?.value);
+          const sl  = parseFloat(row.querySelector('[data-rule-sl]')?.value);
+          const dir = row.querySelector('[data-rule-dir]')?.value || 'both';
+          if (sym && !isNaN(tp) && !isNaN(sl)) symbolRules.push({ symbol: sym, tp, sl, dir });
+        });
+      }
       console.log(`[SaveAuto] System ${systemId}: sym=${symbol}, int=${interval}, runInt=${runIntervalMin}min, dir=${botTradeDir}, signal=${botSignal}, stocks=${scanStocks}, crypto=${scanCrypto}, futures=${scanFutures}, $=${dollarAmount}, limit=${useLimitOrders}, offset=${limitOffsetPct}, tp=${takeProfitPct}%, sl=${stopLossPct}%`);
       const { error } = await sbClient.from('stock_bots').update({
         bot_symbol: symbol,
@@ -2993,16 +3036,52 @@
         limit_time_min: limitTimeMin,
         take_profit_pct: takeProfitPct,
         stop_loss_pct: stopLossPct,
+        symbol_rules: symbolRules,
         updated_at: new Date().toISOString()
       }).eq('id', systemId);
       if (error) console.error('[SaveAuto] Error:', error);
       else console.log('[SaveAuto] Success');
-      // Update header broker tag
       refreshBrokerTag(systemId, broker);
       const resultEl = document.getElementById('run-result-' + systemId);
       if (resultEl) { resultEl.textContent = '✓ Settings saved ' + new Date().toLocaleTimeString(); resultEl.className = 'run-result green'; setTimeout(() => { resultEl.textContent = ''; resultEl.className = 'run-result'; }, 3000); }
     }
 
+
+    function addSymbolRule(systemId) {
+      const container = document.getElementById('symbol-rules-' + systemId);
+      if (!container) return;
+      // Remove "no overrides" placeholder if present
+      const placeholder = container.querySelector('div:not([id])');
+      if (placeholder) placeholder.remove();
+      const idx = container.querySelectorAll('[id^="symbol-rule-row-"]').length;
+      const row = document.createElement('div');
+      row.id = `symbol-rule-row-${systemId}-${idx}`;
+      row.style.cssText = 'display:flex;gap:6px;align-items:center;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:5px;padding:5px 8px;';
+      row.innerHTML = `
+        <input class="auto-input" value="" placeholder="SPY" style="width:62px;font-size:0.78rem;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
+        <span style="color:#555;font-size:0.72rem;">TP</span>
+        <input class="auto-input" type="number" value="50" min="1" max="500" step="1" style="width:52px;font-size:0.78rem;" data-rule-tp/>
+        <span style="color:#555;font-size:0.72rem;">%&nbsp;&nbsp;SL</span>
+        <input class="auto-input" type="number" value="-25" min="-100" max="0" step="1" style="width:52px;font-size:0.78rem;" data-rule-sl/>
+        <span style="color:#555;font-size:0.72rem;">%</span>
+        <select class="auto-input" style="width:66px;font-size:0.72rem;" data-rule-dir>
+          <option value="both">Both</option>
+          <option value="long">Long</option>
+          <option value="short">Short</option>
+        </select>
+        <button onclick="this.closest('[id^=symbol-rule-row]').remove()" style="margin-left:auto;padding:1px 6px;background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.2);color:#ff5252;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">✕</button>
+      `;
+      container.appendChild(row);
+    }
+
+    function removeSymbolRule(systemId, idx) {
+      const row = document.getElementById(`symbol-rule-row-${systemId}-${idx}`);
+      if (row) row.remove();
+      const container = document.getElementById('symbol-rules-' + systemId);
+      if (container && !container.querySelectorAll('[id^="symbol-rule-row-"]').length) {
+        container.innerHTML = '<div style="font-size:0.72rem;color:#444;padding:4px 0;">No overrides — all symbols use default TP/SL above</div>';
+      }
+    }
 
     function applyTradingStyle(systemId, style) {
       const candleSelect = document.getElementById('int-' + systemId);

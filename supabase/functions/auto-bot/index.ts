@@ -2050,9 +2050,12 @@ Deno.serve(async (req) => {
           const pnl = calcFuturesPnL(sym, entryPrice, price, qty, openTrade.action as 'buy' | 'sell');
           const pnlPct = entryPrice > 0 ? ((openTrade.action === 'buy' ? (price - entryPrice) : (entryPrice - price)) / entryPrice) * 100 : 0;
           
-          // Check Take Profit / Stop Loss thresholds
-          const tpPct = Number(bot.take_profit_pct) || 0;
-          const slPct = Number(bot.stop_loss_pct) || 0; // stored as negative, e.g. -20
+          // Check Take Profit / Stop Loss thresholds — per-symbol rule overrides default
+          const symbolRules: Array<{symbol:string;tp:number;sl:number;dir:string}> = (bot.symbol_rules as any) || [];
+          const symRule = symbolRules.find(r => r.symbol?.toUpperCase() === sym.toUpperCase());
+          const tpPct = symRule ? Number(symRule.tp) : (Number(bot.take_profit_pct) || 0);
+          const slPct = symRule ? Number(symRule.sl) : (Number(bot.stop_loss_pct) || 0); // stored as negative, e.g. -20
+          if (symRule) console.log(`[AutoBot] ${sym} using per-symbol rule: TP=${tpPct}% SL=${slPct}% dir=${symRule.dir}`);
           
           if (tpPct > 0 && pnlPct >= tpPct) {
             // Take profit hit
