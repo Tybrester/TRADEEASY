@@ -1325,6 +1325,7 @@ interface BotSettings {
   expiryType: string; otmStrikes: number;
   strikeMode: string; manualStrike: number | null;
   takeProfitPct: number; stopLossPct: number;
+  symbolRules: Array<{symbol:string;tp:number;sl:number;dir?:string}>;
   marketOpenDelayMin: number;
   botSignal: string;
 }
@@ -1650,7 +1651,7 @@ Deno.serve(async (req) => {
       
       // Get all open trades with their bot settings
       const { data: openTrades } = await supabase.from('options_trades')
-        .select('*, options_bots!inner(take_profit_pct, stop_loss_pct, bot_interval, broker, user_id, name, bot_expiry_type)')
+        .select('*, options_bots!inner(take_profit_pct, stop_loss_pct, symbol_rules, bot_interval, broker, user_id, name, bot_expiry_type)')
         .eq('status', 'open');
       
       if (!openTrades || openTrades.length === 0) {
@@ -1666,8 +1667,10 @@ Deno.serve(async (req) => {
       for (const open of openTrades) {
         try {
           const bot = (open as any).options_bots;
-          const takeProfitPct  = Number(bot?.take_profit_pct ?? 35);
-          const stopLossPct    = Number(bot?.stop_loss_pct ?? -25);
+          const symRulesDaemon: Array<{symbol:string;tp:number;sl:number}> = (bot?.symbol_rules as any) || [];
+          const symRuleDaemon = symRulesDaemon.find((r:any) => r.symbol?.toUpperCase() === (open as any).symbol?.toUpperCase());
+          const takeProfitPct  = symRuleDaemon ? Number(symRuleDaemon.tp) : Number(bot?.take_profit_pct ?? 35);
+          const stopLossPct    = symRuleDaemon ? Number(symRuleDaemon.sl) : Number(bot?.stop_loss_pct ?? -25);
           const interval = bot?.bot_interval ?? '1h';
           const userId = bot?.user_id;
           
@@ -1946,6 +1949,7 @@ Deno.serve(async (req) => {
         manualStrike:   bot.bot_manual_strike  ?? null,
         takeProfitPct:   bot.take_profit_pct    ?? 40,
         stopLossPct:     bot.stop_loss_pct      ?? 20,
+        symbolRules:     (bot.symbol_rules as any) || [],
         marketOpenDelayMin: bot.market_open_delay_min ?? 0,
         botSignal:      (bot.bot_signal as string) || 'supertrend',
       };
@@ -2059,8 +2063,11 @@ Deno.serve(async (req) => {
                 } catch (_) {}
               }
 
-              const slThreshold = settings.stopLossPct < 0 ? settings.stopLossPct : -Math.abs(settings.stopLossPct);
-              const shouldTP = pctChange >= settings.takeProfitPct;
+              const symRuleMain = settings.symbolRules?.find(r => r.symbol?.toUpperCase() === (open as any).symbol?.toUpperCase());
+              const effectiveTP = symRuleMain ? Number(symRuleMain.tp) : settings.takeProfitPct;
+              const effectiveSL = symRuleMain ? Number(symRuleMain.sl) : settings.stopLossPct;
+              const slThreshold = effectiveSL < 0 ? effectiveSL : -Math.abs(effectiveSL);
+              const shouldTP = pctChange >= effectiveTP;
               const shouldSL = pctChange <= slThreshold;
               console.log(`[OptionsBot] TP/SL ${open.symbol} ${open.option_type} $${open.strike}: current=$${optionPrice.toFixed(2)} entry=$${Number(open.premium_per_contract).toFixed(2)} pct=${pctChange.toFixed(1)}% tp=${settings.takeProfitPct}% sl=${slThreshold}% shouldTP=${shouldTP} shouldSL=${shouldSL} source=${source}`);
               

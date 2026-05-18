@@ -1271,8 +1271,38 @@
                 </select>
               </div>
 
-              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="otp-${b.id}" type="number" value="${b.take_profit_pct||50}" min="1" max="500" step="1" style="width:80px;" title="Close trade when profit hits this % of total spent"/></div>
-              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||-20}" min="-100" max="0" step="1" style="width:80px;" title="Close trade when loss hits this % of total spent (e.g. -20)"/></div>
+              <div class="auto-settings-row"><span>Take Profit %</span><input class="auto-input" id="otp-${b.id}" type="number" value="${b.take_profit_pct||50}" min="1" max="500" step="1" style="width:80px;" title="Default TP% — overridden per-symbol below"/></div>
+              <div class="auto-settings-row"><span>Stop Loss %</span><input class="auto-input" id="osl-${b.id}" type="number" value="${b.stop_loss_pct||-20}" min="-100" max="0" step="1" style="width:80px;" title="Default SL% — overridden per-symbol below"/></div>
+
+              <!-- Per-Symbol Rules -->
+              <div style="margin-top:10px;border-top:1px solid #1a1a1a;padding-top:10px;">
+                <div style="font-size:0.75rem;font-weight:600;color:#888;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+                  <span>Per-Symbol TP/SL Overrides</span>
+                  <button onclick="addSymbolRule('opt-${b.id}')" style="padding:2px 8px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);color:#00e676;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">+ Add Symbol</button>
+                </div>
+                <div id="symbol-rules-opt-${b.id}" style="display:flex;flex-direction:column;gap:5px;">
+                  ${(()=>{
+                    const rules = b.symbol_rules || [];
+                    if (!rules.length) return '<div style="font-size:0.72rem;color:#444;padding:4px 0;">No overrides — all symbols use default TP/SL above</div>';
+                    return rules.map((r,i) => `
+                      <div id="symbol-rule-row-opt-${b.id}-${i}" style="display:flex;gap:6px;align-items:center;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:5px;padding:5px 8px;">
+                        <input class="auto-input" value="${r.symbol}" placeholder="SPY" style="width:62px;font-size:0.78rem;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
+                        <span style="color:#555;font-size:0.72rem;">TP</span>
+                        <input class="auto-input" type="number" value="${r.tp}" min="1" max="500" step="1" style="width:52px;font-size:0.78rem;" data-rule-tp/>
+                        <span style="color:#555;font-size:0.72rem;">%&nbsp;&nbsp;SL</span>
+                        <input class="auto-input" type="number" value="${r.sl}" min="-100" max="0" step="1" style="width:52px;font-size:0.78rem;" data-rule-sl/>
+                        <span style="color:#555;font-size:0.72rem;">%</span>
+                        <select class="auto-input" style="width:66px;font-size:0.72rem;" data-rule-dir>
+                          <option value="both" ${r.dir==='both'?'selected':''}>Both</option>
+                          <option value="long" ${r.dir==='long'?'selected':''}>Long</option>
+                          <option value="short" ${r.dir==='short'?'selected':''}>Short</option>
+                        </select>
+                        <button onclick="removeSymbolRule('opt-${b.id}',${i})" style="margin-left:auto;padding:1px 6px;background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.2);color:#ff5252;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">✕</button>
+                      </div>`).join('');
+                  })()}
+                </div>
+              </div>
+
               <div class="auto-settings-row"><span>Broker</span>
                 <select class="auto-input" id="obrk-${b.id}" style="width:160px;" onchange="updateOptionsBrokerTag('${b.id}', this.value)">
                   <option value="paper" ${!b.broker||b.broker==='paper'?'selected':''}>Paper Trading</option>
@@ -1370,6 +1400,18 @@
       console.log(`[SaveOptions] Bot ${botId} - Scan dropdown value: "${scanModeEl?.value}", using: "${scanMode}"`);
       const tp = parseFloat(document.getElementById('otp-' + botId)?.value) || 50;
       const sl = parseFloat(document.getElementById('osl-' + botId)?.value) || -20;
+      // Collect per-symbol rules
+      const optRulesContainer = document.getElementById('symbol-rules-opt-' + botId);
+      const optSymbolRules = [];
+      if (optRulesContainer) {
+        optRulesContainer.querySelectorAll('[id^="symbol-rule-row-"]').forEach(row => {
+          const rsym = row.querySelector('[data-rule-sym]')?.value?.trim().toUpperCase();
+          const rtp  = parseFloat(row.querySelector('[data-rule-tp]')?.value);
+          const rsl  = parseFloat(row.querySelector('[data-rule-sl]')?.value);
+          const rdir = row.querySelector('[data-rule-dir]')?.value || 'both';
+          if (rsym && !isNaN(rtp) && !isNaN(rsl)) optSymbolRules.push({ symbol: rsym, tp: rtp, sl: rsl, dir: rdir });
+        });
+      }
       const broker = document.getElementById('obrk-' + botId)?.value || 'paper';
       const botSignal = document.getElementById('osig-' + botId)?.value || 'supertrend';
       const optionType = document.getElementById('otype-' + botId)?.value || 'both';
@@ -1377,7 +1419,7 @@
       const trendFilter = document.getElementById('otrend-' + botId)?.value || 'none';
       console.log(`[SaveOptions] Bot ${botId}: sym=${sym}, $=${dol}, optionType=${optionType}, int=${int}, runInt=${runInt}min, dir=${dir}, signal=${botSignal}, scan=${scanMode}, style=${tradingStyle}, trend=${trendFilter}`);
       const otmStrikes = parseInt(document.getElementById(`ootm-${botId}`)?.value ?? '0');
-      const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_option_type: optionType, bot_interval: int, run_interval_min: runInt, market_open_delay_min: startDelay, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, max_loss_dollar: null, max_profit_dollar: null, broker, bot_signal: botSignal, bot_otm_strikes: otmStrikes, trading_style: tradingStyle, trend_filter: trendFilter, updated_at: new Date().toISOString() }).eq('id', botId);
+      const { error } = await sbClient.from('options_bots').update({ bot_symbol: sym, bot_dollar_amount: dol, bot_option_type: optionType, bot_interval: int, run_interval_min: runInt, market_open_delay_min: startDelay, bot_expiry_type: expiry, bot_trade_direction: dir, bot_strike_mode: strikeMode, bot_manual_strike: strikeMode === 'manual' ? manualStrike : null, bot_scan_mode: scanMode, take_profit_pct: tp, stop_loss_pct: sl, symbol_rules: optSymbolRules, max_loss_dollar: null, max_profit_dollar: null, broker, bot_signal: botSignal, bot_otm_strikes: otmStrikes, trading_style: tradingStyle, trend_filter: trendFilter, updated_at: new Date().toISOString() }).eq('id', botId);
       const r = document.getElementById('opt-run-result-' + botId);
       if (error) {
         console.error('[SaveOptions] Error:', error);
