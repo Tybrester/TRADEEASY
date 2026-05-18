@@ -169,7 +169,7 @@
     .page-header { margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; }
     .page-header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
 
-    .bots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; margin-top: 8px; }
+    .bots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; margin-top: 8px; }
 
     /* Right panel */
     .trades-panel-header { padding: 18px 18px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
@@ -1286,18 +1286,18 @@
                     if (!rules.length) return '<div style="font-size:0.72rem;color:#444;padding:4px 0;">No overrides — all symbols use default TP/SL above</div>';
                     return rules.map((r,i) => `
                       <div id="symbol-rule-row-opt-${b.id}-${i}" style="display:flex;gap:6px;align-items:center;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:5px;padding:5px 8px;">
-                        <input class="auto-input" value="${r.symbol}" placeholder="SPY" style="width:62px;font-size:0.78rem;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
-                        <span style="color:#555;font-size:0.72rem;">TP</span>
-                        <input class="auto-input" type="number" value="${r.tp}" min="1" max="500" step="1" style="width:52px;font-size:0.78rem;" data-rule-tp/>
-                        <span style="color:#555;font-size:0.72rem;">%&nbsp;&nbsp;SL</span>
-                        <input class="auto-input" type="number" value="${r.sl}" min="-100" max="0" step="1" style="width:52px;font-size:0.78rem;" data-rule-sl/>
-                        <span style="color:#555;font-size:0.72rem;">%</span>
-                        <select class="auto-input" style="width:66px;font-size:0.72rem;" data-rule-dir>
+                        <input class="auto-input" value="${r.symbol}" placeholder="SPY" style="width:58px;font-size:0.75rem;text-transform:uppercase;padding:4px 6px;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
+                        <span style="color:#555;font-size:0.7rem;">TP</span>
+                        <input class="auto-input" type="number" value="${r.tp}" min="1" max="500" step="1" style="width:46px;font-size:0.75rem;padding:4px 5px;" data-rule-tp/>
+                        <span style="color:#555;font-size:0.7rem;">% SL</span>
+                        <input class="auto-input" type="number" value="${r.sl}" min="-100" max="0" step="1" style="width:46px;font-size:0.75rem;padding:4px 5px;" data-rule-sl/>
+                        <span style="color:#555;font-size:0.7rem;">%</span>
+                        <select class="auto-input" style="width:60px;font-size:0.7rem;padding:4px 4px;" data-rule-dir>
                           <option value="both" ${r.dir==='both'?'selected':''}>Both</option>
                           <option value="long" ${r.dir==='long'?'selected':''}>Long</option>
                           <option value="short" ${r.dir==='short'?'selected':''}>Short</option>
                         </select>
-                        <button onclick="removeSymbolRule('opt-${b.id}',${i})" style="margin-left:auto;padding:1px 6px;background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.2);color:#ff5252;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">✕</button>
+                        <button onclick="removeSymbolRule('opt-${b.id}',${i})" style="margin-left:auto;padding:1px 5px;background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.2);color:#ff5252;border-radius:4px;cursor:pointer;font-size:0.7rem;font-family:inherit;">✕</button>
                       </div>`).join('');
                   })()}
                 </div>
@@ -2975,18 +2975,18 @@
                     if (!rules.length) return '<div style="font-size:0.72rem;color:#444;padding:4px 0;">No overrides — all symbols use default TP/SL above</div>';
                     return rules.map((r,i) => `
                       <div id="symbol-rule-row-${s.id}-${i}" style="display:flex;gap:6px;align-items:center;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:5px;padding:5px 8px;">
-                        <input class="auto-input" value="${r.symbol}" placeholder="SPY" style="width:62px;font-size:0.78rem;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
-                        <span style="color:#555;font-size:0.72rem;">TP</span>
-                        <input class="auto-input" type="number" value="${r.tp}" min="1" max="500" step="1" style="width:52px;font-size:0.78rem;" data-rule-tp/>
-                        <span style="color:#555;font-size:0.72rem;">%&nbsp;&nbsp;SL</span>
-                        <input class="auto-input" type="number" value="${r.sl}" min="-100" max="0" step="1" style="width:52px;font-size:0.78rem;" data-rule-sl/>
-                        <span style="color:#555;font-size:0.72rem;">%</span>
-                        <select class="auto-input" style="width:66px;font-size:0.72rem;" data-rule-dir>
+                        <input class="auto-input" value="${r.symbol}" placeholder="SPY" style="width:58px;font-size:0.75rem;text-transform:uppercase;padding:4px 6px;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
+                        <span style="color:#555;font-size:0.7rem;">TP</span>
+                        <input class="auto-input" type="number" value="${r.tp}" min="1" max="500" step="1" style="width:46px;font-size:0.75rem;padding:4px 5px;" data-rule-tp/>
+                        <span style="color:#555;font-size:0.7rem;">% SL</span>
+                        <input class="auto-input" type="number" value="${r.sl}" min="-100" max="0" step="1" style="width:46px;font-size:0.75rem;padding:4px 5px;" data-rule-sl/>
+                        <span style="color:#555;font-size:0.7rem;">%</span>
+                        <select class="auto-input" style="width:60px;font-size:0.7rem;padding:4px 4px;" data-rule-dir>
                           <option value="both" ${r.dir==='both'?'selected':''}>Both</option>
                           <option value="long" ${r.dir==='long'?'selected':''}>Long</option>
                           <option value="short" ${r.dir==='short'?'selected':''}>Short</option>
                         </select>
-                        <button onclick="removeSymbolRule('${s.id}',${i})" style="margin-left:auto;padding:1px 6px;background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.2);color:#ff5252;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">✕</button>
+                        <button onclick="removeSymbolRule('${s.id}',${i})" style="margin-left:auto;padding:1px 5px;background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.2);color:#ff5252;border-radius:4px;cursor:pointer;font-size:0.7rem;font-family:inherit;">✕</button>
                       </div>`).join('');
                   })()}
                 </div>
@@ -3100,18 +3100,18 @@
       row.id = `symbol-rule-row-${systemId}-${idx}`;
       row.style.cssText = 'display:flex;gap:6px;align-items:center;background:#0d0d0d;border:1px solid #1e1e1e;border-radius:5px;padding:5px 8px;';
       row.innerHTML = `
-        <input class="auto-input" value="" placeholder="SPY" style="width:62px;font-size:0.78rem;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
-        <span style="color:#555;font-size:0.72rem;">TP</span>
-        <input class="auto-input" type="number" value="50" min="1" max="500" step="1" style="width:52px;font-size:0.78rem;" data-rule-tp/>
-        <span style="color:#555;font-size:0.72rem;">%&nbsp;&nbsp;SL</span>
-        <input class="auto-input" type="number" value="-25" min="-100" max="0" step="1" style="width:52px;font-size:0.78rem;" data-rule-sl/>
-        <span style="color:#555;font-size:0.72rem;">%</span>
-        <select class="auto-input" style="width:66px;font-size:0.72rem;" data-rule-dir>
+        <input class="auto-input" value="" placeholder="SPY" style="width:58px;font-size:0.75rem;text-transform:uppercase;padding:4px 6px;" oninput="this.value=this.value.toUpperCase()" data-rule-sym/>
+        <span style="color:#555;font-size:0.7rem;">TP</span>
+        <input class="auto-input" type="number" value="50" min="1" max="500" step="1" style="width:46px;font-size:0.75rem;padding:4px 5px;" data-rule-tp/>
+        <span style="color:#555;font-size:0.7rem;">% SL</span>
+        <input class="auto-input" type="number" value="-25" min="-100" max="0" step="1" style="width:46px;font-size:0.75rem;padding:4px 5px;" data-rule-sl/>
+        <span style="color:#555;font-size:0.7rem;">%</span>
+        <select class="auto-input" style="width:60px;font-size:0.7rem;padding:4px 4px;" data-rule-dir>
           <option value="both">Both</option>
           <option value="long">Long</option>
           <option value="short">Short</option>
         </select>
-        <button onclick="this.closest('[id^=symbol-rule-row]').remove()" style="margin-left:auto;padding:1px 6px;background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.2);color:#ff5252;border-radius:4px;cursor:pointer;font-size:0.72rem;font-family:inherit;">✕</button>
+        <button onclick="this.closest('[id^=symbol-rule-row]').remove()" style="margin-left:auto;padding:1px 5px;background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.2);color:#ff5252;border-radius:4px;cursor:pointer;font-size:0.7rem;font-family:inherit;">✕</button>
       `;
       container.appendChild(row);
     }
